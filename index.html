@@ -173,6 +173,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       code=code.replace(re,replacement);
       if(code!==before) hits++;
     }
+    // Disable only the Classic client's 4,500-tick inactivity logout. Manual
+    // logout and the separate repeated-click anti-macro safeguard stay intact.
+    const beforeInactivityPatch=code;
+    rep(/if\s*\(this\.mouseActionTimeout\s*>\s*4500\s*&&\s*this\.combatTimeout\s*===\s*0\s*&&\s*this\.logoutTimeout\s*===\s*0\)\s*\{\s*this\.mouseActionTimeout\s*-=\s*500;\s*this\.sendLogout\(\);\s*return;\s*\}/,
+        '');
+    if(code===beforeInactivityPatch) throw new Error('Client patch failed: could not disable inactivity logout.');
     rep(/mobile:\s*false/g,'mobile: true');
     rep(/mc\.members\s*=\s*args\[0\]\s*===\s*['"]members['"]\s*;/,'mc.members = true;');
     rep(/window\.mcOptions\s*=\s*mc\.options\s*;/,'window.mcOptions = mc.options; window.autoscapeClient = mc;');
