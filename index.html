@@ -1,0 +1,1634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
+<title>AutoScape Classic v2.2 — Private Local World</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
+#app{position:fixed;inset:0;background:#000;overflow:hidden}
+#game-host{position:absolute;left:50%;top:50%;width:512px;height:346px;transform-origin:center center}
+#game-host>div{width:512px!important;height:346px!important}
+#game-host canvas{display:block;width:512px!important;height:346px!important;image-rendering:pixelated;touch-action:none}
+#fsBtn,#botToggle{position:fixed;z-index:8500;top:max(6px,env(safe-area-inset-top));padding:8px 10px;background:rgba(36,31,22,.88);color:#fff;border:1px solid #9f8657;font-size:12px}
+#fsBtn{right:6px}
+#botToggle{right:92px}
+#loader{position:fixed;inset:0;z-index:9999;background:#0b0b08;display:flex;align-items:center;justify-content:center;padding:18px}
+#loaderCard{width:min(560px,94vw);background:#29251b;border:2px solid #8b7650;padding:14px}
+#loader h2{margin:0 0 8px;color:#f2cf72;font-size:20px}
+#loadState{font-size:13px;line-height:1.5;white-space:pre-wrap}
+#retry{margin-top:12px;padding:10px 14px;background:#66563a;color:#fff;border:1px solid #b79b68}
+#bot{position:fixed;z-index:8000;left:6px;right:6px;bottom:max(6px,env(safe-area-inset-bottom));background:rgba(36,31,22,.96);border:2px solid #87724e;padding:6px;font-size:11px}
+#botTitle{color:#ffd875;font-weight:bold;letter-spacing:1px}
+#botStatus{color:#e8dcc0;margin:3px 0;min-height:14px}
+#botForm{display:flex;gap:4px}
+#botInput{min-width:0;flex:1;background:#090909;color:#fff;border:1px solid #8b7650;padding:8px;font-size:12px}
+#resourceRow{display:flex;gap:5px;align-items:center;margin:4px 0}
+#resourceRow label{color:#cdbb98;white-space:nowrap}
+#resourceSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
+#combatRow{display:none;gap:5px;align-items:center;margin:4px 0}
+#combatRow label{color:#cdbb98;white-space:nowrap}
+#combatSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
+#bot button{background:#655438;color:#fff;border:1px solid #9f8657;padding:8px 10px}
+#botNote{font-size:9px;color:#b8aa8e;margin-top:3px}
+.bad{color:#ff9a8f}.good{color:#aee59f}
+
+#botMetrics{font-size:11px;color:#aaa;margin-top:3px;min-height:14px}
+</style>
+</head>
+<body>
+<div id="app"><div id="game-host"></div></div>
+<div id="loader"><div id="loaderCard">
+<h2>AUTOSCAPE CLASSIC v2.2</h2>
+<div id="loadState">Preparing private local RuneScape Classic world…</div>
+<button id="retry" style="display:none">Retry</button>
+</div></div>
+<button id="botToggle" style="display:none">Bot</button>
+<button id="fsBtn" style="display:none">Fullscreen</button>
+<div id="bot" style="display:none">
+<div id="botTitle">AUTOSCAPE BOT</div>
+<div id="botStatus">Log in or create a local character, then run one objective.</div>
+<div id="botMetrics">Session idle</div>
+<div id="resourceRow">
+<label for="resourceSelect">Resource</label>
+<select id="resourceSelect">
+<option value="auto">Best available</option>
+<option value="normal">Normal tree (Lv 1)</option>
+<option value="oak">Oak (Lv 15)</option>
+<option value="willow">Willow (Lv 30)</option>
+<option value="maple">Maple (Lv 45)</option>
+<option value="yew">Yew (Lv 60)</option>
+<option value="magic">Magic (Lv 75)</option>
+</select>
+</div>
+<div id="combatRow">
+<label for="combatSelect">Combat target</label>
+<select id="combatSelect">
+<option value="auto">Safe automatic</option>
+<option value="chicken">Chicken</option>
+<option value="cow">Cow</option>
+<option value="goblin">Goblin</option>
+</select>
+</div>
+<form id="botForm">
+<input id="botInput" value="cut trees" autocomplete="off" autocapitalize="off" spellcheck="false">
+<button type="submit">Run</button><button type="button" id="botStop">Stop</button>
+</form>
+<div id="botNote">Pick a resource or type naturally: “cut oaks”, “get yew logs”, “train woodcutting”, “train combat”, or “stop”. Jobs continue until stopped.</div>
+</div>
+<script>
+'use strict';
+(function(){
+  const CLIENT_URL='https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/index.bundle.js';
+  const SERVER_URL='https://cdn.jsdelivr.net/gh/2003scape/rsc-server@master/dist/browser.bundle.js';
+  const FALLBACK_CLIENT='https://cdn.jsdelivr.net/npm/@2003scape/rsc-client@1.1.0/dist/index.bundle.js';
+  const FALLBACK_SERVER='https://cdn.jsdelivr.net/npm/@2003scape/rsc-server@1.1.0/dist/browser.bundle.js';
+  const FALLBACK2_CLIENT='https://unpkg.com/@2003scape/rsc-client@1.1.0/dist/index.bundle.js';
+  const FALLBACK2_SERVER='https://unpkg.com/@2003scape/rsc-server@1.1.0/dist/browser.bundle.js';
+
+  const state=document.getElementById('loadState');
+  const loader=document.getElementById('loader');
+  const retry=document.getElementById('retry');
+  const bot=document.getElementById('bot');
+  const botToggle=document.getElementById('botToggle');
+  const fsBtn=document.getElementById('fsBtn');
+  const gameHost=document.getElementById('game-host');
+  const botStatus=document.getElementById('botStatus');
+  const botMetrics=document.getElementById('botMetrics');
+  const botInput=document.getElementById('botInput');
+  const resourceSelect=document.getElementById('resourceSelect');
+  const combatRow=document.getElementById('combatRow');
+  const combatSelect=document.getElementById('combatSelect');
+
+  let worker=null, objective=null, botTimer=null, lastAction=0;
+  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,eats:0,chops:0,bankTrips:0,deposits:0};
+
+  function fmtDuration(ms){
+    const sec=Math.max(0,Math.floor(ms/1000)), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+    return h>0?`${h}h ${m}m ${s}s`:(m>0?`${m}m ${s}s`:`${s}s`);
+  }
+  function resetTaskStats(){
+    sessionStats.taskStartedAt=Date.now();
+    for(const k of ['actions','attacks','eats','chops','bankTrips','deposits']) sessionStats[k]=0;
+    renderMetrics();
+  }
+  function renderMetrics(){
+    if(!botMetrics)return;
+    if(!objective){botMetrics.textContent='Session idle';return;}
+    const parts=[fmtDuration(Date.now()-(sessionStats.taskStartedAt||Date.now())),`${sessionStats.actions} actions`];
+    if(objective.type==='woodcutting')parts.push(`${sessionStats.chops} chops`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
+    if(objective.type==='combat')parts.push(`${sessionStats.attacks} attacks`,`${sessionStats.eats} food eaten`,`${inventoryFoodCount()} food held`);
+    parts.push(`phase ${objective.phase||'idle'}`);
+    if(objective.stallRecoveries)parts.push(`${objective.stallRecoveries} recoveries`);
+    botMetrics.textContent=parts.join(' • ');
+  }
+  function markProgress(kind){
+    if(!objective)return;
+    objective.lastProgress=Date.now();
+    objective.stallRecoveries=0;
+    if(kind)objective.lastProgressKind=kind;
+  }
+  function setPhase(phase,status){
+    if(!objective)return;
+    if(objective.phase!==phase){
+      objective.phase=phase;
+      objective.phaseStarted=Date.now();
+      objective.phaseRetries=0;
+    }
+    if(status)setBotStatus(status);
+  }
+  function phaseRetry(){
+    if(!objective)return 0;
+    objective.phaseRetries=Number(objective.phaseRetries||0)+1;
+    return objective.phaseRetries;
+  }
+  function taskStalled(ms){
+    if(!objective)return false;
+    const last=Number(objective.lastProgress||objective.taskStarted||objective.taskStartedAt||Date.now());
+    return Date.now()-last>ms;
+  }
+
+  function say(s,cls){ state.className=cls||''; state.textContent=s; }
+
+  async function fetchText(primary,fallback,fallback2,label){
+    let errors=[];
+    for(const url of [primary,fallback,fallback2].filter(Boolean)){
+      try{
+        say(`Downloading ${label}…\n${url.includes('jsdelivr')?'jsDelivr':'UNPKG'} mirror`);
+        const r=await fetch(url,{cache:'force-cache',mode:'cors'});
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        const text=await r.text();
+        if(text.length<1000) throw new Error('download was unexpectedly small');
+        return {text,url};
+      }catch(e){ errors.push(`${url}: ${e.message}`); }
+    }
+    throw new Error(`Could not download ${label}.\n`+errors.join('\n'));
+  }
+
+  function patchClient(code){
+    let hits=0;
+    function rep(re,replacement){
+      const before=code;
+      code=code.replace(re,replacement);
+      if(code!==before) hits++;
+    }
+    rep(/mobile:\s*false/g,'mobile: true');
+    rep(/mc\.members\s*=\s*args\[0\]\s*===\s*['"]members['"]\s*;/,'mc.members = true;');
+    rep(/window\.mcOptions\s*=\s*mc\.options\s*;/,'window.mcOptions = mc.options; window.autoscapeClient = mc;');
+    rep(/mc\.server\s*=\s*args\[1\]\s*\?\s*args\[1\]\s*:\s*['"]127\.0\.0\.1['"]\s*;/,'mc.server = window.__AUTOSCAPE_SERVER__;');
+    rep(/document\.body\.appendChild\(mcContainer\)\s*;/,"document.getElementById('game-host').appendChild(mcContainer);");
+    // Remove obsolete Classic ToS clutter for this private local build.
+    rep(/'I have read and agreed to the terms and conditions'/g,"'AutoScape local account'");
+    rep(/'\(to view these click the relevant link below this game window\)'/g,"''");
+    rep(/if\s*\(\s*!this\.panelLoginNewUser\.isActivated\(\s*this\.controlRegisterCheckbox\s*\)\s*\)\s*\{/,
+        'if (false) {');
+    // Remember successful login credentials locally so future launches can auto-login.
+    rep(/await this\.login\(this\.loginUser, this\.loginPass, false\);/,
+        "try{localStorage.setItem('autoscape_credentials',JSON.stringify({u:this.loginUser,p:this.loginPass}))}catch(e){} await this.login(this.loginUser, this.loginPass, false);");
+    // Remember newly-created account credentials too.
+    rep(/await this\.register\(this\.registerUser, this\.registerPassword\);/,
+        "try{localStorage.setItem('autoscape_credentials',JSON.stringify({u:this.registerUser,p:this.registerPassword}))}catch(e){} await this.register(this.registerUser, this.registerPassword);");
+    // Members mode normally hides account creation. AutoScape is a private local world,
+    // so expose the client's built-in New User flow while keeping members gameplay enabled.
+    rep(/if \(!this\.members\) \{\s*this\.panelLoginWelcome\.addTextCentre\(/,
+        'if (true) { this.panelLoginWelcome.addTextCentre(');
+    if(!/window\.autoscapeClient\s*=\s*mc/.test(code)) throw new Error('Client patch failed: could not expose mudclient instance.');
+    if(!/window\.__AUTOSCAPE_SERVER__/.test(code)) throw new Error('Client patch failed: could not attach local server.');
+    if(hits<4) console.warn('AutoScape client patch only matched',hits,'entry fragments');
+    return code;
+  }
+
+  function waitWorkerReady(w,timeout=45000){
+    return new Promise((resolve,reject)=>{
+      const t=setTimeout(()=>reject(new Error('Local world startup timed out.')),timeout);
+      const onMsg=e=>{
+        if(e.data&&e.data.type==='ready'){
+          clearTimeout(t); w.removeEventListener('message',onMsg); resolve();
+        }
+      };
+      w.addEventListener('message',onMsg);
+      w.addEventListener('error',e=>{
+        clearTimeout(t); reject(new Error('Local server worker error: '+(e.message||'unknown')));
+      },{once:true});
+    });
+  }
+
+  async function waitClient(timeout=45000){
+    const start=Date.now();
+    while(Date.now()-start<timeout){
+      if(window.autoscapeClient) return window.autoscapeClient;
+      await new Promise(r=>setTimeout(r,100));
+    }
+    throw new Error('Classic client did not initialize after bundle execution.');
+  }
+
+
+  function fitGame(){
+    // Always preserve the native 512x346 Classic coordinate system.
+    const nativeW=512, nativeH=346;
+    const vw=window.innerWidth || document.documentElement.clientWidth || nativeW;
+    const vh=window.innerHeight || document.documentElement.clientHeight || nativeH;
+    const scale=Math.min(vw/nativeW, vh/nativeH);
+    gameHost.style.transform=`translate(-50%,-50%) scale(${scale})`;
+  }
+
+  async function enterFullscreen(){
+    try{
+      const el=document.documentElement;
+      if(!document.fullscreenElement && el.requestFullscreen){
+        await el.requestFullscreen();
+      }
+      try{
+        if(screen.orientation && screen.orientation.lock){
+          await screen.orientation.lock('landscape');
+        }
+      }catch(_){}
+      setTimeout(fitGame,100);
+    }catch(e){
+      console.warn('Fullscreen request was blocked by browser:',e);
+      fitGame();
+    }
+  }
+
+  window.addEventListener('resize',fitGame);
+  window.addEventListener('orientationchange',()=>setTimeout(fitGame,150));
+  document.addEventListener('fullscreenchange',()=>setTimeout(fitGame,100));
+
+  function installBot(mc){
+    bot.style.display='none';
+    botToggle.style.display='block';
+    try{
+      const savedResource=localStorage.getItem('autoscape_resource');
+      if(savedResource && [...resourceSelect.options].some(o=>o.value===savedResource)){
+        resourceSelect.value=savedResource;
+      }
+      const savedCombat=localStorage.getItem('autoscape_combat_target');
+      if(savedCombat && [...combatSelect.options].some(o=>o.value===savedCombat)){
+        combatSelect.value=savedCombat;
+      }
+    }catch(e){}
+
+    // Keep Android's hidden keyboard bridge completely off the visible game surface.
+    for (const inp of [mc.mobileInput, mc.mobilePassword]) {
+      if (!inp) continue;
+      inp.style.position='fixed';
+      inp.style.left='-10000px';
+      inp.style.top='0';
+      inp.style.width='1px';
+      inp.style.height='1px';
+      inp.style.opacity='0';
+      inp.style.pointerEvents='none';
+      inp.style.zIndex='-1';
+    }
+    fsBtn.style.display='block';
+    fitGame();
+
+    botToggle.onclick=()=>{
+      bot.style.display = bot.style.display==='none' ? 'block' : 'none';
+      botToggle.textContent = bot.style.display==='none' ? 'Bot' : 'Hide Bot';
+    };
+    fsBtn.onclick=enterFullscreen;
+
+    function loggedIn(){
+      return mc.loggedIn===1 || (mc.localPlayerServerIndex!==undefined && mc.localPlayerServerIndex>=0 && mc.packetStream);
+    }
+    function wcLevel(){ return (mc.playerStatBase && mc.playerStatBase.length>8 && mc.playerStatBase[8]) || 1; }
+    function inventorySlots(){ return Number(mc.inventoryItemsCount||0); }
+    function playerTile(){
+      const p=mc.localPlayer;
+      if(!p) return {x:0,y:0};
+      const magic=mc.magicLoc||128;
+      return {x:(p.currentX/magic)|0,y:(p.currentY/magic)|0};
+    }
+    const TREE_DEFS=[
+      {ids:[310],level:75,name:'magic',log:636},
+      {ids:[309],level:60,name:'yew',log:635},
+      {ids:[308],level:45,name:'maple',log:634},
+      {ids:[307],level:30,name:'willow',log:633},
+      {ids:[306],level:15,name:'oak',log:632},
+      {ids:[0,1,70],level:1,name:'normal',log:14}
+    ];
+    const LOG_IDS=new Set(TREE_DEFS.map(t=>t.log));
+
+    // Search hubs are deliberately areas, not "magic exact tiles". Once the
+    // client reaches the documented region it scans the real loaded objects.
+    // RSC higher-level trees are concentrated around Seers/Gnome areas.
+    const TREE_HUBS={
+      oak:{
+        node:'rimmington',
+        centre:{x:304,y:661},
+        search:[[0,0],[-8,0],[0,-8],[0,8],[-12,-8],[-12,8],[8,0]]
+      },
+      willow:{
+        node:'seers',
+        centre:{x:482,y:447},
+        search:[[0,0],[-10,0],[0,-10],[-10,-10],[10,0],[0,10]]
+      },
+      maple:{
+        node:'seers',
+        centre:{x:490,y:455},
+        search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,12]]
+      },
+      yew:{
+        node:'seers',
+        centre:{x:480,y:470},
+        search:[[0,0],[-10,0],[0,10],[-10,10],[10,0],[0,-10]]
+      },
+      magic:{
+        node:'seers',
+        centre:{x:495,y:478},
+        search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,12],[-12,12]]
+      }
+    };
+
+    function desiredTreeType(){
+      const requested=(objective && objective.resource) || 'auto';
+      if(requested!=='auto') return requested;
+      const lvl=wcLevel();
+      const def=TREE_DEFS.find(d=>lvl>=d.level);
+      return def ? def.name : 'normal';
+    }
+
+    function desiredTreeDef(){
+      const name=desiredTreeType();
+      return TREE_DEFS.find(d=>d.name===name) || TREE_DEFS[TREE_DEFS.length-1];
+    }
+
+    function bestTree(){
+      const p=playerTile();
+      const lvl=wcLevel();
+      const requested=(objective && objective.resource) || 'auto';
+      const defs=requested==='auto'
+        ? TREE_DEFS
+        : TREE_DEFS.filter(def=>def.name===requested);
+
+      for(const def of defs){
+        if(lvl<def.level) continue;
+
+        let best=null,bd=1e9;
+        for(let i=0;i<(mc.objectCount||0);i++){
+          const id=Number(mc.objectId[i]);
+          if(!def.ids.includes(id)) continue;
+          const x=mc.objectX[i], y=mc.objectY[i];
+          const d=Math.abs(x-p.x)+Math.abs(y-p.y);
+          if(d<bd){
+            bd=d;
+            best={index:i,id,x,y,dir:mc.objectDirection[i]||0,tree:def.name,required:def.level};
+          }
+        }
+        if(best) return best;
+      }
+      return null;
+    }
+
+    function selectedTreeDefinition(){
+      const requested=(objective && objective.resource) || 'auto';
+      if(requested==='auto') return null;
+      return TREE_DEFS.find(def=>def.name===requested) || null;
+    }
+
+    function logCount(){
+      let total=0;
+      const used=inventorySlots();
+      for(let i=0;i<used;i++){
+        const id=Number(mc.inventoryItemId?.[i]);
+        if(LOG_IDS.has(id)) total += Number(mc.inventoryItemStackCount?.[i]||1);
+      }
+      return total;
+    }
+
+    function depositItemsIfBankOpen(itemIds){
+      if(!mc.showDialogBank||!mc.packetStream)return false;
+      const ids=itemIds instanceof Set?itemIds:new Set(itemIds||[]),counts=new Map(),used=inventorySlots();
+      for(let i=0;i<used;i++){
+        const id=Number(mc.inventoryItemId?.[i]);
+        if(ids.has(id))counts.set(id,(counts.get(id)||0)+Number(mc.inventoryItemStackCount?.[i]||1));
+      }
+      for(const [id,amount] of counts){
+        mc.packetStream.newPacket(23);mc.packetStream.putShort(id);mc.packetStream.putShort(Math.min(65535,amount));
+        mc.packetStream.putInt(0x87654321|0);mc.packetStream.sendPacket();sessionStats.actions++;
+      }
+      if(counts.size){sessionStats.deposits++;markProgress('deposit');renderMetrics();}
+      setTimeout(()=>{try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}},250);
+      return counts.size>0;
+    }
+    function depositAllLogsIfBankOpen(){return depositItemsIfBankOpen(LOG_IDS);}
+
+    function withdrawBankItem(itemId,amount){
+      if(!mc.showDialogBank||!mc.packetStream||amount<=0)return false;
+      mc.packetStream.newPacket(22); // BANK_WITHDRAW
+      mc.packetStream.putShort(Number(itemId));
+      mc.packetStream.putShort(Math.min(65535,Number(amount)));
+      mc.packetStream.putInt(0x12345678); // Classic MAGIC_WITHDRAW
+      mc.packetStream.sendPacket();
+      sessionStats.actions++;
+      markProgress('withdraw');
+      renderMetrics();
+      return true;
+    }
+
+    function restockCombatFood(targetCount=10){
+      if(!mc.showDialogBank)return {ok:false,reason:'bank-not-open'};
+      const food=chooseBankFood();
+      if(!food)return {ok:false,reason:'no-bank-food'};
+      const max=Number(mc.inventoryMaxItemCount||30);
+      const used=inventorySlots();
+      const free=Math.max(0,max-used);
+      const have=inventoryFoodCount();
+      const need=Math.max(0,targetCount-have);
+      const amount=Math.min(food.amount,free,need);
+      if(amount<=0)return {ok:have>0,reason:'no-space-or-no-need',food};
+      withdrawBankItem(food.id,amount);
+      return {ok:true,reason:'withdrew',food,amount};
+    }
+
+    function globalPlayerTile(){
+      const p=playerTile();
+      return {x:p.x+Number(mc.regionX||0),y:p.y+Number(mc.regionY||0)};
+    }
+
+    function walkGlobal(x,y){
+      if(typeof mc._walkToActionSource_from5!=='function') return false;
+      const lx=x-Number(mc.regionX||0);
+      const ly=y-Number(mc.regionY||0);
+      mc._walkToActionSource_from5(
+        Number(mc.localRegionX||0),
+        Number(mc.localRegionY||0),
+        lx,ly,false
+      );
+      return true;
+    }
+
+    const BANKER_IDS=new Set([95,224,268,540,617]);
+    const DRAYNOR_BANK={x:220,y:635};
+
+    // AutoScape navigation graph. This is intentionally generic so additional
+    // banks/resources/quest areas can be added as nodes rather than writing a
+    // new brittle waypoint loop for every script.
+    const NAV_NODES={
+      lumbridge:{x:122,y:657},
+      lumbridgeWest:{x:145,y:655},
+      roadEastDraynor:{x:170,y:650},
+      roadDraynor:{x:195,y:643},
+      draynorBank:{x:220,y:635},
+      portSarimRoad:{x:270,y:646},
+      rimmington:{x:324,y:661},
+      faladorSouth:{x:312,y:585},
+      falador:{x:312,y:552},
+      barbarianVillage:{x:226,y:512},
+      edgeville:{x:216,y:451},
+      kandarinApproach:{x:360,y:470},
+      camelot:{x:465,y:456},
+      seers:{x:490,y:455}
+    };
+    const NAV_EDGES={
+      lumbridge:['lumbridgeWest'],
+      lumbridgeWest:['lumbridge','roadEastDraynor'],
+      roadEastDraynor:['lumbridgeWest','roadDraynor'],
+      roadDraynor:['roadEastDraynor','draynorBank'],
+      draynorBank:['roadDraynor','portSarimRoad'],
+      portSarimRoad:['draynorBank','rimmington','faladorSouth'],
+      rimmington:['portSarimRoad','faladorSouth'],
+      faladorSouth:['rimmington','portSarimRoad','falador'],
+      falador:['faladorSouth','barbarianVillage'],
+      barbarianVillage:['falador','edgeville'],
+      edgeville:['barbarianVillage','kandarinApproach'],
+      kandarinApproach:['edgeville','camelot'],
+      camelot:['kandarinApproach','seers'],
+      seers:['camelot']
+    };
+
+    function nodeDistance(a,b){
+      return Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+    }
+
+    function nearestNavNode(point){
+      let best=null,dist=1e9;
+      for(const [name,node] of Object.entries(NAV_NODES)){
+        const d=nodeDistance(point,node);
+        if(d<dist){dist=d;best=name;}
+      }
+      return best;
+    }
+
+    function graphPath(startName,endName){
+      if(!startName || !endName) return [];
+      if(startName===endName) return [startName];
+      const queue=[startName];
+      const prev=new Map([[startName,null]]);
+      while(queue.length){
+        const cur=queue.shift();
+        for(const next of NAV_EDGES[cur]||[]){
+          if(prev.has(next)) continue;
+          prev.set(next,cur);
+          if(next===endName){
+            const out=[next];
+            let p=cur;
+            while(p){out.push(p);p=prev.get(p);}
+            return out.reverse();
+          }
+          queue.push(next);
+        }
+      }
+      return [];
+    }
+
+    function makeRouteTo(targetNode){
+      const start=nearestNavNode(globalPlayerTile());
+      return graphPath(start,targetNode).map(name=>({name,...NAV_NODES[name]}));
+    }
+
+    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+    const MAX_NAV_RETRIES=12;
+
+    function navRetryTarget(target){
+      const pp=globalPlayerTile();
+      if(navWatch.x!==pp.x || navWatch.y!==pp.y){
+        navWatch={x:pp.x,y:pp.y,lastMove:Date.now(),stalls:0};
+        return target;
+      }
+      if(!navWatch.lastMove) navWatch.lastMove=Date.now();
+      if(Date.now()-navWatch.lastMove>3500){
+        navWatch.lastMove=Date.now();
+        navWatch.stalls++;
+      }
+      if(navWatch.stalls<1) return target;
+      const offsets=[[2,0],[0,2],[-2,0],[0,-2],[3,2],[-3,2],[3,-2],[-3,-2]];
+      const off=offsets[Math.min(navWatch.stalls-1,offsets.length-1)];
+      return {x:target.x+off[0],y:target.y+off[1]};
+    }
+
+    function nearestLoadedBanker(){
+      const pp=globalPlayerTile();
+      let best=null,bd=1e9;
+      for(let i=0;i<(mc.npcCount||0);i++){
+        const npc=mc.npcs?.[i];
+        if(!npc || !BANKER_IDS.has(Number(npc.npcId))) continue;
+        const x=((Number(npc.currentX||0)/Number(mc.magicLoc||128))|0)+Number(mc.regionX||0);
+        const y=((Number(npc.currentY||0)/Number(mc.magicLoc||128))|0)+Number(mc.regionY||0);
+        const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
+        if(d<bd){bd=d;best={npc,x,y,d};}
+      }
+      return best;
+    }
+
+    function sendTalkToBanker(b){
+      if(!b || !mc.packetStream) return false;
+      walkGlobal(b.x,b.y);
+      mc.packetStream.newPacket(153);
+      mc.packetStream.putShort(Number(b.npc.serverIndex));
+      mc.packetStream.sendPacket();
+      return true;
+    }
+
+    function chooseFirstDialogueOption(){
+      if(!mc.showOptionMenu || !mc.packetStream) return false;
+      mc.packetStream.newPacket(116);
+      mc.packetStream.putByte(0);
+      mc.packetStream.sendPacket();
+      mc.showOptionMenu=false;
+      return true;
+    }
+
+    function advanceBankRoute(){
+      const pp=globalPlayerTile();
+      const banker=nearestLoadedBanker();
+
+      if(mc.showDialogBank){
+        if(depositAllLogsIfBankOpen()){
+          objective.phase='return';
+          objective.routeIndex=0;
+          navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+          lastAction=Date.now();
+          setBotStatus(`Woodcutting ${wcLevel()} • depositing logs`);
+          return true;
+        }
+        return false;
+      }
+
+      if(mc.showOptionMenu){
+        if(chooseFirstDialogueOption()){
+          objective.phase='bank-open';
+          lastAction=Date.now();
+          setBotStatus(`Woodcutting ${wcLevel()} • asking banker to open bank`);
+          return true;
+        }
+      }
+
+      if(banker && banker.d<=10){
+        if(Date.now()-lastAction>1800 && sendTalkToBanker(banker)){
+          objective.phase='bank-dialogue';
+          lastAction=Date.now();
+          setBotStatus(`Woodcutting ${wcLevel()} • talking to banker`);
+          return true;
+        }
+        return false;
+      }
+
+      if(!Array.isArray(objective.navRoute) || objective.navRoute.length===0){
+        objective.navRoute=makeRouteTo('draynorBank');
+        objective.routeIndex=0;
+      }
+
+      const route=objective.navRoute;
+      let idx=Number(objective.routeIndex||0);
+      while(idx<route.length){
+        const wp=route[idx];
+        const d=Math.abs(pp.x-wp.x)+Math.abs(pp.y-wp.y);
+        if(d<8){idx++; objective.routeIndex=idx; continue;}
+
+        if(navWatch.retries>=MAX_NAV_RETRIES){
+          setBotStatus(`Woodcutting ${wcLevel()} • navigation recovery limit reached near ${wp.name||'route node'} • retrying route`);
+          objective.navRoute=makeRouteTo('draynorBank');
+          objective.routeIndex=0;
+          navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+          lastAction=Date.now();
+          return true;
+        }
+
+        if(Date.now()-lastAction>1400){
+          const retry=navRetryTarget(wp);
+          walkGlobal(retry.x,retry.y);
+          navWatch.retries++;
+          lastAction=Date.now();
+          setBotStatus(`Woodcutting ${wcLevel()} • banking • ${wp.name||'route'} (${idx+1}/${route.length})`);
+        }
+        return true;
+      }
+
+      if(Date.now()-lastAction>1400){
+        const retry=navRetryTarget(DRAYNOR_BANK);
+        walkGlobal(retry.x,retry.y);
+        lastAction=Date.now();
+        setBotStatus(`Woodcutting ${wcLevel()} • locating banker`);
+      }
+      return true;
+    }
+
+    function shortStepToward(target,maxStep=22){
+      const pp=globalPlayerTile();
+      const dx=target.x-pp.x, dy=target.y-pp.y;
+      const d=Math.abs(dx)+Math.abs(dy);
+      if(d<=5) return true;
+      const mag=Math.max(Math.abs(dx),Math.abs(dy),1);
+      const scale=Math.min(1,maxStep/mag);
+      const tx=Math.round(pp.x+dx*scale);
+      const ty=Math.round(pp.y+dy*scale);
+      const retry=navRetryTarget({x:tx,y:ty});
+      walkGlobal(retry.x,retry.y);
+      return false;
+    }
+
+    function beginResourceTravel(){
+      const name=desiredTreeType();
+      const hub=TREE_HUBS[name];
+      if(!hub) return false;
+      objective.phase='resource-travel';
+      objective.resourceHub=name;
+      objective.navRoute=makeRouteTo(hub.node);
+      objective.routeIndex=0;
+      objective.searchIndex=0;
+      objective.failures=0;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+      return true;
+    }
+
+    function advanceResourceTravel(){
+      const type=objective.resourceHub || desiredTreeType();
+      const hub=TREE_HUBS[type];
+      if(!hub){
+        objective.phase='chop';
+        return;
+      }
+
+      // The moment the requested real object is loaded, stop routing and chop it.
+      const found=bestTree();
+      if(found){
+        objective.phase='chop';
+        objective.home=globalPlayerTile();
+        objective.failures=0;
+        navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+        setBotStatus(`Woodcutting ${wcLevel()} • found ${type} trees • starting`);
+        return;
+      }
+
+      const pp=globalPlayerTile();
+      if(!Array.isArray(objective.navRoute) || !objective.navRoute.length){
+        objective.navRoute=makeRouteTo(hub.node);
+        objective.routeIndex=0;
+      }
+
+      let idx=Number(objective.routeIndex||0);
+      if(idx<objective.navRoute.length){
+        const wp=objective.navRoute[idx];
+        if(nodeDistance(pp,wp)<10){
+          objective.routeIndex=idx+1;
+          return;
+        }
+        if(Date.now()-lastAction>1300){
+          shortStepToward(wp,22);
+          lastAction=Date.now();
+          navWatch.retries++;
+          setBotStatus(`Woodcutting ${wcLevel()} • travelling for ${type} • ${wp.name||hub.node}`);
+        }
+        if(navWatch.retries>MAX_NAV_RETRIES*5){
+          objective.navRoute=makeRouteTo(hub.node);
+          objective.routeIndex=0;
+          navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+        }
+        return;
+      }
+
+      // Regional search pattern. This lets actual spawned objects be the source
+      // of truth even if the chosen centre is only approximate.
+      const search=hub.search||[[0,0]];
+      const si=Number(objective.searchIndex||0)%search.length;
+      const off=search[si];
+      const target={x:hub.centre.x+off[0],y:hub.centre.y+off[1]};
+      if(nodeDistance(pp,target)<8){
+        objective.searchIndex=si+1;
+        objective.failures=(objective.failures||0)+1;
+      }else if(Date.now()-lastAction>1300){
+        shortStepToward(target,18);
+        lastAction=Date.now();
+      }
+
+      if((objective.failures||0)>search.length*3){
+        objective.failures=0;
+        setBotStatus(`Woodcutting ${wcLevel()} • searching ${type} area for a live tree`);
+      }
+    }
+
+    function advanceReturnRoute(){
+      if(!objective.home){
+        objective.phase='chop';
+        return;
+      }
+
+      const pp=globalPlayerTile();
+      const home=objective.home;
+      const dx=home.x-pp.x, dy=home.y-pp.y;
+      const d=Math.abs(dx)+Math.abs(dy);
+
+      if(d<12){
+        objective.phase='chop';
+        objective.routeIndex=0;
+        setBotStatus(`Woodcutting ${wcLevel()} • back at training area`);
+        return;
+      }
+
+      // Move toward the remembered training position in short global steps so
+      // the client's normal collision/path logic stays in control.
+      const step=24;
+      const tx=pp.x+Math.max(-step,Math.min(step,dx));
+      const ty=pp.y+Math.max(-step,Math.min(step,dy));
+      if(Date.now()-lastAction>1400){
+        walkGlobal(tx,ty);
+        lastAction=Date.now();
+        setBotStatus(`Woodcutting ${wcLevel()} • returning to trees`);
+      }
+    }
+
+    function chop(tree){
+      if(!tree||!mc.packetStream) return false;
+      mc.walkToObject(tree.x,tree.y,tree.id,tree.dir);
+      mc.packetStream.newPacket(136);
+      mc.packetStream.putShort(tree.x+(mc.regionX||0));
+      mc.packetStream.putShort(tree.y+(mc.regionY||0));
+      mc.packetStream.sendPacket();
+      sessionStats.actions++;sessionStats.chops++;markProgress('chop');renderMetrics();
+      return true;
+    }
+    function setBotStatus(s){ botStatus.textContent=s; }
+
+    function saveObjective(){
+      try{
+        if(objective){
+          const saved={
+            type:objective.type,
+            resource:objective.resource||'auto',
+            target:objective.target||'auto',
+            active:true
+          };
+          localStorage.setItem('autoscape_job',JSON.stringify(saved));
+          localStorage.setItem('autoscape_resource',saved.resource);
+        }else{
+          localStorage.removeItem('autoscape_job');
+        }
+      }catch(e){}
+    }
+
+    function stop(msg){
+      objective=null;
+      saveObjective();
+      combatRow.style.display='none';
+      resourceSelect.closest('#resourceRow').style.display='flex';
+      setBotStatus(msg||'Stopped.');
+    }
+    const FOOD_HEALS={"18":1,"132":3,"138":4,"179":5,"228":1,"249":2,"257":5,"258":3,"259":4,"261":4,"262":3,"263":5,"319":2,"320":2,"325":10,"326":7,"327":8,"328":7,"329":8,"330":4,"332":5,"333":4,"334":5,"335":4,"336":5,"337":2,"346":9,"350":2,"352":2,"355":4,"357":9,"359":7,"362":5,"364":8,"367":10,"370":14,"373":12,"422":10,"546":20,"551":7,"553":6,"555":13,"590":14,"677":10,"709":19,"749":2,"750":10,"751":10,"765":1,"855":1,"856":1,"857":1,"858":1,"859":1,"860":1,"861":2,"863":1,"864":1,"865":1,"923":19,"924":19,"1061":4,"1102":19,"1103":8,"1191":21,"1193":20,"1245":2,"1269":8};
+    function inventoryFood(){
+      const out=[],used=inventorySlots();
+      for(let i=0;i<used;i++){
+        const id=Number(mc.inventoryItemId?.[i]),heal=Number(FOOD_HEALS[id]||0);
+        if(heal>0)out.push({slot:i,id,heal});
+      }
+      return out;
+    }
+    function chooseFoodForMissingHits(){
+      const missing=Math.max(0,maxHits()-currentHits()), foods=inventoryFood();
+      if(!foods.length)return null;
+      const enough=foods.filter(f=>f.heal>=missing).sort((a,b)=>a.heal-b.heal);
+      return enough[0]||foods.sort((a,b)=>b.heal-a.heal)[0];
+    }
+
+    function bankFood(){
+      const out=[];
+      const count=Number(mc.bankItemCount||0);
+      for(let i=0;i<count;i++){
+        const id=Number(mc.bankItems?.[i]);
+        const amount=Number(mc.bankItemsCount?.[i]||0);
+        const heal=Number(FOOD_HEALS[id]||0);
+        if(id>=0 && amount>0 && heal>0) out.push({slot:i,id,amount,heal});
+      }
+      return out;
+    }
+
+    function chooseBankFood(){
+      const foods=bankFood();
+      if(!foods.length)return null;
+      // Prefer stronger food; break ties by quantity so repeated trips are useful.
+      foods.sort((a,b)=>(b.heal-a.heal)||(b.amount-a.amount));
+      return foods[0];
+    }
+
+    function inventoryFoodCount(){
+      return inventoryFood().length;
+    }
+
+    const SAFE_COMBAT_TARGETS={
+      chicken:{ids:[3],level:3,name:'chicken'},
+      cow:{ids:[6],level:8,name:'cow'},
+      goblin:{ids:[4],level:13,name:'goblin'}
+    };
+
+    // Regional search hubs: travel to a known area, then let the live NPC list
+    // be the source of truth for the exact spawn tile.
+    const COMBAT_HUBS={
+      chicken:{node:'lumbridge',centre:{x:120,y:648},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,8],[-12,8]]},
+      cow:{node:'lumbridge',centre:{x:132,y:632},search:[[0,0],[12,0],[-12,0],[0,12],[0,-12],[14,10],[-14,10]]},
+      goblin:{node:'goblinVillage',centre:{x:325,y:461},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,12],[-12,12]]}
+    };
+
+    function combatHub(){
+      return COMBAT_HUBS[chooseCombatTargetType()]||COMBAT_HUBS.chicken;
+    }
+
+    function beginCombatTravel(){
+      const type=chooseCombatTargetType(),hub=COMBAT_HUBS[type];
+      if(!hub)return false;
+      objective.combatHub=type;
+      objective.navRoute=makeRouteTo(hub.node);
+      objective.routeIndex=0;
+      objective.searchIndex=0;
+      objective.combatNavRetries=0;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+      setPhase('combat-travel',`Combat ${playerCombatEstimate()} • travelling for ${type}`);
+      return true;
+    }
+
+    function advanceCombatTravel(){
+      const type=objective.combatHub||chooseCombatTargetType();
+      const hub=COMBAT_HUBS[type];
+      if(!hub){setPhase('fight');return;}
+
+      const live=nearestCombatNpc();
+      if(live){
+        objective.home=globalPlayerTile();
+        markProgress('target-found');
+        setPhase('fight',`Combat ${playerCombatEstimate()} • found ${live.name}`);
+        return;
+      }
+
+      const pp=globalPlayerTile();
+      if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){
+        objective.navRoute=makeRouteTo(hub.node);
+        objective.routeIndex=0;
+      }
+
+      let idx=Number(objective.routeIndex||0);
+      if(idx<objective.navRoute.length){
+        const wp=objective.navRoute[idx];
+        if(nodeDistance(pp,wp)<10){
+          objective.routeIndex=idx+1;
+          objective.combatNavRetries=0;
+          markProgress('combat-route-node');
+          return;
+        }
+        if(Date.now()-lastAction>1300){
+          shortStepToward(wp,22);
+          lastAction=Date.now();
+          objective.combatNavRetries=Number(objective.combatNavRetries||0)+1;
+          setBotStatus(`Combat ${playerCombatEstimate()} • travelling for ${type} • ${wp.name||hub.node}`);
+        }
+        return;
+      }
+
+      const search=hub.search||[[0,0]];
+      const si=Number(objective.searchIndex||0)%search.length;
+      const off=search[si],target={x:hub.centre.x+off[0],y:hub.centre.y+off[1]};
+      if(nodeDistance(pp,target)<8){
+        objective.searchIndex=si+1;
+        markProgress('combat-search-tile');
+      }else if(Date.now()-lastAction>1300){
+        shortStepToward(target,18);
+        lastAction=Date.now();
+      }
+      setBotStatus(`Combat ${playerCombatEstimate()} • searching ${type} area (${si+1}/${search.length})`);
+    }
+
+    function playerCombatEstimate(){
+      const s=mc.playerStatBase||[];
+      return (((Number(s[0]||1)+Number(s[1]||1)+Number(s[2]||1)+Number(s[3]||10)+27)/4)|0);
+    }
+
+    function currentHits(){
+      const cur=mc.playerStatCurrent||mc.playerStatBase||[];
+      return Number(cur[3]||0);
+    }
+
+    function maxHits(){
+      const base=mc.playerStatBase||[];
+      return Number(base[3]||10);
+    }
+
+    function inCombat(){
+      const p=mc.localPlayer;
+      return !!(p && (p.animationCurrent===8 || p.animationCurrent===9 || Number(p.combatTimer||0)>0));
+    }
+
+    function chooseCombatTargetType(){
+      const explicit=objective?.target || combatSelect.value || 'auto';
+      if(explicit!=='auto') return explicit;
+      const level=playerCombatEstimate();
+      if(level>=16) return 'goblin';
+      if(level>=9) return 'cow';
+      return 'chicken';
+    }
+
+    function nearestCombatNpc(){
+      const wanted=chooseCombatTargetType();
+      const preferred=SAFE_COMBAT_TARGETS[wanted];
+      const pp=playerTile();
+      let best=null,bd=1e9;
+
+      function scan(def){
+        if(!def) return null;
+        let localBest=null,localDist=1e9;
+        for(let i=0;i<(mc.npcCount||0);i++){
+          const npc=mc.npcs?.[i];
+          if(!npc || !def.ids.includes(Number(npc.npcId))) continue;
+          const x=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
+          const y=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
+          const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
+          if(d<localDist){
+            localDist=d;
+            localBest={npc,x,y,d,name:def.name,level:def.level};
+          }
+        }
+        return localBest;
+      }
+
+      best=scan(preferred);
+      if(best) return best;
+
+      // In auto mode, fall back only to another conservative target at or
+      // below the player's estimated combat level.
+      if((objective?.target||combatSelect.value||'auto')==='auto'){
+        const pl=playerCombatEstimate();
+        for(const def of Object.values(SAFE_COMBAT_TARGETS).sort((a,b)=>b.level-a.level)){
+          if(def.level>pl+2) continue;
+          const candidate=scan(def);
+          if(candidate && candidate.d<bd){bd=candidate.d;best=candidate;}
+        }
+      }
+      return best;
+    }
+
+    function attackNpc(target){
+      if(!target || !mc.packetStream) return false;
+      mc._walkToActionSource_from5(
+        Number(mc.localRegionX||0),
+        Number(mc.localRegionY||0),
+        target.x,target.y,true
+      );
+      mc.packetStream.newPacket(190);
+      mc.packetStream.putShort(Number(target.npc.serverIndex));
+      mc.packetStream.sendPacket();
+      sessionStats.actions++;sessionStats.attacks++;markProgress('attack');renderMetrics();
+      return true;
+    }
+
+    function eatFoodIfNeeded(){
+      const hp=currentHits(),max=maxHits();
+      if(max<=0||hp>Math.max(4,Math.floor(max*.45)))return false;
+      const food=chooseFoodForMissingHits();
+      if(!food)return false;
+      mc.packetStream.newPacket(90);
+      mc.packetStream.putShort(food.slot);
+      mc.packetStream.sendPacket();
+      sessionStats.actions++;sessionStats.eats++;markProgress('eat');renderMetrics();
+      setBotStatus(`Combat • eating item ${food.id} (+${food.heal}) at ${hp}/${max} hits`);
+      lastAction=Date.now();
+      return true;
+    }
+    function beginCombatBanking(reason='food'){
+      if(!objective||objective.type!=='combat')return false;
+      objective.combatBankReason=reason;
+      objective.returnCombatType=chooseCombatTargetType();
+      objective.navRoute=makeRouteTo('draynorBank');
+      objective.routeIndex=0;
+      objective.bankRetries=0;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+      setPhase('combat-bank',`Combat • heading to bank for food`);
+      return true;
+    }
+
+    function advanceCombatBanking(){
+      const pp=globalPlayerTile();
+      const banker=nearestLoadedBanker();
+
+      if(mc.showDialogBank){
+        const result=restockCombatFood(10);
+        if(result.reason==='no-bank-food'){
+          try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
+          stop('Combat stopped: your bank has no edible food AutoScape can use yet.');
+          return;
+        }
+        if(result.ok){
+          setBotStatus(`Combat • withdrew ${result.amount||0} × item ${result.food?.id||''} for food`);
+          setTimeout(()=>{
+            try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
+            beginCombatReturn();
+          },400);
+        }
+        return;
+      }
+
+      if(mc.showOptionMenu){
+        if(chooseFirstDialogueOption()){
+          setPhase('combat-bank-open','Combat • asking banker to open bank');
+          lastAction=Date.now();
+          return;
+        }
+      }
+
+      if(banker&&banker.d<=10){
+        if(Date.now()-lastAction>1800&&sendTalkToBanker(banker)){
+          setPhase('combat-bank-dialogue','Combat • talking to banker');
+          lastAction=Date.now();
+        }
+        return;
+      }
+
+      if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){
+        objective.navRoute=makeRouteTo('draynorBank');
+        objective.routeIndex=0;
+      }
+      const route=objective.navRoute;
+      let idx=Number(objective.routeIndex||0);
+      while(idx<route.length){
+        const wp=route[idx];
+        if(nodeDistance(pp,wp)<8){objective.routeIndex=++idx;markProgress('combat-bank-node');continue;}
+        if(Date.now()-lastAction>1400){
+          shortStepToward(wp,22);
+          lastAction=Date.now();
+          objective.bankRetries=Number(objective.bankRetries||0)+1;
+          setBotStatus(`Combat • banking for food • ${wp.name||'route'} (${idx+1}/${route.length})`);
+          if(objective.bankRetries>MAX_NAV_RETRIES*5){
+            objective.navRoute=makeRouteTo('draynorBank');objective.routeIndex=0;objective.bankRetries=0;
+          }
+        }
+        return;
+      }
+      if(Date.now()-lastAction>1400){shortStepToward(DRAYNOR_BANK,16);lastAction=Date.now();}
+    }
+
+    // ---------- TASK 4: return to the selected combat training region ----------
+    function beginCombatReturn(){
+      if(!objective||objective.type!=='combat')return;
+      const type=objective.returnCombatType||chooseCombatTargetType();
+      const hub=COMBAT_HUBS[type]||combatHub();
+      objective.combatHub=type;
+      objective.navRoute=makeRouteTo(hub.node);
+      objective.routeIndex=0;
+      objective.searchIndex=0;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+      setPhase('combat-return',`Combat • returning to ${type} training`);
+    }
+
+    function advanceCombatReturn(){
+      const type=objective.combatHub||chooseCombatTargetType();
+      const hub=COMBAT_HUBS[type]||combatHub();
+      const live=nearestCombatNpc();
+      if(live){markProgress('combat-return-complete');setPhase('fight',`Combat • back at ${type} training`);return;}
+
+      const pp=globalPlayerTile();
+      if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo(hub.node);objective.routeIndex=0;}
+      let idx=Number(objective.routeIndex||0);
+      if(idx<objective.navRoute.length){
+        const wp=objective.navRoute[idx];
+        if(nodeDistance(pp,wp)<9){objective.routeIndex=idx+1;markProgress('combat-return-node');return;}
+        if(Date.now()-lastAction>1300){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Combat • returning • ${wp.name||hub.node}`);}
+        return;
+      }
+      // Once inside the hub, reuse the regional live-NPC search logic.
+      setPhase('combat-travel',`Combat • searching ${type} area after restock`);
+      objective.searchIndex=0;
+    }
+
+    function combatTick(){
+      const hp=currentHits(), max=maxHits();
+
+      if(objective.phase==='combat-travel'){
+        advanceCombatTravel();
+        return;
+      }
+
+      if(objective.phase==='combat-bank' || objective.phase==='combat-bank-dialogue' || objective.phase==='combat-bank-open'){
+        advanceCombatBanking();
+        return;
+      }
+      if(objective.phase==='combat-return'){
+        advanceCombatReturn();
+        return;
+      }
+
+      if(hp>0 && hp<=Math.max(3,Math.floor(max*0.25))){
+        if(eatFoodIfNeeded()) return;
+        if(inCombat()){
+          // Do not issue a new attack while critically low. As soon as combat
+          // disengages, the next tick routes to the bank.
+          objective.needsFoodBank=true;
+          setBotStatus(`Combat • critical hits ${hp}/${max} • waiting to disengage, then banking`);
+          return;
+        }
+        beginCombatBanking('critical-low-hp');
+        return;
+      }
+
+      if(objective.needsFoodBank&&!inCombat()){
+        objective.needsFoodBank=false;
+        beginCombatBanking('post-combat-low-food');
+        return;
+      }
+
+      // Proactive restock: once we are out of food and have taken meaningful
+      // damage, bank before beginning another fight instead of waiting for crisis HP.
+      if(!inCombat() && inventoryFoodCount()===0 && hp<Math.max(5,Math.floor(max*0.70))){
+        beginCombatBanking('proactive-restock');
+        return;
+      }
+
+      if(inCombat()){
+        markProgress('fighting');
+        setBotStatus(`Combat ${playerCombatEstimate()} • fighting • hits ${hp}/${max}`);
+        return;
+      }
+
+      // If combat has made no meaningful progress for 25 seconds, rebuild the
+      // travel/search state instead of standing forever on an empty screen.
+      if(taskStalled(25000)){
+        objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+        if(objective.stallRecoveries>4){
+          stop(`Combat stopped: unable to find/reach a safe ${chooseCombatTargetType()} target after repeated recovery attempts.`);
+          return;
+        }
+        beginCombatTravel();
+        return;
+      }
+
+      if(Date.now()-lastAction<1600) return;
+      const target=nearestCombatNpc();
+      if(!target){
+        beginCombatTravel();
+        return;
+      }
+
+      if(attackNpc(target)){
+        lastAction=Date.now();
+        setPhase('fight',`Combat ${playerCombatEstimate()} • attacking ${target.name} (level ${target.level}) • hits ${hp}/${max}`);
+      }
+    }
+
+    function normalizeIntent(s){
+      return String(s||'')
+        .toLowerCase()
+        .replace(/[^\w\s]/g,' ')
+        .replace(/\s+/g,' ')
+        .trim();
+    }
+
+    function hasAny(text, words){
+      return words.some(w => text.includes(w));
+    }
+
+    function parse(s){
+      const t=normalizeIntent(s);
+      if(!t) return null;
+
+      // Natural stop / pause language.
+      if(hasAny(t,['stop','halt','pause','cancel','quit','enough','done'])){
+        return {type:'stop'};
+      }
+
+      // Specific resource names override the dropdown.
+      const treeAliases=[
+        ['magic',['magic tree','magic trees','magic logs','magics']],
+        ['yew',['yew','yews','yew tree','yew trees','yew logs']],
+        ['maple',['maple','maples','maple tree','maple trees','maple logs']],
+        ['willow',['willow','willows','willow tree','willow trees','willow logs']],
+        ['oak',['oak','oaks','oak tree','oak trees','oak logs']],
+        ['normal',['normal tree','normal trees','regular tree','regular trees']]
+      ];
+      let requestedTree=null;
+      for(const [resource,aliases] of treeAliases){
+        if(hasAny(t,aliases)){requestedTree=resource;break;}
+      }
+
+      // Woodcutting synonyms / human phrasing.
+      const woodWords=[
+        'woodcutting','wood cutting','wc','tree','trees','wood','logs',
+        'chop','chopping','cut wood','cut trees','lumber'
+      ];
+      if(hasAny(t,woodWords) || requestedTree){
+        return {type:'woodcutting',resource:requestedTree};
+      }
+
+      // Combat synonyms. The underlying combat loop is a later milestone,
+      // but recognize the intent now so the command language stays natural.
+      const combatWords=[
+        'combat','fight','fighting','kill','killing','attack','strength',
+        'defence','defense','melee','train combat','train attack',
+        'train strength','train defence','train defense'
+      ];
+      if(hasAny(t,combatWords)){
+        let target=null;
+        if(hasAny(t,['chicken','chickens']))target='chicken';
+        else if(hasAny(t,['cow','cows']))target='cow';
+        else if(hasAny(t,['goblin','goblins']))target='goblin';
+        return {type:'combat',target};
+      }
+
+      // Reserve common skill intents for future loops.
+      const skills = [
+        ['mining',['mine','mining','ore','ores','rocks']],
+        ['fishing',['fish','fishing']],
+        ['firemaking',['firemaking','fire making','light fires','burn logs']],
+        ['cooking',['cook','cooking','food']],
+        ['smithing',['smith','smithing','forge','forging']]
+      ];
+      for(const [type,words] of skills){
+        if(hasAny(t,words)) return {type};
+      }
+
+      return null;
+    }
+
+    function start(s){
+      const o=parse(s);
+      if(!o){
+        setBotStatus('I did not understand that yet. Try natural phrases like “cut trees”, “get wood”, “train combat”, or “stop”.');
+        return;
+      }
+      if(o.type==='stop'){
+        stop('Stopped.');
+        return;
+      }
+      if(o.type==='combat'){
+        const target=o.target||combatSelect.value||'auto';
+        combatSelect.value=target;
+        objective={type:'combat',target,phase:'fight',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        resetTaskStats();
+        combatRow.style.display='flex';
+        resourceSelect.closest('#resourceRow').style.display='none';
+        saveObjective();
+        const label=target==='auto'?'safe automatic targets':target;
+        setBotStatus(`Combat started — targeting ${label} until you tell me to stop.`);
+        lastAction=0;
+        return;
+      }
+
+      if(o.type!=='woodcutting'){
+        objective=o;
+        setBotStatus(`I understand: ${o.type}. That training loop is not implemented yet.`);
+        return;
+      }
+
+      combatRow.style.display='none';
+      resourceSelect.closest('#resourceRow').style.display='flex';
+      const gp=globalPlayerTile();
+      const resource=o.resource || resourceSelect.value || 'auto';
+      objective={...o,resource,phase:'chop',home:{x:gp.x,y:gp.y},routeIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0}; lastAction=0;
+      resetTaskStats();
+      resourceSelect.value=resource;
+      const label=resource==='auto' ? 'best available trees' : `${resource} trees`;
+      const def=selectedTreeDefinition();
+      if(def && wcLevel()<def.level){
+        setBotStatus(`I understand: ${resource} trees. You need Woodcutting ${def.level}; current level is ${wcLevel()}.`);
+        return;
+      }
+      saveObjective();
+      setBotStatus(`Woodcutting started — targeting ${label} until you tell me to stop.`);
+    }
+    function tick(){
+      if(!objective){renderMetrics();return;}
+      renderMetrics();
+      if(!loggedIn()){setBotStatus('Objective waiting: create/login to your LOCAL character.');return;}
+      if(objective.type==='combat'){
+        combatTick();
+        return;
+      }
+
+      const lvl=wcLevel();
+      const max=Number(mc.inventoryMaxItemCount||30);
+      const used=inventorySlots();
+      const ids=Array.from(mc.inventoryItemId||[]).slice(0,used);
+      const hasAxe=ids.some(id=>[12,87,88,203,204,405,428].includes(Number(id)));
+      if(!hasAxe){
+        stop(`No woodcutting axe detected at Woodcutting ${lvl}.`);
+        return;
+      }
+      if(objective.phase==='resource-travel'){
+        advanceResourceTravel();
+        return;
+      }
+
+      if(objective.phase==='bank' || objective.phase==='bank-dialogue' || objective.phase==='bank-open'){
+        advanceBankRoute();
+        return;
+      }
+
+      if(objective.phase==='return'){
+        advanceReturnRoute();
+        return;
+      }
+
+      if(used>=max){
+        sessionStats.bankTrips++;renderMetrics();
+        objective.phase='bank';
+        objective.routeIndex=0;
+        objective.navRoute=makeRouteTo('draynorBank');
+        navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+        setBotStatus(`Woodcutting ${lvl} • inventory full • heading to bank`);
+        advanceBankRoute();
+        return;
+      }
+      if(objective.phase==='chop' && taskStalled(30000)){
+        objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+        if(objective.stallRecoveries>5){
+          stop(`Woodcutting stopped: unable to make progress after repeated recovery attempts.`);
+          return;
+        }
+        const wanted=desiredTreeType();
+        if(wanted!=='normal' && TREE_HUBS[wanted]){
+          beginResourceTravel();
+          setBotStatus(`Woodcutting ${lvl} • stalled • relocating for ${wanted}`);
+          return;
+        }
+        // Normal trees: move around the remembered training area and rescan.
+        const h=objective.home||globalPlayerTile();
+        const offsets=[[8,0],[0,8],[-8,0],[0,-8],[10,10],[-10,10]];
+        const off=offsets[(objective.stallRecoveries-1)%offsets.length];
+        shortStepToward({x:h.x+off[0],y:h.y+off[1]},12);
+        lastAction=Date.now();
+        return;
+      }
+
+      if(Date.now()-lastAction<1800) return;
+      const tree=bestTree();
+      if(!tree){
+        const def=selectedTreeDefinition();
+        if(def && lvl<def.level){
+          setBotStatus(`Woodcutting ${lvl} • ${def.name} requires level ${def.level}`);
+        }else{
+          const wanted=desiredTreeType();
+          if(wanted!=='normal' && TREE_HUBS[wanted]){
+            beginResourceTravel();
+            setBotStatus(`Woodcutting ${lvl} • no ${wanted} nearby • travelling to a known ${wanted} area`);
+          }else{
+            setBotStatus(`Woodcutting ${lvl} • searching for a normal tree nearby`);
+          }
+        }
+        return;
+      }
+      if(chop(tree)){
+        lastAction=Date.now();
+        setBotStatus(`Woodcutting ${lvl} • chopping ${tree.tree} tree • ${used}/${max} slots • ${logCount()} logs`);
+      }
+    }
+    document.getElementById('botForm').addEventListener('submit',e=>{e.preventDefault();start(botInput.value);});
+    document.getElementById('botStop').addEventListener('click',()=>stop('Objective stopped.'));
+    combatSelect.addEventListener('change',()=>{
+      try{localStorage.setItem('autoscape_combat_target',combatSelect.value);}catch(e){}
+      if(objective && objective.type==='combat'){
+        objective.target=combatSelect.value;
+        saveObjective();
+        const label=objective.target==='auto'?'safe automatic targets':objective.target;
+        setBotStatus(`Combat updated — targeting ${label}.`);
+      }
+    });
+
+    resourceSelect.addEventListener('change',()=>{
+      try{localStorage.setItem('autoscape_resource',resourceSelect.value);}catch(e){}
+      if(objective && objective.type==='woodcutting'){
+        objective.resource=resourceSelect.value;
+        objective.phase='chop';
+        objective.navRoute=[];
+        objective.routeIndex=0;
+        objective.searchIndex=0;
+        saveObjective();
+        const label=objective.resource==='auto'?'best available trees':`${objective.resource} trees`;
+        setBotStatus(`Woodcutting updated — targeting ${label}.`);
+      }
+    });
+    botTimer=setInterval(tick,600);
+    window.AutoScape={start,stop,get objective(){return objective;},mc};
+
+    // Auto-login remembered local account on future launches.
+    try{
+      const saved=JSON.parse(localStorage.getItem('autoscape_credentials')||'null');
+      if(saved && saved.u && saved.p){
+        botStatus.textContent='Remembered local account found — logging in…';
+        setTimeout(async()=>{
+          try{
+            if(!(mc.loggedIn===1)){
+              mc.loginUser=saved.u;
+              mc.loginPass=saved.p;
+              await mc.login(saved.u,saved.p,false);
+            }
+          }catch(e){ console.warn('Auto-login failed:',e); }
+        },700);
+      }
+    }catch(e){}
+
+    // Resume the last explicit job after login. "stop" clears this.
+    setTimeout(()=>{
+      try{
+        const savedJob=JSON.parse(localStorage.getItem('autoscape_job')||'null');
+        if(savedJob && savedJob.active && !objective){
+          if(savedJob.type==='woodcutting'){
+            const resource=savedJob.resource||'auto';
+            resourceSelect.value=resource;
+            combatRow.style.display='none';
+            resourceSelect.closest('#resourceRow').style.display='flex';
+            const gp=globalPlayerTile();
+            objective={type:'woodcutting',resource,phase:'chop',home:{x:gp.x,y:gp.y},routeIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+            resetTaskStats();
+            const label=resource==='auto'?'best available trees':`${resource} trees`;
+            setBotStatus(`Resumed Woodcutting — targeting ${label}. Say “stop” to end it.`);
+          }else if(savedJob.type==='combat'){
+            const target=savedJob.target||'auto';
+            combatSelect.value=target;
+            combatRow.style.display='flex';
+            resourceSelect.closest('#resourceRow').style.display='none';
+            objective={type:'combat',target,phase:'fight',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+            resetTaskStats();
+            const label=target==='auto'?'safe automatic targets':target;
+            setBotStatus(`Resumed Combat — targeting ${label}. Say “stop” to end it.`);
+          }
+        }
+      }catch(e){}
+    },2200);
+  }
+
+  async function boot(){
+    retry.style.display='none';
+    try{
+      say('Downloading local Classic server engine…');
+      const server=await fetchText(SERVER_URL,FALLBACK_SERVER,FALLBACK2_SERVER,'local Classic server');
+      // Upstream intentionally allows registration only on F2P worlds.
+      // AutoScape is a private local members world, so remove that registration-only guard.
+      let serverCode=server.text;
+      // Period-correct RuneScape Classic starter inventory:
+      // bronze axe (87), cookedmeat (132), tinderbox (166).
+      const starterInventory=[
+        { id: 87, amount: 1, equipped: false },
+        { id: 132, amount: 1, equipped: false },
+        { id: 166, amount: 1, equipped: false }
+      ];
+      serverCode=serverCode.replace(
+        'inventory: [],',
+        `inventory: ${JSON.stringify(starterInventory)},`
+      );
+
+      // One-time migration for accounts created in older AutoScape builds.
+      // It intentionally resets the current test inventory once to the authentic
+      // starter set, then stores a marker in the player's persistent cache.
+      serverCode=serverCode.replace(
+        /for \(const player of this\.players\.values\(\)\) \{\s*player\.world = 0;\s*\}/,
+        `for (const player of this.players.values()) {
+          player.world = 0;
+          if (!player.cache || typeof player.cache !== 'object') player.cache = {};
+          if (!player.cache.autoscapeAuthenticStarterV11) {
+            player.inventory = [
+              { id: 87, amount: 1, equipped: false },
+              { id: 132, amount: 1, equipped: false },
+              { id: 166, amount: 1, equipped: false }
+            ];
+            player.cache.autoscapeAuthenticStarterV11 = true;
+          }
+        }`
+      );
+      const beforeRegisterPatch=serverCode;
+      serverCode=serverCode.replace(
+        /if\s*\(socket\.server\.world\.members\)\s*\{\s*socket\.send\(Buffer\.from\(\[15\]\)\);\s*return;\s*\}/,
+        'if (false) { socket.send(Buffer.from([15])); return; }'
+      );
+      if(serverCode===beforeRegisterPatch){
+        console.warn('AutoScape: members-registration guard pattern was not found; trying compact bundle form');
+        serverCode=serverCode.replace(
+          /if\([^)]*\.world\.members\)\{[^{}]*Buffer\.from\(\[15\]\)[^{}]*return[^{}]*\}/,
+          'if(false){}'
+        );
+      }
+      const workerUrl=URL.createObjectURL(new Blob([serverCode],{type:'text/javascript'}));
+      worker=new Worker(workerUrl);
+      window.__AUTOSCAPE_SERVER__=worker;
+
+      say('Starting private local world…');
+      const ready=waitWorkerReady(worker);
+      worker.postMessage({type:'start',config:{
+        worldID:1,version:204,members:true,experienceRate:1,fatigue:false,
+        bankCertificates:true,rememberCombatStyle:true
+      }});
+      await ready;
+
+      say('Downloading authentic Classic web client…');
+      const client=await fetchText(CLIENT_URL,FALLBACK_CLIENT,FALLBACK2_CLIENT,'Classic client');
+      const patched=patchClient(client.text);
+
+      say('Launching Classic client…');
+      (0,eval)(patched+'\n//# sourceURL=autoscape-rsc-client.js');
+      const mc=await waitClient();
+
+      installBot(mc);
+      loader.style.display='none';
+      console.log('AutoScape Classic booted from',client.url,'with server',server.url);
+    }catch(e){
+      console.error(e);
+      say(`Boot failed.\n\n${e.message}\n\nThis build needs internet while starting so your phone can fetch the preservation client/server files.\n\nANDROID:\n1. Save this HTML to Downloads.\n2. In My Files / Files, long-press it and choose Open with.\n3. Choose Chrome or Samsung Internet (not the built-in document preview).\n4. Keep internet on for launch.`, 'bad');
+      retry.style.display='inline-block';
+    }
+  }
+
+  retry.addEventListener('click',()=>{
+    try{ if(worker) worker.terminate(); }catch(e){}
+    worker=null; window.__AUTOSCAPE_SERVER__=null; window.autoscapeClient=null;
+    boot();
+  });
+
+  boot();
+})();
+</script>
+<!-- AUTOSCAPE_STABLE_ORIGIN_V24_START -->
+<script>
+(function(){
+  'use strict';
+
+  // A stable HTTPS origin is the persistence fix. The upstream browser server
+  // already stores its complete player database in IndexedDB.
+  window.__AUTOSCAPE_STABLE_ORIGIN_V24__=true;
+
+  function localURL(name){
+    return new URL(name, window.location.href).href;
+  }
+
+  // Attach the manifest without being redirected by AutoScape's CDN <base> tag.
+  const manifest=document.createElement('link');
+  manifest.rel='manifest';
+  manifest.href=localURL('manifest.webmanifest');
+  document.head.appendChild(manifest);
+
+  // Register a runtime-cache service worker when served from HTTPS/localhost.
+  if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
+    navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
+      console.log('AutoScape v2.4 service worker registered',reg.scope);
+    }).catch(err=>{
+      console.warn('AutoScape service worker registration failed',err);
+    });
+  }
+
+  // Make storage mode visible for debugging.
+  window.addEventListener('load',()=>{
+    const stable=(location.protocol==='https:' || location.hostname==='localhost');
+    console.log('AutoScape storage origin:', location.origin, 'stable:', stable);
+    if(!stable){
+      console.warn('AutoScape: character saves are not considered durable while launched from file:. Host this as index.html on one stable HTTPS origin.');
+    }
+  });
+})();
+</script>
+<!-- AUTOSCAPE_STABLE_ORIGIN_V24_END -->
+</body>
+</html>
