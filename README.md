@@ -17,10 +17,14 @@ For reliable character saves, always use the same HTTPS address. Opening a
 downloaded `index.html` file directly creates a different, less durable storage
 origin.
 
-AutoScape v2.7.1 commits a new account to IndexedDB immediately and checkpoints
+AutoScape v2.8 commits a new account to IndexedDB immediately and checkpoints
 active characters every 15 seconds. A normal logout also saves. Browser storage
 remains device- and browser-profile-specific, so private/incognito windows and a
 different browser do not share the same local character database.
+
+The v2.8 saver clones skill data before removing database-only fields, preventing
+live levels from being mutated. Accounts affected by v2.7.1 rebuild base levels
+from stored experience on login and repair invalid current levels automatically.
 
 ## Install on a phone
 
@@ -56,3 +60,9 @@ preferences are saved locally and resume after login. Automated world actions
 are paced and no longer draw false click crosses at the user's last pointer
 position. Touch devices also get drag camera rotation, persistent pinch zoom,
 tap-again-to-close HUD tabs, and equipped-item-safe Quick Bank controls.
+
+Commands can be chained with commas, semicolons, arrows, or `then`, for example
+`chop wood, firemake the logs`. Queued gathering steps fill the inventory without
+banking before the next step begins. Command queues persist across login. Fatigue
+is disabled, and players move at twice the original Classic walking speed while
+NPC, combat, resource, and world timers retain their normal cadence.
