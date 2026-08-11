@@ -6,7 +6,8 @@ the browser on the site where the game is hosted.
 
 ## Play
 
-Open the GitHub Pages deployment in Chrome, Edge, or Samsung Internet. The first
+Open [the playable GitHub Pages build](https://blobeyesti2005-creator.github.io/autoscape1/)
+in Chrome, Edge, or Samsung Internet. The first
 launch needs an internet connection to download the preservation client and
 server. After the first successful launch, reload once while still online so the
 service worker can verify its cache. Later launches can then work offline when
@@ -28,9 +29,18 @@ development).
 
 ## Automated skills
 
-- Woodcutting: normal, oak, willow, maple, yew, and magic trees
-- Mining: copper, tin, iron, coal, and gold with automatic mine travel and banking
-- Combat: safe automatic targeting or chickens, cows, and goblins
+- Woodcutting: normal, oak, willow, maple, yew, and magic trees. Each tree stays
+  active for a short type-specific window, allowing multiple successful logs
+  before its authentic respawn delay begins.
+- Mining: copper, tin, iron, coal, and gold with repaired ore rewards, timed
+  multi-yield veins, automatic mine travel, and banking.
+- Combat: safe automatic progression or rats, chickens, cows, men, goblins,
+  dark wizards, barbarians, dwarves, and guards.
+- Loot: native ground-item pickup with F2P, valuable-only, all, and leave-drop
+  filters. Collected loot is banked before food is restocked.
 
 Commands accept natural phrases such as `mine iron`, `get coal`, `cut willows`,
-or `train combat`. Active jobs are saved locally and resume after login.
+`fight barbarians`, `kill guards`, or `train combat`. Active jobs and loot
+preferences are saved locally and resume after login. Automated world actions
+are paced and no longer draw false click crosses at the user's last pointer
+position.
