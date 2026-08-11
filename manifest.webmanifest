@@ -1,0 +1,20 @@
+{
+  "name": "AutoScape Classic",
+  "short_name": "AutoScape",
+  "description": "A private local Classic world with built-in automation.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0b08",
+  "theme_color": "#29251b",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
