@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.7.1 — Private Local World</title>
+<title>AutoScape Classic v2.8 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -58,7 +58,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.7.1</h2>
+<h2>AUTOSCAPE CLASSIC v2.8</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -117,10 +117,10 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 </select>
 </div>
 <form id="botForm">
-<input id="botInput" value="cut trees" autocomplete="off" autocapitalize="off" spellcheck="false">
+<input id="botInput" value="chop wood, firemake the logs" autocomplete="off" autocapitalize="off" spellcheck="false">
 <button type="submit">Run</button><button type="button" id="botStop">Stop</button>
 </form>
-<div id="botNote">Try “cut oaks”, “mine iron”, “fight barbarians”, “burn logs”, or “stop”. Resources stay active briefly for multiple gathers.</div>
+<div id="botNote">Chain steps with commas or “then”: “chop wood, firemake the logs”. Stop cancels the whole queue.</div>
 </div>
 <div id="guidePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
 <button id="guideClose" type="button">Close</button>
@@ -156,8 +156,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <h3>Starter kit and safe banking</h3><p>New characters receive a bronze axe <strong>87</strong>, cooked meat <strong>132</strong>, tinderbox <strong>166</strong>, and bronze pickaxe <strong>156</strong>. Existing accounts are preserved. Quick Bank's Gathered and Loot buttons skip equipped items; Carried deposits every unequipped stack intentionally.</p></section>
 <section class="guideEntry" data-guide="item items ids reference loot drops equipment runes ores logs food tools">
 <h3>Supported item reference</h3><table><thead><tr><th>Item ID</th><th>Name</th></tr></thead><tbody id="guideItems"></tbody></table></section>
-<section class="guideEntry" data-guide="commands bot natural language jobs">
-<h3>Useful commands</h3><p><code>cut oaks</code> · <code>mine iron</code> · <code>fight dark wizards</code> · <code>kill guards</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Only one root objective runs at once. Explicit jobs persist locally and resume after login.</p></section>
+<section class="guideEntry" data-guide="commands bot natural language jobs queue chain then comma">
+<h3>Useful commands</h3><p><code>cut oaks</code> · <code>mine iron</code> · <code>fight dark wizards</code> · <code>kill guards</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Example: <code>chop wood, firemake the logs</code>. A queued gathering step fills the inventory without banking, then the next step starts automatically. The current step and remaining queue persist locally after login.</p></section>
 </div>
 <script>
 'use strict';
@@ -192,6 +192,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   const lootSelect=document.getElementById('lootSelect');
 
   let worker=null, objective=null, botTimer=null, lastAction=0;
+  let commandQueue=[],activeCommandText='';
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,eats:0,chops:0,mines:0,fires:0,loot:0,bankTrips:0,deposits:0};
 
@@ -212,6 +213,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     if(objective.type==='mining')parts.push(`${sessionStats.mines} swings`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='firemaking')parts.push(`${sessionStats.fires} fires lit`,`${sessionStats.chops} chop attempts`,`${metricNormalLogCount()} logs held`);
     if(objective.type==='combat')parts.push(`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`);
+    if(commandQueue.length)parts.push(`${commandQueue.length} queued`);
     parts.push(`phase ${objective.phase||'idle'}`);
     if(objective.stallRecoveries)parts.push(`${objective.stallRecoveries} recoveries`);
     botMetrics.textContent=parts.join(' • ');
@@ -272,6 +274,17 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     rep(/if\s*\(this\.mouseActionTimeout\s*>\s*4500\s*&&\s*this\.combatTimeout\s*===\s*0\s*&&\s*this\.logoutTimeout\s*===\s*0\)\s*\{\s*this\.mouseActionTimeout\s*-=\s*500;\s*this\.sendLogout\(\);\s*return;\s*\}/,
         '');
     if(code===beforeInactivityPatch) throw new Error('Client patch failed: could not disable inactivity logout.');
+    // Match the server's two-tile movement cadence. NPC interpolation remains
+    // authentic; only player waypoints animate at double speed.
+    const beforeMovementPatch=code;
+    rep(/let j5 = 4;/,'let j5 = 8; // AutoScape: 2x player movement');
+    if(code===beforeMovementPatch) throw new Error('Client patch failed: could not enable 2x player movement.');
+    // The local server never applies fatigue in AutoScape. Replace the stale
+    // Classic percentage so the stats panel accurately reports that state.
+    const beforeFatigueUIPatch=code;
+    rep(/`Fatigue: @yel@\$\{\(\(this\.statFatigue \* 100\) \/ 750\) \| 0\}%`/,
+        "'Fatigue: @gre@Disabled'");
+    if(code===beforeFatigueUIPatch) throw new Error('Client patch failed: could not replace fatigue display.');
     // The upstream client installs either touch listeners or mouse listeners at
     // startup. Forcing mobile mode on every device made desktop canvas clicks
     // invisible. Select touch mode only when the browser's primary pointer is
@@ -542,6 +555,89 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         }`;
     if(!code.includes(emptySave))throw new Error('Server persistence patch failed: empty save loop changed.');
     code=code.replace(emptySave,durableEmptySave);
+    return code;
+  }
+
+  // Repair upstream gameplay-state edge cases exposed by frequent browser
+  // saves, remove fatigue completely, and let players consume two validated
+  // path steps per world movement tick. NPCs and combat keep normal timing.
+  function patchServerGameplay(code){
+    const skillInit=`        this.skills = playerData.skills;
+
+        for (const skillName of Object.keys(this.skills)) {
+            this.skills[skillName].base = experienceToLevel(
+                this.skills[skillName].experience
+            );
+        }`;
+    const repairedSkillInit=`        this.skills = playerData.skills;
+
+        for (const skillName of Object.keys(this.skills)) {
+            const skill = this.skills[skillName];
+            skill.base = experienceToLevel(skill.experience);
+            if (!Number.isFinite(skill.current)) {
+                skill.current = skill.base;
+            }
+        }`;
+    if(!code.includes(skillInit))throw new Error('Server gameplay patch failed: skill initialization changed.');
+    code=code.replace(skillInit,repairedSkillInit);
+
+    const saveSkills=`        message = { ...message, ...this.appearance };
+
+        for (const skillName of Object.keys(message.skills)) {`;
+    const safeSaveSkills=`        message = { ...message, ...this.appearance };
+
+        // Never delete base levels from the live Player skills object.
+        message.skills = Object.fromEntries(
+            Object.entries(this.skills).map(([skillName, skill]) => {
+                return [skillName, { ...skill }];
+            })
+        );
+
+        for (const skillName of Object.keys(message.skills)) {`;
+    if(!code.includes(saveSkills))throw new Error('Server gameplay patch failed: skill save block changed.');
+    code=code.replace(saveSkills,safeSaveSkills);
+
+    const storedFatigue='        this.fatigue = playerData.fatigue;';
+    if(!code.includes(storedFatigue))throw new Error('Server gameplay patch failed: fatigue initialization changed.');
+    code=code.replace(storedFatigue,'        this.fatigue = 0; // AutoScape has unlimited energy');
+
+    const fatigueExperience='        if (useFatigue) {';
+    if(!code.includes(fatigueExperience))throw new Error('Server gameplay patch failed: fatigue XP block changed.');
+    code=code.replace(fatigueExperience,'        if (false && useFatigue) {');
+
+    const normalMovement=`        if (this.walkQueue.length && !this.locked) {
+            const { deltaX, deltaY } = this.walkQueue.shift();
+
+            if (this.canWalk(deltaX, deltaY)) {
+                this.walkTo(deltaX, deltaY);
+            } else {
+                this.following = null;
+                this.walkQueue.length = 0;
+                this.faceDirection(deltaX * -1, deltaY * -1);
+            }
+        }`;
+    const fastMovement=`        for (
+            let autoscapeStep = 0;
+            autoscapeStep < 2 && this.walkQueue.length && !this.locked;
+            autoscapeStep += 1
+        ) {
+            const { deltaX, deltaY } = this.walkQueue.shift();
+
+            if (this.canWalk(deltaX, deltaY)) {
+                if (autoscapeStep > 0) {
+                    this.isWalking = false;
+                    this.moveTick = 0;
+                }
+                this.walkTo(deltaX, deltaY);
+            } else {
+                this.following = null;
+                this.walkQueue.length = 0;
+                this.faceDirection(deltaX * -1, deltaY * -1);
+                break;
+            }
+        }`;
+    if(!code.includes(normalMovement))throw new Error('Server gameplay patch failed: player movement block changed.');
+    code=code.replace(normalMovement,fastMovement);
     return code;
   }
 
@@ -1312,7 +1408,10 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       sessionStats.actions++;sessionStats.chops++;markProgress('chop');renderMetrics();
       return true;
     }
-    function setBotStatus(s){ botStatus.textContent=s; }
+    function setBotStatus(s){
+      const queued=commandQueue.length?` • Queue: ${commandQueue.length} next`:'';
+      botStatus.textContent=`${s}${queued}`;
+    }
 
     function saveObjective(){
       try{
@@ -1323,6 +1422,9 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             supply:objective.supply||'held',
             target:objective.target||'auto',
             lootMode:lootSelect.value||'f2p',
+            commandText:objective.commandText||activeCommandText||'',
+            chainAdvance:!!objective.chainAdvance,
+            queue:[...commandQueue],
             active:true
           };
           localStorage.setItem('autoscape_job',JSON.stringify(saved));
@@ -1335,14 +1437,35 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       }catch(e){}
     }
 
-    function stop(msg){
-      objective=null;
-      saveObjective();
+    function resetObjectiveControls(){
       combatRow.style.display='none';
       lootRow.style.display='none';
       miningRow.style.display='none';
       resourceSelect.closest('#resourceRow').style.display='flex';
+    }
+
+    function stop(msg){
+      objective=null;
+      commandQueue=[];
+      activeCommandText='';
+      saveObjective();
+      resetObjectiveControls();
       setBotStatus(msg||'Stopped.');
+    }
+
+    function finishObjective(msg){
+      const next=commandQueue.shift();
+      objective=null;
+      if(!next){
+        activeCommandText='';
+        saveObjective();
+        resetObjectiveControls();
+        setBotStatus(msg||'Command complete.');
+        return;
+      }
+      activeCommandText=next;
+      setBotStatus(`${msg||'Command complete.'} • Starting “${next}”`);
+      runCommand(next);
     }
     const FOOD_HEALS={"18":1,"132":3,"138":4,"179":5,"228":1,"249":2,"257":5,"258":3,"259":4,"261":4,"262":3,"263":5,"319":2,"320":2,"325":10,"326":7,"327":8,"328":7,"329":8,"330":4,"332":5,"333":4,"334":5,"335":4,"336":5,"337":2,"346":9,"350":2,"352":2,"355":4,"357":9,"359":7,"362":5,"364":8,"367":10,"370":14,"373":12,"422":10,"546":20,"551":7,"553":6,"555":13,"590":14,"677":10,"709":19,"749":2,"750":10,"751":10,"765":1,"855":1,"856":1,"857":1,"858":1,"859":1,"860":1,"861":2,"863":1,"864":1,"865":1,"923":19,"924":19,"1061":4,"1102":19,"1103":8,"1191":21,"1193":20,"1245":2,"1269":8};
     function inventoryFood(){
@@ -2086,8 +2209,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       // Firemaking must be recognized before the generic "logs" woodcutting
       // synonym. Classic uses regular logs only: drop one, then use a
       // tinderbox on the ground item.
-      if(hasAny(t,['firemaking','fire making','light fire','light fires','make fire','make fires','burn log','burn logs'])){
-        const finite=hasAny(t,['light fire','light fires','burn log','burn logs']);
+      if(hasAny(t,['firemaking','fire making','firemake','firemake logs','firemake the logs','light fire','light fires','light logs','make fire','make fires','burn log','burn logs'])){
+        const finite=hasAny(t,['firemake','light fire','light fires','light logs','burn log','burn logs']);
         return {type:'firemaking',supply:finite?'held':'gather'};
       }
 
@@ -2160,8 +2283,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       return null;
     }
 
-    function start(s){
-      const o=parse(s);
+    function startSingle(s,intent){
+      const o=intent||parse(s);
       if(!o){
         setBotStatus('I did not understand that yet. Try natural phrases like “cut trees”, “get wood”, “train combat”, or “stop”.');
         return;
@@ -2236,17 +2359,76 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       const label=resource==='auto' ? 'best available trees' : `${resource} trees`;
       const def=selectedTreeDefinition();
       if(def && wcLevel()<def.level){
+        objective=null;
         setBotStatus(`I understand: ${resource} trees. You need Woodcutting ${def.level}; current level is ${wcLevel()}.`);
         return;
       }
       saveObjective();
       setBotStatus(`Woodcutting started — targeting ${label} until you tell me to stop.`);
     }
+
+    function splitCommandChain(s){
+      return String(s||'')
+        .split(/\s*(?:,|;|->|→|\bthen\b)\s*/i)
+        .map(part=>part.trim())
+        .filter(Boolean);
+    }
+
+    function runCommand(text){
+      activeCommandText=String(text||'').trim();
+      let intent=parse(activeCommandText);
+      if(!intent){
+        stop(`I did not understand “${activeCommandText}”. The command queue was canceled.`);
+        return false;
+      }
+      if(intent.type==='stop'){
+        stop('Stopped and cleared the command queue.');
+        return true;
+      }
+      if(!['woodcutting','mining','combat','firemaking'].includes(intent.type)){
+        stop(`I understand “${activeCommandText}” as ${intent.type}, but that loop is not implemented yet. The command queue was canceled.`);
+        return false;
+      }
+
+      // Classic Firemaking accepts regular logs only. If a generic woodcutting
+      // step feeds a Firemaking step, force normal trees so the chain is valid.
+      const nextIntent=commandQueue.length?parse(commandQueue[0]):null;
+      if(intent.type==='woodcutting'&&!intent.resource&&nextIntent?.type==='firemaking'){
+        intent={...intent,resource:'normal'};
+      }
+
+      objective=null;
+      startSingle(activeCommandText,intent);
+      if(!objective){
+        const reason=String(botStatus.textContent||'Command could not start').split(' • Queue:')[0];
+        stop(`${reason} The command queue was canceled.`);
+        return false;
+      }
+      objective.commandText=activeCommandText;
+      objective.chainAdvance=commandQueue.length>0;
+      saveObjective();
+      return true;
+    }
+
+    function start(s){
+      const commands=splitCommandChain(s);
+      if(!commands.length){
+        stop('Enter a command such as “chop wood, firemake the logs”.');
+        return;
+      }
+      commandQueue=commands.slice(1);
+      runCommand(commands[0]);
+    }
+
     function miningTick(){
       const lvl=miningLevel(),max=Number(mc.inventoryMaxItemCount||30),used=inventorySlots();
       const ids=Array.from(mc.inventoryItemId||[]).slice(0,used);
       if(!ids.some(id=>PICKAXE_IDS.has(Number(id)))){stop(`No pickaxe detected at Mining ${lvl}.`);return;}
       if(used>=max){
+        if(objective.chainAdvance){
+          finishObjective(`Mining step complete • inventory filled at Mining ${lvl}.`);
+          return;
+        }
         sessionStats.bankTrips++;objective.phase='bank';objective.routeIndex=0;objective.navRoute=makeRouteTo('draynorBank');
         navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};lastAction=0;advanceBankRoute();return;
       }
@@ -2322,7 +2504,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             setBotStatus(`Firemaking ${level} • no regular logs held • chopping another`);
             return;
           }
-          stop(`Firemaking complete • ${sessionStats.fires} fire${sessionStats.fires===1?'':'s'} lit • no regular logs left.`);
+          finishObjective(`Firemaking complete • ${sessionStats.fires} fire${sessionStats.fires===1?'':'s'} lit • no regular logs left.`);
           return;
         }
         if(now-lastAction<ACTION_INTERVALS.gather)return;
@@ -2439,6 +2621,10 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       }
 
       if(used>=max){
+        if(objective.chainAdvance){
+          finishObjective(`Woodcutting step complete • inventory filled at Woodcutting ${lvl}.`);
+          return;
+        }
         sessionStats.bankTrips++;renderMetrics();
         objective.phase='bank';
         objective.routeIndex=0;
@@ -2539,7 +2725,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     metricNormalLogCount=normalLogCount;
     installSessionAndMobileUX();
     botTimer=setInterval(tick,600);
-    window.AutoScape={start,stop,get objective(){return objective;},mc};
+    window.AutoScape={start,stop,get objective(){return objective;},get queue(){return [...commandQueue];},mc};
 
     // Auto-login remembered local account on future launches.
     try{
@@ -2563,6 +2749,9 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       try{
         const savedJob=JSON.parse(localStorage.getItem('autoscape_job')||'null');
         if(savedJob && savedJob.active && !objective){
+          commandQueue=Array.isArray(savedJob.queue)?savedJob.queue.filter(item=>typeof item==='string'&&item.trim()):[];
+          activeCommandText=String(savedJob.commandText||savedJob.type||'');
+          const resumeChain={commandText:activeCommandText,chainAdvance:!!savedJob.chainAdvance&&commandQueue.length>0};
           if(savedJob.type==='woodcutting'){
             const resource=savedJob.resource||'auto';
             resourceSelect.value=resource;
@@ -2570,14 +2759,14 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             lootRow.style.display='none';
             resourceSelect.closest('#resourceRow').style.display='flex';
             const gp=globalPlayerTile();
-            objective={type:'woodcutting',resource,phase:'chop',home:{x:gp.x,y:gp.y},routeIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+            objective={type:'woodcutting',resource,phase:'chop',home:{x:gp.x,y:gp.y},routeIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
             resetTaskStats();
             const label=resource==='auto'?'best available trees':`${resource} trees`;
             setBotStatus(`Resumed Woodcutting — targeting ${label}. Say “stop” to end it.`);
           }else if(savedJob.type==='mining'){
             const resource=savedJob.resource||'auto';miningSelect.value=resource;
             combatRow.style.display='none';lootRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='flex';
-            const gp=globalPlayerTile();objective={type:'mining',resource,phase:'mining-travel',home:{x:gp.x,y:gp.y},navRoute:makeRouteTo(resource==='coal'?'barbarianVillage':'rimmington'),routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+            const gp=globalPlayerTile();objective={type:'mining',resource,phase:'mining-travel',home:{x:gp.x,y:gp.y},navRoute:makeRouteTo(resource==='coal'?'barbarianVillage':'rimmington'),routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
             resetTaskStats();setBotStatus(`Resumed Mining — targeting ${resource==='auto'?'best available ore':resource}. Say “stop” to end it.`);
           }else if(savedJob.type==='combat'){
             const target=savedJob.target||'auto';
@@ -2587,7 +2776,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             lootRow.style.display='flex';
             resourceSelect.closest('#resourceRow').style.display='none';
             miningRow.style.display='none';
-            objective={type:'combat',target,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+            objective={type:'combat',target,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
             resetTaskStats();
             const label=target==='auto'?'safe automatic targets':target;
             setBotStatus(`Resumed Combat — targeting ${label}. Say “stop” to end it.`);
@@ -2598,13 +2787,15 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             const canGather=supply==='gather'&&ids.some(id=>[12,87,88,203,204,405,428].includes(Number(id)));
             if(tinderboxSlot()>=0&&(normalLogCount()>0||canGather)){
               const gp=globalPlayerTile();
-              objective={type:'firemaking',resource:'normal',supply,phase:normalLogCount()>0?'fm-drop':'fm-chop',home:{x:gp.x,y:gp.y},navRoute:[],routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,moveIndex:0};
+              objective={type:'firemaking',resource:'normal',supply,phase:normalLogCount()>0?'fm-drop':'fm-chop',home:{x:gp.x,y:gp.y},navRoute:[],routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,moveIndex:0,...resumeChain};
               resetTaskStats();
               setBotStatus(supply==='gather'?`Resumed continuous Firemaking at level ${Number(mc.playerStatBase?.[11]||1)}. Say “stop” to end it.`:`Resumed Firemaking — ${normalLogCount()} regular logs ready. Say “stop” to end it.`);
             }else{
-              localStorage.removeItem('autoscape_job');
-              resourceSelect.closest('#resourceRow').style.display='flex';
-              setBotStatus(tinderboxSlot()<0?'Saved Firemaking job needs a tinderbox.':(supply==='gather'?'Saved continuous Firemaking job needs a woodcutting axe.':'Saved Firemaking job finished: no regular logs remain.'));
+              if(tinderboxSlot()>=0&&supply==='held'&&normalLogCount()<=0){
+                finishObjective('Saved Firemaking step complete • no regular logs remain.');
+              }else{
+                stop(tinderboxSlot()<0?'Saved Firemaking job needs a tinderbox; its queue was canceled.':'Saved continuous Firemaking job needs a woodcutting axe; its queue was canceled.');
+              }
             }
           }
         }
@@ -2619,7 +2810,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       const server=await fetchText(SERVER_URL,FALLBACK_SERVER,FALLBACK2_SERVER,'local Classic server');
       // Upstream intentionally allows registration only on F2P worlds.
       // AutoScape is a private local members world, so remove that registration-only guard.
-      let serverCode=patchServerPersistence(patchServerResources(server.text));
+      let serverCode=patchServerGameplay(patchServerPersistence(patchServerResources(server.text)));
       // Period-correct RuneScape Classic starter inventory:
       // bronze axe (87), cookedmeat (132), tinderbox (166), bronze pickaxe (156).
       const starterInventory=[
@@ -2693,7 +2884,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.7.1 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.8 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThis build needs internet while starting so your phone can fetch the preservation client/server files.\n\nANDROID:\n1. Save this HTML to Downloads.\n2. In My Files / Files, long-press it and choose Open with.\n3. Choose Chrome or Samsung Internet (not the built-in document preview).\n4. Keep internet on for launch.`, 'bad');
@@ -2732,7 +2923,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.7.1 service worker registered',reg.scope);
+      console.log('AutoScape v2.8 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });
