@@ -17,7 +17,7 @@ For reliable character saves, always use the same HTTPS address. Opening a
 downloaded `index.html` file directly creates a different, less durable storage
 origin.
 
-AutoScape v2.9 commits a new account to IndexedDB immediately and checkpoints
+AutoScape v2.10 commits a new account to IndexedDB immediately and checkpoints
 active characters every 15 seconds. A normal logout also saves. Browser storage
 remains device- and browser-profile-specific, so private/incognito windows and a
 different browser do not share the same local character database.
@@ -48,15 +48,22 @@ development).
   consumes held logs; `train firemaking` continuously chops and burns.
 - Combat: safe automatic progression plus selectable rats, chickens, imps,
   cows, men, muggers, goblins, dark wizards, highwaymen, barbarians, wizards,
-  dwarves, skeletons, bears, pirates, guards, and hobgoblins.
+  dwarves, skeletons, bears, pirates, guards, and hobgoblins. Combat commands
+  and controls select Controlled, Strength, Attack, or Defence XP. Banking can
+  be disabled for fight-to-the-death runs.
 - Loot: native ground-item pickup with F2P, valuable-only, all, and leave-drop
-  filters. Collected loot is banked before food is restocked.
+  filters. Collected loot is banked before food is restocked when combat
+  banking is enabled.
+- Banking: gathering and combat choose the nearest supported bank instead of
+  always travelling to Draynor. This private world includes a Lumbridge banker;
+  banker interaction follows native action pathing and waits for dialogue.
 - Guide: an in-game searchable reference for resource levels and timers,
   supported NPC combat targets, notable native drops, item IDs, starter tools,
   commands, and Classic Firemaking behavior.
 
 Commands accept natural phrases such as `mine iron`, `get coal`, `cut willows`,
-`fight barbarians`, `burn logs`, `train firemaking`, `kill guards`, or `train combat`.
+`fight barbarians`, `train strength on chickens`, `fight chickens to the death`,
+`burn logs`, `train firemaking`, `kill guards`, or `train combat`.
 Quantities are supported too: `chop 10 logs`, `mine 20 iron ore`, and
 `kill 5 skeletons` complete only after confirmed results. Active jobs, quantity
 progress, queues, and loot preferences are saved locally and resume after login.
@@ -64,6 +71,11 @@ Automated world actions are paced and no longer draw false click crosses at the
 user's last pointer position. Touch devices also get drag camera rotation,
 persistent pinch zoom, tap-again-to-close HUD tabs, and equipped-item-safe Quick
 Bank controls.
+
+The bot loop avoids repeated unchanged DOM writes, checks the Quick Bank state
+less often, uses shorter collision-aware navigation steps, and recovers only
+after confirmed movement stalls. These changes reduce avoidable browser work
+and route packet churn.
 
 Commands can be chained with commas, semicolons, arrows, or `then`, for example
 `chop 10 logs, then firemake them`. Unnumbered queued gathering steps fill the
