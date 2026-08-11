@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_VERSION = 'autoscape-v2.5';
+const CACHE_VERSION = 'autoscape-v2.5.1';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {
