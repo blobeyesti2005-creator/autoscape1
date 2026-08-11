@@ -4,16 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.5.1 — Private Local World</title>
+<title>AutoScape Classic v2.7 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
 #game-host{position:absolute;left:50%;top:50%;width:512px;height:346px;transform-origin:center center}
 #game-host>div{width:512px!important;height:346px!important}
 #game-host canvas{display:block;width:512px!important;height:346px!important;image-rendering:pixelated;touch-action:none}
-#fsBtn,#botToggle{position:fixed;z-index:8500;top:max(6px,env(safe-area-inset-top));padding:8px 10px;background:rgba(36,31,22,.88);color:#fff;border:1px solid #9f8657;font-size:12px}
+#fsBtn,#botToggle,#guideBtn{position:fixed;z-index:8500;top:max(6px,env(safe-area-inset-top));padding:8px 10px;background:rgba(36,31,22,.88);color:#fff;border:1px solid #9f8657;font-size:12px}
 #fsBtn{right:6px}
 #botToggle{right:92px}
+#guideBtn{left:6px}
 #loader{position:fixed;inset:0;z-index:9999;background:#0b0b08;display:flex;align-items:center;justify-content:center;padding:18px}
 #loaderCard{width:min(560px,94vw);background:#29251b;border:2px solid #8b7650;padding:14px}
 #loader h2{margin:0 0 8px;color:#f2cf72;font-size:20px}
@@ -33,22 +34,37 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #combatRow{display:none;gap:5px;align-items:center;margin:4px 0}
 #combatRow label{color:#cdbb98;white-space:nowrap}
 #combatSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
+#lootRow{display:none;gap:5px;align-items:center;margin:4px 0}
+#lootRow label{color:#cdbb98;white-space:nowrap}
+#lootSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
 #bot button{background:#655438;color:#fff;border:1px solid #9f8657;padding:8px 10px}
 #botNote{font-size:9px;color:#b8aa8e;margin-top:3px}
 .bad{color:#ff9a8f}.good{color:#aee59f}
 
 #botMetrics{font-size:11px;color:#aaa;margin-top:3px;min-height:14px}
+#guidePanel{position:fixed;z-index:9300;inset:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));overflow:auto;background:rgba(24,21,15,.985);border:2px solid #9f8657;padding:12px;color:#eee;font-size:12px;line-height:1.45}
+#guidePanel h2{margin:0;color:#ffd875;font-size:19px}
+#guidePanel h3{color:#e5c777;margin:14px 0 5px;font-size:14px}
+#guidePanel p{margin:5px 0;color:#cfc4ad}
+#guidePanel table{width:100%;border-collapse:collapse;margin:6px 0 12px}
+#guidePanel th,#guidePanel td{border:1px solid #5f523a;padding:5px;text-align:left;vertical-align:top}
+#guidePanel th{background:#4a3e29;color:#ffe3a0;position:sticky;top:0}
+#guidePanel code{color:#bce7a8}
+#guideClose{float:right;background:#655438;color:#fff;border:1px solid #b79b68;padding:7px 11px}
+#guideSearch{box-sizing:border-box;width:100%;margin:9px 0 4px;background:#090909;color:#fff;border:1px solid #8b7650;padding:8px}
+.guideEntry[hidden]{display:none}
 </style>
 </head>
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.5.1</h2>
+<h2>AUTOSCAPE CLASSIC v2.7</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
 <button id="botToggle" style="display:none">Bot</button>
 <button id="fsBtn" style="display:none">Fullscreen</button>
+<button id="guideBtn" style="display:none">Guide</button>
 <div id="bot" style="display:none">
 <div id="botTitle">AUTOSCAPE BOT</div>
 <div id="botStatus">Log in or create a local character, then run one objective.</div>
@@ -80,16 +96,68 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <label for="combatSelect">Combat target</label>
 <select id="combatSelect">
 <option value="auto">Safe automatic</option>
-<option value="chicken">Chicken</option>
-<option value="cow">Cow</option>
-<option value="goblin">Goblin</option>
+<option value="rat">Rat (Lv 2)</option>
+<option value="chicken">Chicken (Lv 3)</option>
+<option value="cow">Cow (Lv 8)</option>
+<option value="man">Man (Lv 9)</option>
+<option value="goblin">Goblin (Lv 13)</option>
+<option value="darkwizard">Dark wizard (Lv 13)</option>
+<option value="barbarian">Barbarian (Lv 16)</option>
+<option value="dwarf">Dwarf (Lv 18)</option>
+<option value="guard">Guard (Lv 28)</option>
+</select>
+</div>
+<div id="lootRow">
+<label for="lootSelect">Loot</label>
+<select id="lootSelect">
+<option value="f2p">F2P drops</option>
+<option value="valuable">Coins, runes &amp; valuables</option>
+<option value="all">All drops</option>
+<option value="none">Leave drops</option>
 </select>
 </div>
 <form id="botForm">
 <input id="botInput" value="cut trees" autocomplete="off" autocapitalize="off" spellcheck="false">
 <button type="submit">Run</button><button type="button" id="botStop">Stop</button>
 </form>
-<div id="botNote">Try “cut oaks”, “mine iron”, “get coal”, “train combat”, or “stop”. Jobs continue until stopped.</div>
+<div id="botNote">Try “cut oaks”, “mine iron”, “fight barbarians”, “burn logs”, or “stop”. Resources stay active briefly for multiple gathers.</div>
+</div>
+<div id="guidePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+<button id="guideClose" type="button">Close</button>
+<h2 id="guideTitle">AutoScape Classic Guide</h2>
+<p>Search the systems currently supported by the bot. Drop names below are notable drops from the preservation world's native tables; exact rolls still happen on the server.</p>
+<input id="guideSearch" type="search" placeholder="Search monsters, drops, resources, or item IDs…" autocomplete="off">
+<section class="guideEntry" data-guide="woodcutting trees logs resource levels timers">
+<h3>Woodcutting resources</h3>
+<table><thead><tr><th>Tree</th><th>Level</th><th>Log ID</th><th>Active before depletion</th></tr></thead><tbody>
+<tr><td>Normal</td><td>1</td><td>14</td><td>18 seconds</td></tr><tr><td>Oak</td><td>15</td><td>632</td><td>24 seconds</td></tr><tr><td>Willow</td><td>30</td><td>633</td><td>30 seconds</td></tr><tr><td>Maple</td><td>45</td><td>634</td><td>36 seconds</td></tr><tr><td>Yew</td><td>60</td><td>635</td><td>42 seconds</td></tr><tr><td>Magic</td><td>75</td><td>636</td><td>48 seconds</td></tr>
+</tbody></table></section>
+<section class="guideEntry" data-guide="mining ores rocks resource levels timers copper tin iron coal gold">
+<h3>Mining resources</h3>
+<table><thead><tr><th>Ore</th><th>Level</th><th>Item ID</th><th>Active before depletion</th></tr></thead><tbody>
+<tr><td>Copper</td><td>1</td><td>150</td><td>22 seconds</td></tr><tr><td>Tin</td><td>1</td><td>202</td><td>22 seconds</td></tr><tr><td>Iron</td><td>15</td><td>151</td><td>26 seconds</td></tr><tr><td>Coal</td><td>30</td><td>155</td><td>32 seconds</td></tr><tr><td>Gold</td><td>40</td><td>152</td><td>38 seconds</td></tr>
+</tbody></table></section>
+<section class="guideEntry" data-guide="firemaking tinderbox regular logs fire item ashes ids burn light">
+<h3>Firemaking</h3><p>RuneScape Classic lights <strong>regular logs only</strong>: drop item <strong>14</strong>, then use tinderbox <strong>166</strong> on the ground log. <code>burn logs</code> consumes the regular logs already held; <code>train firemaking</code> continuously chops regular trees and burns the logs. AutoScape retries failed rolls and moves off each fire. Fires use object <strong>97</strong> and eventually leave ashes <strong>181</strong>.</p></section>
+<section class="guideEntry" data-guide="monsters npcs combat drops rat chicken cow man goblin dark wizard barbarian dwarf guard">
+<h3>Supported combat targets and notable drops</h3>
+<table><thead><tr><th>Target</th><th>Level</th><th>Search area</th><th>Notable native drops</th></tr></thead><tbody>
+<tr><td>Rat</td><td>2</td><td>Lumbridge Swamp</td><td>Bones</td></tr>
+<tr><td>Chicken</td><td>3</td><td>Lumbridge farm</td><td>Bones, raw chicken, feathers</td></tr>
+<tr><td>Cow</td><td>8</td><td>Lumbridge cow field</td><td>Bones, cow hide, raw beef</td></tr>
+<tr><td>Man</td><td>9</td><td>North Lumbridge</td><td>Coins, elemental/body/chaos runes, bronze arrows, bait, copper ore, helmet, dagger</td></tr>
+<tr><td>Goblin</td><td>13</td><td>Goblin Village</td><td>Coins, goblin armour, bronze scimitar/axe, runes, cape, tin ore, grapes</td></tr>
+<tr><td>Dark wizard</td><td>13</td><td>South Varrock</td><td>Staff, wizard hat, black robe, elemental/nature/chaos/law runes, coins</td></tr>
+<tr><td>Barbarian</td><td>16</td><td>Barbarian Village</td><td>Coins, bronze axe, staff, iron mace, runes, arrows, cooked meat, ring mould, gems</td></tr>
+<tr><td>Dwarf</td><td>18</td><td>Dwarven Village</td><td>Bronze pickaxe, hammer, bronze/iron bars, ores, nature runes, battleaxes, gems</td></tr>
+<tr><td>Guard</td><td>28</td><td>Falador</td><td>Coins, iron dagger, bronze longsword, helmet, runes, arrows, iron ore, grain</td></tr>
+</tbody></table></section>
+<section class="guideEntry" data-guide="starter items inventory axe pickaxe tinderbox cooked meat bank quick bank">
+<h3>Starter kit and safe banking</h3><p>New characters receive a bronze axe <strong>87</strong>, cooked meat <strong>132</strong>, tinderbox <strong>166</strong>, and bronze pickaxe <strong>156</strong>. Existing accounts are preserved. Quick Bank's Gathered and Loot buttons skip equipped items; Carried deposits every unequipped stack intentionally.</p></section>
+<section class="guideEntry" data-guide="item items ids reference loot drops equipment runes ores logs food tools">
+<h3>Supported item reference</h3><table><thead><tr><th>Item ID</th><th>Name</th></tr></thead><tbody id="guideItems"></tbody></table></section>
+<section class="guideEntry" data-guide="commands bot natural language jobs">
+<h3>Useful commands</h3><p><code>cut oaks</code> · <code>mine iron</code> · <code>fight dark wizards</code> · <code>kill guards</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Only one root objective runs at once. Explicit jobs persist locally and resume after login.</p></section>
 </div>
 <script>
 'use strict';
@@ -107,6 +175,10 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   const bot=document.getElementById('bot');
   const botToggle=document.getElementById('botToggle');
   const fsBtn=document.getElementById('fsBtn');
+  const guideBtn=document.getElementById('guideBtn');
+  const guidePanel=document.getElementById('guidePanel');
+  const guideClose=document.getElementById('guideClose');
+  const guideSearch=document.getElementById('guideSearch');
   const gameHost=document.getElementById('game-host');
   const botStatus=document.getElementById('botStatus');
   const botMetrics=document.getElementById('botMetrics');
@@ -116,9 +188,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   const miningSelect=document.getElementById('miningSelect');
   const combatRow=document.getElementById('combatRow');
   const combatSelect=document.getElementById('combatSelect');
+  const lootRow=document.getElementById('lootRow');
+  const lootSelect=document.getElementById('lootSelect');
 
   let worker=null, objective=null, botTimer=null, lastAction=0;
-  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,eats:0,chops:0,mines:0,bankTrips:0,deposits:0};
+  let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
+  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,eats:0,chops:0,mines:0,fires:0,loot:0,bankTrips:0,deposits:0};
 
   function fmtDuration(ms){
     const sec=Math.max(0,Math.floor(ms/1000)), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
@@ -126,7 +201,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   }
   function resetTaskStats(){
     sessionStats.taskStartedAt=Date.now();
-    for(const k of ['actions','attacks','eats','chops','mines','bankTrips','deposits']) sessionStats[k]=0;
+    for(const k of ['actions','attacks','eats','chops','mines','fires','loot','bankTrips','deposits']) sessionStats[k]=0;
     renderMetrics();
   }
   function renderMetrics(){
@@ -135,7 +210,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     const parts=[fmtDuration(Date.now()-(sessionStats.taskStartedAt||Date.now())),`${sessionStats.actions} actions`];
     if(objective.type==='woodcutting')parts.push(`${sessionStats.chops} chops`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='mining')parts.push(`${sessionStats.mines} swings`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
-    if(objective.type==='combat')parts.push(`${sessionStats.attacks} attacks`,`${sessionStats.eats} food eaten`,`${inventoryFoodCount()} food held`);
+    if(objective.type==='firemaking')parts.push(`${sessionStats.fires} fires lit`,`${sessionStats.chops} chop attempts`,`${metricNormalLogCount()} logs held`);
+    if(objective.type==='combat')parts.push(`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`);
     parts.push(`phase ${objective.phase||'idle'}`);
     if(objective.stallRecoveries)parts.push(`${objective.stallRecoveries} recoveries`);
     botMetrics.textContent=parts.join(' • ');
@@ -226,6 +302,199 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     return code;
   }
 
+  // Upgrade the preservation server's resource plug-ins before the local
+  // worker starts. Trees and rocks remain live for a short, type-specific
+  // window after the first successful gather, then deplete and use their
+  // canonical Classic respawn delays. This keeps real XP, requirements and
+  // inventory paths while allowing several rewards from one resource.
+  function patchServerResources(code){
+    const oldTreeDepletion=`        const shouldFall = NORMAL_TREES.has(treeID) || Math.random() <= 0.125;
+
+        if (shouldFall) {
+            const stump = world.replaceEntity(
+                'gameObjects',
+                gameObject,
+                tree.stump
+            );
+
+            world.setTimeout(() => {
+                world.replaceEntity('gameObjects', stump, treeID);
+            }, tree.respawn);
+        }`;
+    const newTreeDepletion=`        if (!gameObject.autoscapeResourceTimer) {
+            const activeWindows = {
+                0: 18000, 1: 18000, 70: 18000, 306: 24000,
+                307: 30000, 308: 36000, 309: 42000, 310: 48000
+            };
+            const activeFor = activeWindows[treeID] || 22000;
+            gameObject.autoscapeResourceTimer = true;
+            world.setTimeout(() => {
+                const current = world.gameObjects.getAtPoint(x, y)[0];
+                if (current !== gameObject) return;
+                const stump = world.replaceEntity(
+                    'gameObjects', gameObject, tree.stump
+                );
+                world.setTimeout(() => {
+                    const live = world.gameObjects.getAtPoint(x, y)[0];
+                    if (live === stump) {
+                        world.replaceEntity('gameObjects', stump, treeID);
+                    }
+                }, tree.respawn);
+            }, activeFor);
+        }`;
+    if(!code.includes(oldTreeDepletion)){
+      throw new Error('Server patch failed: woodcutting depletion block changed.');
+    }
+    code=code.replace(oldTreeDepletion,newTreeDepletion);
+
+    const miningStart="const { rocks } = require('@2003scape/rsc-data/skills/mining');";
+    const miningEnd='\n\n},{"@2003scape/rsc-data/skills/mining":27}],626:';
+    const start=code.indexOf(miningStart);
+    const end=start<0?-1:code.indexOf(miningEnd,start);
+    if(start<0||end<0){
+      throw new Error('Server patch failed: mining plug-in module changed.');
+    }
+    const miningModule=`const { pickaxes, rocks, gem } = require('@2003scape/rsc-data/skills/mining');
+
+const ROCK_IDS = new Set(Object.keys(rocks).map(Number));
+const PICKAXE_IDS = Object.keys(pickaxes).map(Number).sort((a, b) => {
+    return pickaxes[b].attempts - pickaxes[a].attempts;
+});
+const ORE_NAMES = {
+    149: 'clay', 150: 'copper', 151: 'iron', 152: 'gold',
+    153: 'mithril', 154: 'adamantite', 155: 'coal', 202: 'tin'
+};
+const ACTIVE_WINDOWS = {
+    149: 18000, 150: 22000, 202: 22000, 151: 26000,
+    155: 32000, 152: 38000, 153: 44000, 154: 50000
+};
+
+function getRock(id) {
+    const rock = rocks[id];
+    if (typeof rock.reference !== 'undefined') return getRock(rock.reference);
+    return rock;
+}
+
+function bestPickaxe(player, level) {
+    for (const id of PICKAXE_IDS) {
+        if (pickaxes[id].level <= level && player.inventory.has(id)) return id;
+    }
+    return -1;
+}
+
+function skillSuccess(rock, level, attempts) {
+    const chance = Math.max(0.08, Math.min(0.72,
+        0.32 + Math.max(0, level - rock.level) * 0.008));
+    for (let i = 0; i < attempts; i += 1) {
+        if (Math.random() < chance) return true;
+    }
+    return false;
+}
+
+function weighted(entries) {
+    const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * total;
+    for (const entry of entries) {
+        roll -= entry.weight;
+        if (roll < 0) return entry.id;
+    }
+    return entries[entries.length - 1].id;
+}
+
+function oreFor(rock) {
+    if (Array.isArray(rock.ore)) return weighted(rock.ore);
+    if (Math.random() < (1 / 128)) return weighted(gem);
+    return rock.ore;
+}
+
+function respawnDelay(respawn) {
+    if (typeof respawn === 'number') return respawn;
+    return respawn.min + Math.floor(Math.random() * (respawn.max - respawn.min + 1));
+}
+
+function startDepletionTimer(world, gameObject, rockID, rock) {
+    if (gameObject.autoscapeResourceTimer) return;
+    const { x, y } = gameObject;
+    const activeFor = ACTIVE_WINDOWS[rock.ore] || 22000;
+    gameObject.autoscapeResourceTimer = true;
+    world.setTimeout(() => {
+        const current = world.gameObjects.getAtPoint(x, y)[0];
+        if (current !== gameObject) return;
+        const depleted = world.replaceEntity(
+            'gameObjects', gameObject, rock.depleted
+        );
+        world.setTimeout(() => {
+            const live = world.gameObjects.getAtPoint(x, y)[0];
+            if (live === depleted) {
+                world.replaceEntity('gameObjects', depleted, rockID);
+            }
+        }, respawnDelay(rock.respawn));
+    }, activeFor);
+}
+
+async function mine(player, gameObject) {
+    const rockID = gameObject.id;
+    if (!ROCK_IDS.has(rockID)) return false;
+    const rock = getRock(rockID);
+    const level = player.skills.mining.current;
+    if (level < rock.level) {
+        player.message('@que@You need a mining level of ' + rock.level + ' to mine this rock');
+        return true;
+    }
+    const pickaxeID = bestPickaxe(player, level);
+    if (pickaxeID === -1) {
+        player.message('@que@You need a pickaxe you can use to mine this rock');
+        return true;
+    }
+    if (player.isTired()) {
+        player.message('@que@You are too tired to mine');
+        return true;
+    }
+    const { world } = player;
+    const { x, y } = gameObject;
+    player.message('@que@You swing your pick at the rock...');
+    player.sendBubble(pickaxeID);
+    await world.sleepTicks(3);
+    const live = world.gameObjects.getAtPoint(x, y)[0] === gameObject;
+    if (live && skillSuccess(rock, level, pickaxes[pickaxeID].attempts)) {
+        const oreID = oreFor(rock);
+        startDepletionTimer(world, gameObject, rockID, rock);
+        player.addExperience('mining', rock.experience);
+        player.message('@que@You manage to obtain some ore');
+        player.inventory.add(oreID);
+    } else {
+        player.message('@que@You only succeed in scratching the rock');
+    }
+    return true;
+}
+
+function prospect(player, gameObject) {
+    if (!ROCK_IDS.has(gameObject.id)) return false;
+    const rock = getRock(gameObject.id);
+    const ore = Array.isArray(rock.ore) ? 'valuable minerals' : (ORE_NAMES[rock.ore] || 'ore');
+    player.message('@que@This rock contains ' + ore + '.');
+    return true;
+}
+
+async function onGameObjectCommandOne(player, gameObject) {
+    const command = String(gameObject.definition.commands[0] || '').toLowerCase();
+    if (command === 'mine') return mine(player, gameObject);
+    if (command === 'prospect') return prospect(player, gameObject);
+    return false;
+}
+
+async function onGameObjectCommandTwo(player, gameObject) {
+    const command = String(gameObject.definition.commands[1] || '').toLowerCase();
+    if (command === 'mine') return mine(player, gameObject);
+    if (command === 'prospect') return prospect(player, gameObject);
+    return false;
+}
+
+module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
+    code=code.slice(0,start)+miningModule+code.slice(end);
+    return code;
+  }
+
   function waitWorkerReady(w,timeout=45000){
     return new Promise((resolve,reject)=>{
       const t=setTimeout(()=>reject(new Error('Local world startup timed out.')),timeout);
@@ -296,6 +565,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       }
       const savedMining=localStorage.getItem('autoscape_mining_resource');
       if(savedMining&&[...miningSelect.options].some(o=>o.value===savedMining))miningSelect.value=savedMining;
+      const savedLoot=localStorage.getItem('autoscape_loot_mode');
+      if(savedLoot&&[...lootSelect.options].some(o=>o.value===savedLoot))lootSelect.value=savedLoot;
     }catch(e){}
 
     // Keep Android's hidden keyboard bridge completely off the visible game surface.
@@ -311,6 +582,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       inp.style.zIndex='-1';
     }
     fsBtn.style.display='block';
+    guideBtn.style.display='block';
     fitGame();
 
     botToggle.onclick=()=>{
@@ -318,6 +590,23 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       botToggle.textContent = bot.style.display==='none' ? 'Bot' : 'Hide Bot';
     };
     fsBtn.onclick=enterFullscreen;
+    guideBtn.onclick=()=>{
+      guidePanel.style.display='block';
+      guideSearch.value='';
+      for(const entry of guidePanel.querySelectorAll('.guideEntry'))entry.hidden=false;
+      setTimeout(()=>guideSearch.focus(),0);
+    };
+    guideClose.onclick=()=>{guidePanel.style.display='none';mc._canvas?.focus();};
+    guideSearch.oninput=()=>{
+      const q=String(guideSearch.value||'').toLowerCase().trim();
+      for(const entry of guidePanel.querySelectorAll('.guideEntry')){
+        entry.hidden=!!q&&!`${entry.dataset.guide||''} ${entry.textContent||''}`.toLowerCase().includes(q);
+      }
+    };
+    if(!window.__autoscapeGuideKeyInstalled){
+      window.__autoscapeGuideKeyInstalled=true;
+      window.addEventListener('keydown',e=>{if(e.key==='Escape'&&guidePanel.style.display!=='none')guideClose.click();});
+    }
 
     function loggedIn(){
       return mc.loggedIn===1 || (mc.localPlayerServerIndex!==undefined && mc.localPlayerServerIndex>=0 && mc.packetStream);
@@ -330,6 +619,14 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(!p) return {x:0,y:0};
       const magic=mc.magicLoc||128;
       return {x:(p.currentX/magic)|0,y:(p.currentY/magic)|0};
+    }
+    const ACTION_INTERVALS={walk:2000,gather:2800,combat:2200,loot:1400};
+
+    // Internal walk helpers draw the native click cross at mc.mouseX/mouseY.
+    // Those coordinates describe the user's last physical pointer, not an
+    // automated world target, so suppress only bot-generated crosses.
+    function suppressBotClickMarker(){
+      mc.mouseClickXStep=0;
     }
     const TREE_DEFS=[
       {ids:[310],level:75,name:'magic',log:636},
@@ -441,6 +738,69 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       return total;
     }
 
+    function normalLogSlot(){
+      for(let i=0;i<inventorySlots();i++){
+        if(Number(mc.inventoryItemId?.[i])===14&&Number(mc.inventoryEquipped?.[i])!==1)return i;
+      }
+      return -1;
+    }
+    function normalLogCount(){
+      let total=0;
+      for(let i=0;i<inventorySlots();i++){
+        if(Number(mc.inventoryItemId?.[i])===14)total+=Number(mc.inventoryItemStackCount?.[i]||1);
+      }
+      return total;
+    }
+    function tinderboxSlot(){
+      for(let i=0;i<inventorySlots();i++)if(Number(mc.inventoryItemId?.[i])===166)return i;
+      return -1;
+    }
+    function groundNormalLogNear(tile,maxDistance=3){
+      let best=null,bd=1e9;
+      for(let i=0;i<Number(mc.groundItemCount||0);i++){
+        if(Number(mc.groundItemID?.[i])!==14)continue;
+        const x=Number(mc.groundItemX?.[i]),y=Number(mc.groundItemY?.[i]);
+        const gx=x+Number(mc.regionX||0),gy=y+Number(mc.regionY||0);
+        const d=tile?Math.abs(gx-tile.x)+Math.abs(gy-tile.y):0;
+        if(d<=maxDistance&&d<bd){bd=d;best={x,y,gx,gy,id:14};}
+      }
+      return best;
+    }
+    function fireAt(tile,maxDistance=1){
+      if(!tile)return false;
+      for(let i=0;i<Number(mc.objectCount||0);i++){
+        if(Number(mc.objectId?.[i])!==97)continue;
+        const gx=Number(mc.objectX?.[i])+Number(mc.regionX||0),gy=Number(mc.objectY?.[i])+Number(mc.regionY||0);
+        if(Math.abs(gx-tile.x)+Math.abs(gy-tile.y)<=maxDistance)return true;
+      }
+      return false;
+    }
+    function dropNormalLog(){
+      const slot=normalLogSlot();
+      if(slot<0||!mc.packetStream)return false;
+      mc.packetStream.newPacket(246); // INV_DROP
+      mc.packetStream.putShort(slot);
+      mc.packetStream.sendPacket();
+      mc.selectedItemInventoryIndex=-1;
+      sessionStats.actions++;renderMetrics();
+      return true;
+    }
+    function lightGroundLog(log){
+      const slot=tinderboxSlot();
+      if(!log||slot<0||!mc.packetStream)return false;
+      mc.walkToGroundItem(Number(mc.localRegionX||0),Number(mc.localRegionY||0),log.x,log.y,true);
+      suppressBotClickMarker();
+      mc.packetStream.newPacket(53); // USEWITH_GROUNDITEM
+      mc.packetStream.putShort(log.gx);
+      mc.packetStream.putShort(log.gy);
+      mc.packetStream.putShort(14);
+      mc.packetStream.putShort(slot);
+      mc.packetStream.sendPacket();
+      mc.selectedItemInventoryIndex=-1;
+      sessionStats.actions++;renderMetrics();
+      return true;
+    }
+
     function depositItemsIfBankOpen(itemIds){
       if(!mc.showDialogBank||!mc.packetStream)return false;
       const ids=itemIds instanceof Set?itemIds:new Set(itemIds||[]),counts=new Map(),used=inventorySlots();
@@ -485,6 +845,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     function mineRock(rock){
       if(!rock||!mc.packetStream)return false;
       mc.walkToObject(rock.x,rock.y,rock.id,rock.dir);
+      suppressBotClickMarker();
       mc.packetStream.newPacket(136);
       mc.packetStream.putShort(rock.x+(mc.regionX||0));
       mc.packetStream.putShort(rock.y+(mc.regionY||0));
@@ -508,12 +869,13 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 
     function restockCombatFood(targetCount=10){
       if(!mc.showDialogBank)return {ok:false,reason:'bank-not-open'};
+      const have=inventoryFoodCount();
+      if(have>=targetCount)return {ok:true,reason:'no-need',amount:0};
       const food=chooseBankFood();
       if(!food)return {ok:false,reason:'no-bank-food'};
       const max=Number(mc.inventoryMaxItemCount||30);
       const used=inventorySlots();
       const free=Math.max(0,max-used);
-      const have=inventoryFoodCount();
       const need=Math.max(0,targetCount-have);
       const amount=Math.min(food.amount,free,need);
       if(amount<=0)return {ok:have>0,reason:'no-space-or-no-need',food};
@@ -535,6 +897,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         Number(mc.localRegionY||0),
         lx,ly,false
       );
+      suppressBotClickMarker();
       return true;
     }
 
@@ -546,6 +909,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     // new brittle waypoint loop for every script.
     const NAV_NODES={
       lumbridge:{x:122,y:657},
+      lumbridgeSwamp:{x:140,y:667},
+      lumbridgeNorth:{x:132,y:639},
+      lumbridgeCows:{x:105,y:618},
+      lumbridgeFarm:{x:119,y:605},
+      varrockSouth:{x:124,y:570},
+      darkWizards:{x:112,y:552},
       lumbridgeWest:{x:145,y:655},
       roadEastDraynor:{x:170,y:650},
       roadDraynor:{x:195,y:643},
@@ -554,6 +923,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       rimmington:{x:324,y:661},
       faladorSouth:{x:312,y:585},
       falador:{x:312,y:552},
+      faladorNorth:{x:312,y:510},
+      dwarvenVillage:{x:278,y:497},
+      goblinVillage:{x:325,y:461},
       barbarianVillage:{x:226,y:512},
       edgeville:{x:216,y:451},
       kandarinApproach:{x:360,y:470},
@@ -561,7 +933,13 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       seers:{x:490,y:455}
     };
     const NAV_EDGES={
-      lumbridge:['lumbridgeWest'],
+      lumbridge:['lumbridgeWest','lumbridgeSwamp','lumbridgeNorth'],
+      lumbridgeSwamp:['lumbridge'],
+      lumbridgeNorth:['lumbridge','lumbridgeCows','lumbridgeFarm','varrockSouth'],
+      lumbridgeCows:['lumbridgeNorth','lumbridgeFarm'],
+      lumbridgeFarm:['lumbridgeNorth','lumbridgeCows'],
+      varrockSouth:['lumbridgeNorth','darkWizards'],
+      darkWizards:['varrockSouth'],
       lumbridgeWest:['lumbridge','roadEastDraynor'],
       roadEastDraynor:['lumbridgeWest','roadDraynor'],
       roadDraynor:['roadEastDraynor','draynorBank'],
@@ -569,8 +947,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       portSarimRoad:['draynorBank','rimmington','faladorSouth'],
       rimmington:['portSarimRoad','faladorSouth'],
       faladorSouth:['rimmington','portSarimRoad','falador'],
-      falador:['faladorSouth','barbarianVillage'],
-      barbarianVillage:['falador','edgeville'],
+      falador:['faladorSouth','barbarianVillage','faladorNorth'],
+      faladorNorth:['falador','dwarvenVillage','goblinVillage'],
+      dwarvenVillage:['faladorNorth','barbarianVillage','goblinVillage'],
+      goblinVillage:['faladorNorth','dwarvenVillage'],
+      barbarianVillage:['falador','edgeville','dwarvenVillage'],
       edgeville:['barbarianVillage','kandarinApproach'],
       kandarinApproach:['edgeville','camelot'],
       camelot:['kandarinApproach','seers'],
@@ -697,7 +1078,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       }
 
       if(banker && banker.d<=10){
-        if(Date.now()-lastAction>1800 && sendTalkToBanker(banker)){
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk && sendTalkToBanker(banker)){
           objective.phase='bank-dialogue';
           lastAction=Date.now();
           setBotStatus(`${gatherSkillLabel()} • talking to banker`);
@@ -727,7 +1108,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
           return true;
         }
 
-        if(Date.now()-lastAction>1400){
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
           const retry=navRetryTarget(wp);
           walkGlobal(retry.x,retry.y);
           navWatch.retries++;
@@ -737,7 +1118,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return true;
       }
 
-      if(Date.now()-lastAction>1400){
+      if(Date.now()-lastAction>ACTION_INTERVALS.walk){
         const retry=navRetryTarget(DRAYNOR_BANK);
         walkGlobal(retry.x,retry.y);
         lastAction=Date.now();
@@ -806,7 +1187,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
           objective.routeIndex=idx+1;
           return;
         }
-        if(Date.now()-lastAction>1300){
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
           shortStepToward(wp,22);
           lastAction=Date.now();
           navWatch.retries++;
@@ -829,7 +1210,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(nodeDistance(pp,target)<8){
         objective.searchIndex=si+1;
         objective.failures=(objective.failures||0)+1;
-      }else if(Date.now()-lastAction>1300){
+      }else if(Date.now()-lastAction>ACTION_INTERVALS.walk){
         shortStepToward(target,18);
         lastAction=Date.now();
       }
@@ -863,7 +1244,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       const step=24;
       const tx=pp.x+Math.max(-step,Math.min(step,dx));
       const ty=pp.y+Math.max(-step,Math.min(step,dy));
-      if(Date.now()-lastAction>1400){
+      if(Date.now()-lastAction>ACTION_INTERVALS.walk){
         walkGlobal(tx,ty);
         lastAction=Date.now();
         setBotStatus(`${gatherSkillLabel()} • returning to training area`);
@@ -873,6 +1254,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     function chop(tree){
       if(!tree||!mc.packetStream) return false;
       mc.walkToObject(tree.x,tree.y,tree.id,tree.dir);
+      suppressBotClickMarker();
       mc.packetStream.newPacket(136);
       mc.packetStream.putShort(tree.x+(mc.regionX||0));
       mc.packetStream.putShort(tree.y+(mc.regionY||0));
@@ -888,12 +1270,15 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
           const saved={
             type:objective.type,
             resource:objective.resource||'auto',
+            supply:objective.supply||'held',
             target:objective.target||'auto',
+            lootMode:lootSelect.value||'f2p',
             active:true
           };
           localStorage.setItem('autoscape_job',JSON.stringify(saved));
           localStorage.setItem('autoscape_resource',saved.resource);
           if(objective.type==='mining')localStorage.setItem('autoscape_mining_resource',saved.resource);
+          if(objective.type==='combat')localStorage.setItem('autoscape_loot_mode',saved.lootMode);
         }else{
           localStorage.removeItem('autoscape_job');
         }
@@ -904,6 +1289,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       objective=null;
       saveObjective();
       combatRow.style.display='none';
+      lootRow.style.display='none';
       miningRow.style.display='none';
       resourceSelect.closest('#resourceRow').style.display='flex';
       setBotStatus(msg||'Stopped.');
@@ -948,18 +1334,280 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       return inventoryFood().length;
     }
 
+    // Canonical free-to-play drops for the supported surface monsters. The
+    // world remains members-capable, but the default loot mode deliberately
+    // builds the classic F2P economy first.
+    const F2P_LOOT_IDS=new Set([0,10,11,18,20,28,29,31,32,33,34,35,36,40,41,42,70,82,87,89,100,104,132,133,143,146,147,150,151,155,156,157,158,159,160,168,169,170,183,193,199,201,202,205,216,273,293,380,381,504]);
+    const VALUABLE_LOOT_IDS=new Set([0,10,11,28,31,32,33,34,35,36,40,41,42,70,82,89,100,104,147,150,151,155,156,157,158,159,160,168,169,170,183,199,202,205,216,273,293,381]);
+    const ITEM_NAMES={0:'Iron mace',10:'coins',11:'bronze arrows',18:'cabbage',20:'bones',28:'iron dagger',29:'grain',31:'fire runes',32:'water runes',33:'air runes',34:'earth runes',35:'mind runes',36:'body runes',40:'nature runes',41:'chaos runes',42:'law runes',70:'bronze longsword',82:'bronze scimitar',87:'bronze axe',89:'iron battleaxe',100:'staff',104:'bronze medium helmet',132:'cooked meat',133:'raw chicken',143:'grapes',146:'fur',147:'cow hide',150:'copper ore',151:'iron ore',155:'coal',156:'bronze pickaxe',157:'uncut diamond',158:'uncut ruby',159:'uncut emerald',160:'uncut sapphire',168:'hammer',169:'bronze bar',170:'iron bar',183:'cape',193:'beer',199:'wizard hat',201:'flier',202:'tin ore',205:'bronze battleaxe',216:'black robe',273:'goblin armour',293:'ring mould',380:'fishing bait',381:'feathers',504:'raw beef'};
+    Object.assign(ITEM_NAMES,{14:'logs',152:'gold ore',166:'tinderbox',181:'ashes',632:'oak logs',633:'willow logs',634:'maple logs',635:'yew logs',636:'magic logs'});
+    const guideItems=document.getElementById('guideItems');
+    if(guideItems&&!guideItems.children.length){
+      for(const [id,name] of Object.entries(ITEM_NAMES).sort((a,b)=>Number(a[0])-Number(b[0]))){
+        const row=document.createElement('tr'),idCell=document.createElement('td'),nameCell=document.createElement('td');
+        idCell.textContent=id;nameCell.textContent=name;row.append(idCell,nameCell);guideItems.appendChild(row);
+      }
+    }
+    const COMBAT_PRESERVE_IDS=new Set([12,87,88,156,166,203,204,405,428,1258,1259,1260,1261,1262]);
+
+    function installSessionAndMobileUX(){
+      if(mc.__autoscapeUXInstalled)return;
+      mc.__autoscapeUXInstalled=true;
+
+      // Source patching removes the Classic inactivity logout. Keep a small
+      // runtime guard as well so a future upstream bundle move cannot end a
+      // long, explicitly-started AutoScape session.
+      mc.__autoscapeNoAfkTimer=setInterval(()=>{
+        if(mc.loggedIn===1)mc.mouseActionTimeout=0;
+      },5000);
+
+      const coarse=!!(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+      if(coarse&&mc._canvas){
+        const canvas=mc._canvas;
+        mc.options.middleClickCamera=true;
+        mc.options.zoomCamera=true;
+        mc.optionCameraModeAuto=false;
+
+        try{
+          const zoom=Number(localStorage.getItem('autoscape_camera_zoom'));
+          if(Number.isFinite(zoom)&&zoom>=450&&zoom<=1250)mc.cameraZoom=zoom;
+          const rotation=Number(localStorage.getItem('autoscape_camera_rotation'));
+          if(Number.isFinite(rotation))mc.cameraRotation=rotation&255;
+        }catch(e){}
+
+        // Tapping the selected mobile HUD tab again now closes it.
+        mc.setActiveMobileUITab=function(){
+          const size=32,rightX=this.gameWidth-size-3,leftX=3,uiY=this.gameHeight/2-49;
+          let y=uiY;
+          for(let i=0;i<6;i++){
+            const x=i>2?leftX:rightX;
+            if(this.mouseX>=x&&this.mouseX<=x+size&&this.mouseY>=y&&this.mouseY<=y+size){
+              const tab=i+1;
+              this.showUITab=this.showUITab===tab?0:tab;
+              if(this.showUITab===2){
+                this.minimapRandom1=((Math.random()*13)|0)-6;
+                this.minimapRandom2=((Math.random()*23)|0)-11;
+              }
+              return;
+            }
+            y=i===2?uiY:y+size+1;
+          }
+          if(this.showUITab!==0&&(this.mouseX<this.uiOpenX||this.mouseX>this.uiOpenX+this.uiOpenWidth||this.mouseY<this.uiOpenY||this.mouseY>this.uiOpenY+this.uiOpenHeight))this.showUITab=0;
+        };
+
+        const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+        const distance=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+        let pinch=false,pinchDistance=1,pinchZoom=750,suppressPinchEnd=false;
+        let beganOnHud=false,hudMoved=false;
+        function canvasPoint(touch){
+          const r=canvas.getBoundingClientRect();
+          return {x:((touch.clientX-r.left)*(canvas.width/r.width))|0,y:((touch.clientY-r.top)*(canvas.height/r.height))|0};
+        }
+        function isHudPoint(p){
+          const size=32,uiY=mc.gameHeight/2-49;
+          for(let i=0;i<6;i++){
+            const x=i>2?3:mc.gameWidth-size-3;
+            const y=uiY+(i>2?i-3:i)*(size+1);
+            if(p.x>=x&&p.x<=x+size&&p.y>=y&&p.y<=y+size)return true;
+          }
+          return mc.showUITab!==0&&Number.isFinite(mc.uiOpenX)&&p.x>=mc.uiOpenX&&p.x<=mc.uiOpenX+mc.uiOpenWidth&&p.y>=mc.uiOpenY&&p.y<=mc.uiOpenY+mc.uiOpenHeight;
+        }
+        function cancelNativeTouch(){
+          clearTimeout(mc.rightClickTimeout);
+          mc.mouseButtonDown=0;
+          mc.middleButtonDown=false;
+          mc.touchMoving=false;
+        }
+        canvas.addEventListener('touchstart',e=>{
+          if(e.touches.length===1){
+            beganOnHud=isHudPoint(canvasPoint(e.touches[0]));
+            hudMoved=false;
+            return;
+          }
+          if(e.touches.length!==2)return;
+          pinch=true;suppressPinchEnd=true;beganOnHud=false;
+          pinchDistance=Math.max(1,distance(e.touches[0],e.touches[1]));
+          pinchZoom=Number(mc.cameraZoom||750);
+          cancelNativeTouch();
+          e.preventDefault();e.stopImmediatePropagation();
+        },{capture:true,passive:false});
+        canvas.addEventListener('touchmove',e=>{
+          if(beganOnHud&&e.touches.length===1){
+            hudMoved=true;cancelNativeTouch();
+            e.preventDefault();e.stopImmediatePropagation();return;
+          }
+          if(!pinch&&e.touches.length===2){
+            pinch=true;suppressPinchEnd=true;
+            pinchDistance=Math.max(1,distance(e.touches[0],e.touches[1]));
+            pinchZoom=Number(mc.cameraZoom||750);
+          }
+          if(!pinch||e.touches.length<2)return;
+          mc.cameraZoom=clamp(Math.round(pinchZoom/(Math.max(1,distance(e.touches[0],e.touches[1]))/pinchDistance)),450,1250);
+          mc.mouseActionTimeout=0;cancelNativeTouch();
+          e.preventDefault();e.stopImmediatePropagation();
+        },{capture:true,passive:false});
+        canvas.addEventListener('touchend',e=>{
+          if(hudMoved){
+            beganOnHud=false;hudMoved=false;cancelNativeTouch();
+            e.preventDefault();e.stopImmediatePropagation();return;
+          }
+          beganOnHud=false;
+          if(!suppressPinchEnd)return;
+          pinch=e.touches.length>=2;
+          cancelNativeTouch();
+          if(e.touches.length===0)suppressPinchEnd=false;
+          e.preventDefault();e.stopImmediatePropagation();
+        },{capture:true,passive:false});
+        canvas.addEventListener('touchcancel',e=>{
+          pinch=false;suppressPinchEnd=false;beganOnHud=false;hudMoved=false;cancelNativeTouch();
+          e.preventDefault();e.stopImmediatePropagation();
+        },{capture:true,passive:false});
+
+        mc.__autoscapeCameraSaveTimer=setInterval(()=>{
+          try{
+            localStorage.setItem('autoscape_camera_zoom',String(mc.cameraZoom));
+            localStorage.setItem('autoscape_camera_rotation',String(mc.cameraRotation));
+          }catch(e){}
+        },2000);
+      }
+
+      // Bank rescue controls use the same packets as the native dialog and
+      // deliberately skip equipped slots. They appear above the game instead
+      // of competing with the bot panel at the bottom of small screens.
+      const bar=document.createElement('div');
+      bar.id='autoscapeQuickBank';
+      Object.assign(bar.style,{position:'fixed',left:'50%',top:'max(46px,calc(env(safe-area-inset-top) + 46px))',transform:'translateX(-50%)',zIndex:'8400',display:'none',gap:'4px',padding:'5px',background:'rgba(25,22,16,.96)',border:'1px solid #9f8657',borderRadius:'5px',font:'11px Arial,sans-serif',whiteSpace:'nowrap'});
+      let dismissed=false,wasOpen=false;
+      function carriedEntries(filter){
+        const counts=new Map();
+        for(let i=0;i<inventorySlots();i++){
+          if(Number(mc.inventoryEquipped?.[i])===1)continue;
+          const id=Number(mc.inventoryItemId?.[i]);
+          if(filter&&!filter.has(id))continue;
+          counts.set(id,(counts.get(id)||0)+Number(mc.inventoryItemStackCount?.[i]||1));
+        }
+        return counts;
+      }
+      function quickDeposit(filter,label){
+        if(!mc.showDialogBank||!mc.packetStream)return;
+        const entries=carriedEntries(filter);
+        for(const [id,amount] of entries){
+          mc.packetStream.newPacket(23);mc.packetStream.putShort(id);mc.packetStream.putShort(Math.min(65535,amount));mc.packetStream.putInt(0x87654321|0);mc.packetStream.sendPacket();
+        }
+        setBotStatus(entries.size?`Quick Bank • deposited ${entries.size} ${label} stack${entries.size===1?'':'s'} (equipped gear kept)`:`Quick Bank • no ${label} to deposit`);
+      }
+      function quickButton(label,action){
+        const b=document.createElement('button');b.type='button';b.textContent=label;
+        Object.assign(b.style,{minHeight:'36px',padding:'6px 9px',border:'1px solid #b79b68',background:'#655438',color:'#fff',fontSize:'11px',touchAction:'manipulation'});
+        b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();action();});bar.appendChild(b);
+      }
+      const gatheredIds=new Set([...LOG_IDS,...ORE_IDS]);
+      const quickLootIds=new Set([...F2P_LOOT_IDS].filter(id=>!COMBAT_PRESERVE_IDS.has(id)&&!FOOD_HEALS[id]));
+      quickButton('Gathered',()=>quickDeposit(gatheredIds,'gathered'));
+      quickButton('Loot',()=>quickDeposit(quickLootIds,'loot'));
+      quickButton('Carried',()=>quickDeposit(null,'carried'));
+      quickButton('×',()=>{dismissed=true;bar.style.display='none';});
+      document.body.appendChild(bar);
+      mc.__autoscapeQuickBankTimer=setInterval(()=>{
+        const open=!!(mc.showDialogBank&&loggedIn());
+        if(!open){dismissed=false;wasOpen=false;bar.style.display='none';return;}
+        if(!wasOpen){dismissed=false;wasOpen=true;}
+        bar.style.display=dismissed?'none':'flex';
+      },200);
+    }
+
+    function shouldTakeLoot(id){
+      const mode=lootSelect.value||'f2p';
+      if(mode==='none')return false;
+      if(mode==='all')return true;
+      return (mode==='valuable'?VALUABLE_LOOT_IDS:F2P_LOOT_IDS).has(Number(id));
+    }
+
+    function nearestGroundLoot(){
+      const pp=playerTile(),anchor=objective?.lastTargetTile;
+      let best=null,bd=1e9;
+      for(let i=0;i<Number(mc.groundItemCount||0);i++){
+        const id=Number(mc.groundItemID?.[i]);
+        if(!shouldTakeLoot(id))continue;
+        const x=Number(mc.groundItemX?.[i]),y=Number(mc.groundItemY?.[i]);
+        const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
+        if(d>12)continue;
+        if(anchor&&Math.abs(x-anchor.x)+Math.abs(y-anchor.y)>7)continue;
+        if(d<bd){bd=d;best={index:i,id,x,y,d,name:ITEM_NAMES[id]||`item ${id}`};}
+      }
+      return best;
+    }
+
+    function takeGroundLoot(item){
+      if(!item||!mc.packetStream)return false;
+      const key=`${item.x}:${item.y}:${item.id}`;
+      if(objective?.lastLootKey===key&&Date.now()-Number(objective.lastLootAttempt||0)<2200)return false;
+      mc.walkToGroundItem(Number(mc.localRegionX||0),Number(mc.localRegionY||0),item.x,item.y,true);
+      suppressBotClickMarker();
+      mc.packetStream.newPacket(247);
+      mc.packetStream.putShort(item.x+Number(mc.regionX||0));
+      mc.packetStream.putShort(item.y+Number(mc.regionY||0));
+      mc.packetStream.putShort(item.id);
+      mc.packetStream.putShort(0);
+      mc.packetStream.sendPacket();
+      objective.lastLootKey=key;
+      objective.lastLootAttempt=Date.now();
+      if(!(objective.collectedLootIds instanceof Set))objective.collectedLootIds=new Set();
+      objective.collectedLootIds.add(item.id);
+      sessionStats.actions++;sessionStats.loot++;
+      markProgress('loot');renderMetrics();
+      return true;
+    }
+
+    function depositCombatLootIfBankOpen(){
+      if(!mc.showDialogBank||!mc.packetStream)return 0;
+      const tracked=objective?.collectedLootIds instanceof Set?objective.collectedLootIds:new Set();
+      const counts=new Map(),used=inventorySlots();
+      for(let i=0;i<used;i++){
+        const id=Number(mc.inventoryItemId?.[i]);
+        if(!tracked.has(id)||COMBAT_PRESERVE_IDS.has(id)||FOOD_HEALS[id]||Number(mc.inventoryEquipped?.[i])===1)continue;
+        counts.set(id,(counts.get(id)||0)+Number(mc.inventoryItemStackCount?.[i]||1));
+      }
+      for(const [id,amount] of counts){
+        mc.packetStream.newPacket(23);
+        mc.packetStream.putShort(id);
+        mc.packetStream.putShort(Math.min(65535,amount));
+        mc.packetStream.putInt(0x87654321|0);
+        mc.packetStream.sendPacket();
+        sessionStats.actions++;
+      }
+      if(counts.size){
+        sessionStats.deposits++;
+        for(const id of counts.keys())tracked.delete(id);
+        markProgress('combat-loot-deposit');renderMetrics();
+      }
+      return counts.size;
+    }
+
     const SAFE_COMBAT_TARGETS={
+      rat:{ids:[29],level:2,name:'rat'},
       chicken:{ids:[3],level:3,name:'chicken'},
       cow:{ids:[6],level:8,name:'cow'},
-      goblin:{ids:[4],level:13,name:'goblin'}
+      man:{ids:[11],level:9,name:'man'},
+      goblin:{ids:[153,154,4],level:13,name:'goblin'},
+      darkwizard:{ids:[57],level:13,name:'dark wizard'},
+      barbarian:{ids:[76],level:16,name:'barbarian'},
+      dwarf:{ids:[94],level:18,name:'dwarf'},
+      guard:{ids:[65],level:28,name:'guard'}
     };
 
     // Regional search hubs: travel to a known area, then let the live NPC list
     // be the source of truth for the exact spawn tile.
     const COMBAT_HUBS={
-      chicken:{node:'lumbridge',centre:{x:120,y:648},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,8],[-12,8]]},
-      cow:{node:'lumbridge',centre:{x:132,y:632},search:[[0,0],[12,0],[-12,0],[0,12],[0,-12],[14,10],[-14,10]]},
-      goblin:{node:'goblinVillage',centre:{x:325,y:461},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,12],[-12,12]]}
+      rat:{node:'lumbridgeSwamp',centre:{x:140,y:667},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,8],[-10,8]]},
+      chicken:{node:'lumbridgeFarm',centre:{x:119,y:604},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,6],[-10,6]]},
+      cow:{node:'lumbridgeCows',centre:{x:105,y:619},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,8],[-12,8]]},
+      man:{node:'lumbridgeNorth',centre:{x:132,y:639},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,10],[-10,10]]},
+      goblin:{node:'goblinVillage',centre:{x:325,y:461},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,12],[-12,12]]},
+      darkwizard:{node:'darkWizards',centre:{x:112,y:552},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,8],[-10,8]]},
+      barbarian:{node:'barbarianVillage',centre:{x:232,y:508},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,10],[-12,10]]},
+      dwarf:{node:'dwarvenVillage',centre:{x:278,y:497},search:[[0,0],[9,0],[-9,0],[0,9],[0,-9],[11,8],[-11,8]]},
+      guard:{node:'falador',centre:{x:319,y:535},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,10],[-12,10]]}
     };
 
     function combatHub(){
@@ -1007,7 +1655,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
           markProgress('combat-route-node');
           return;
         }
-        if(Date.now()-lastAction>1300){
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
           shortStepToward(wp,22);
           lastAction=Date.now();
           objective.combatNavRetries=Number(objective.combatNavRetries||0)+1;
@@ -1022,7 +1670,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(nodeDistance(pp,target)<8){
         objective.searchIndex=si+1;
         markProgress('combat-search-tile');
-      }else if(Date.now()-lastAction>1300){
+      }else if(Date.now()-lastAction>ACTION_INTERVALS.walk){
         shortStepToward(target,18);
         lastAction=Date.now();
       }
@@ -1053,9 +1701,14 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       const explicit=objective?.target || combatSelect.value || 'auto';
       if(explicit!=='auto') return explicit;
       const level=playerCombatEstimate();
-      if(level>=16) return 'goblin';
-      if(level>=9) return 'cow';
-      return 'chicken';
+      if(level>=30) return 'guard';
+      if(level>=20) return 'dwarf';
+      if(level>=17) return 'barbarian';
+      if(level>=14) return 'goblin';
+      if(level>=10) return 'man';
+      if(level>=7) return 'cow';
+      if(level>=4) return 'chicken';
+      return 'rat';
     }
 
     function nearestCombatNpc(){
@@ -1104,9 +1757,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         Number(mc.localRegionY||0),
         target.x,target.y,true
       );
+      suppressBotClickMarker();
       mc.packetStream.newPacket(190);
       mc.packetStream.putShort(Number(target.npc.serverIndex));
       mc.packetStream.sendPacket();
+      objective.lastTargetTile={x:target.x,y:target.y};
+      objective.attackSentAt=Date.now();
       sessionStats.actions++;sessionStats.attacks++;markProgress('attack');renderMetrics();
       return true;
     }
@@ -1131,8 +1787,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       objective.navRoute=makeRouteTo('draynorBank');
       objective.routeIndex=0;
       objective.bankRetries=0;
+      objective.combatLootDeposited=false;
+      objective.combatLootDepositAt=0;
+      objective.combatBankFinishing=false;
       navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
-      setPhase('combat-bank',`Combat • heading to bank for food`);
+      setPhase('combat-bank',`Combat • heading to bank for loot and supplies`);
       return true;
     }
 
@@ -1141,18 +1800,36 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       const banker=nearestLoadedBanker();
 
       if(mc.showDialogBank){
+        if(!objective.combatLootDeposited){
+          const batches=depositCombatLootIfBankOpen();
+          objective.combatLootDeposited=true;
+          objective.combatLootDepositAt=Date.now();
+          if(batches){
+            setBotStatus(`Combat • banked ${batches} loot stack${batches===1?'':'s'} • preparing food`);
+            return;
+          }
+        }
+        if(Date.now()-Number(objective.combatLootDepositAt||0)<700)return;
+        if(objective.combatBankFinishing)return;
         const result=restockCombatFood(10);
         if(result.reason==='no-bank-food'){
+          if(objective.combatBankReason==='inventory-full'&&currentHits()>=Math.max(5,Math.floor(maxHits()*.70))){
+            objective.combatBankFinishing=true;
+            try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
+            beginCombatReturn();
+            return;
+          }
           try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
           stop('Combat stopped: your bank has no edible food AutoScape can use yet.');
           return;
         }
         if(result.ok){
-          setBotStatus(`Combat • withdrew ${result.amount||0} × item ${result.food?.id||''} for food`);
+          objective.combatBankFinishing=true;
+          setBotStatus(result.reason==='no-need'?'Combat • loot banked • food supply ready':`Combat • withdrew ${result.amount||0} × item ${result.food?.id||''} for food`);
           setTimeout(()=>{
             try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
             beginCombatReturn();
-          },400);
+          },700);
         }
         return;
       }
@@ -1166,7 +1843,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       }
 
       if(banker&&banker.d<=10){
-        if(Date.now()-lastAction>1800&&sendTalkToBanker(banker)){
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk&&sendTalkToBanker(banker)){
           setPhase('combat-bank-dialogue','Combat • talking to banker');
           lastAction=Date.now();
         }
@@ -1182,7 +1859,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       while(idx<route.length){
         const wp=route[idx];
         if(nodeDistance(pp,wp)<8){objective.routeIndex=++idx;markProgress('combat-bank-node');continue;}
-        if(Date.now()-lastAction>1400){
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
           shortStepToward(wp,22);
           lastAction=Date.now();
           objective.bankRetries=Number(objective.bankRetries||0)+1;
@@ -1193,7 +1870,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         }
         return;
       }
-      if(Date.now()-lastAction>1400){shortStepToward(DRAYNOR_BANK,16);lastAction=Date.now();}
+      if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(DRAYNOR_BANK,16);lastAction=Date.now();}
     }
 
     // ---------- TASK 4: return to the selected combat training region ----------
@@ -1221,7 +1898,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<9){objective.routeIndex=idx+1;markProgress('combat-return-node');return;}
-        if(Date.now()-lastAction>1300){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Combat • returning • ${wp.name||hub.node}`);}
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Combat • returning • ${wp.name||hub.node}`);}
         return;
       }
       // Once inside the hub, reuse the regional live-NPC search logic.
@@ -1246,9 +1923,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return;
       }
 
+      const fighting=inCombat();
+      if(fighting)objective.wasInCombat=true;
+
       if(hp>0 && hp<=Math.max(3,Math.floor(max*0.25))){
         if(eatFoodIfNeeded()) return;
-        if(inCombat()){
+        if(fighting){
           // Do not issue a new attack while critically low. As soon as combat
           // disengages, the next tick routes to the bank.
           objective.needsFoodBank=true;
@@ -1259,7 +1939,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return;
       }
 
-      if(objective.needsFoodBank&&!inCombat()){
+      if(objective.needsFoodBank&&!fighting){
         objective.needsFoodBank=false;
         beginCombatBanking('post-combat-low-food');
         return;
@@ -1267,15 +1947,44 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 
       // Proactive restock: once we are out of food and have taken meaningful
       // damage, bank before beginning another fight instead of waiting for crisis HP.
-      if(!inCombat() && inventoryFoodCount()===0 && hp<Math.max(5,Math.floor(max*0.70))){
+      if(!fighting&&inventorySlots()>=Number(mc.inventoryMaxItemCount||30)){
+        beginCombatBanking('inventory-full');
+        return;
+      }
+
+      if(!fighting && inventoryFoodCount()===0 && hp<Math.max(5,Math.floor(max*0.70))){
         beginCombatBanking('proactive-restock');
         return;
       }
 
-      if(inCombat()){
+      if(fighting){
         markProgress('fighting');
         setBotStatus(`Combat ${playerCombatEstimate()} • fighting • hits ${hp}/${max}`);
         return;
+      }
+
+      // A real combat animation ending is the kill boundary. Pause briefly so
+      // the server can publish its weighted drop, then collect through the
+      // native GROUNDITEM_TAKE packet before choosing another opponent.
+      if(objective.wasInCombat){
+        objective.wasInCombat=false;
+        objective.lootUntil=Date.now()+(lootSelect.value==='none'?1000:4500);
+        lastAction=0;
+        setPhase('loot',lootSelect.value==='none'?'Combat • target defeated • continuing':`Combat • target defeated • checking ${lootSelect.options[lootSelect.selectedIndex]?.text||'drops'}`);
+        return;
+      }
+
+      if(objective.phase==='loot'){
+        const item=nearestGroundLoot();
+        if(item&&Date.now()-lastAction>=ACTION_INTERVALS.loot&&takeGroundLoot(item)){
+          lastAction=Date.now();
+          objective.lootUntil=Date.now()+2600;
+          setBotStatus(`Combat • taking ${item.name} • ${inventorySlots()}/${Number(mc.inventoryMaxItemCount||30)} slots`);
+          return;
+        }
+        if(Date.now()<Number(objective.lootUntil||0))return;
+        objective.lastTargetTile=null;
+        setPhase('fight',`Combat ${playerCombatEstimate()} • looking for the next ${chooseCombatTargetType()}`);
       }
 
       // If combat has made no meaningful progress for 25 seconds, rebuild the
@@ -1290,7 +1999,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return;
       }
 
-      if(Date.now()-lastAction<1600) return;
+      if(Date.now()-lastAction<ACTION_INTERVALS.combat) return;
       const target=nearestCombatNpc();
       if(!target){
         beginCombatTravel();
@@ -1324,6 +2033,14 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return {type:'stop'};
       }
 
+      // Firemaking must be recognized before the generic "logs" woodcutting
+      // synonym. Classic uses regular logs only: drop one, then use a
+      // tinderbox on the ground item.
+      if(hasAny(t,['firemaking','fire making','light fire','light fires','make fire','make fires','burn log','burn logs'])){
+        const finite=hasAny(t,['light fire','light fires','burn log','burn logs']);
+        return {type:'firemaking',supply:finite?'held':'gather'};
+      }
+
       // Specific resource names override the dropdown.
       const treeAliases=[
         ['magic',['magic tree','magic trees','magic logs','magics']],
@@ -1348,9 +2065,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       }
 
       const oreAliases=[
-        ['gold',['gold ore','gold rock','gold rocks']],
+        ['gold',['gold','gold ore','gold rock','gold rocks']],
         ['coal',['coal','coal rock','coal rocks']],
-        ['iron',['iron ore','iron rock','iron rocks']],
+        ['iron',['iron','iron ore','iron rock','iron rocks']],
         ['copper',['copper','copper ore','copper rock','copper rocks']],
         ['tin',['tin','tin ore','tin rock','tin rocks']]
       ];
@@ -1360,8 +2077,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return {type:'mining',resource:requestedOre};
       }
 
-      // Combat synonyms. The underlying combat loop is a later milestone,
-      // but recognize the intent now so the command language stays natural.
+      // Combat synonyms and named Classic targets.
       const combatWords=[
         'combat','fight','fighting','kill','killing','attack','strength',
         'defence','defense','melee','train combat','train attack',
@@ -1369,16 +2085,21 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       ];
       if(hasAny(t,combatWords)){
         let target=null;
-        if(hasAny(t,['chicken','chickens']))target='chicken';
+        if(hasAny(t,['dark wizard','dark wizards','darkwizard']))target='darkwizard';
+        else if(hasAny(t,['barbarian','barbarians','barb','barbs']))target='barbarian';
+        else if(hasAny(t,['chicken','chickens']))target='chicken';
         else if(hasAny(t,['cow','cows']))target='cow';
         else if(hasAny(t,['goblin','goblins']))target='goblin';
+        else if(hasAny(t,['guard','guards']))target='guard';
+        else if(hasAny(t,['dwarf','dwarves']))target='dwarf';
+        else if(hasAny(t,['rat','rats']))target='rat';
+        else if(hasAny(t,['man','men','human','humans']))target='man';
         return {type:'combat',target};
       }
 
       // Reserve common skill intents for future loops.
       const skills = [
         ['fishing',['fish','fishing']],
-        ['firemaking',['firemaking','fire making','light fires','burn logs']],
         ['cooking',['cook','cooking','food']],
         ['smithing',['smith','smithing','forge','forging']]
       ];
@@ -1399,12 +2120,27 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         stop('Stopped.');
         return;
       }
+      if(o.type==='firemaking'){
+        if(tinderboxSlot()<0){setBotStatus('Firemaking needs a tinderbox (item 166). Your existing account and inventory were not changed.');return;}
+        if(o.supply==='held'&&normalLogCount()<=0){setBotStatus('“Burn logs” uses regular logs already held. Try “train firemaking” to chop and burn continuously. Classic cannot burn higher-level logs.');return;}
+        const heldIds=Array.from(mc.inventoryItemId||[]).slice(0,inventorySlots());
+        if(o.supply==='gather'&&!heldIds.some(id=>[12,87,88,203,204,405,428].includes(Number(id)))){setBotStatus('Continuous Firemaking needs a woodcutting axe plus tinderbox.');return;}
+        const gp=globalPlayerTile();
+        const supply=o.supply||'held';
+        objective={type:'firemaking',resource:'normal',supply,phase:normalLogCount()>0?'fm-drop':'fm-chop',home:{x:gp.x,y:gp.y},navRoute:[],routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,moveIndex:0};
+        resetTaskStats();lastAction=0;
+        combatRow.style.display='none';lootRow.style.display='none';miningRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';
+        saveObjective();
+        setBotStatus(supply==='gather'?`Firemaking ${Number(mc.playerStatBase?.[11]||1)} • continuous chop-and-burn training started`:`Firemaking ${Number(mc.playerStatBase?.[11]||1)} • ${normalLogCount()} regular logs ready • starting a fire line`);
+        return;
+      }
       if(o.type==='combat'){
         const target=o.target||combatSelect.value||'auto';
         combatSelect.value=target;
-        objective={type:'combat',target,phase:'fight',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        objective={type:'combat',target,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
         resetTaskStats();
         combatRow.style.display='flex';
+        lootRow.style.display='flex';
         resourceSelect.closest('#resourceRow').style.display='none';
         miningRow.style.display='none';
         saveObjective();
@@ -1424,6 +2160,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         if(bestRock())objective.phase='mine';
         resetTaskStats();lastAction=0;
         combatRow.style.display='none';
+        lootRow.style.display='none';
         resourceSelect.closest('#resourceRow').style.display='none';
         miningRow.style.display='flex';
         saveObjective();
@@ -1438,6 +2175,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       }
 
       combatRow.style.display='none';
+      lootRow.style.display='none';
       miningRow.style.display='none';
       resourceSelect.closest('#resourceRow').style.display='flex';
       const gp=globalPlayerTile();
@@ -1465,7 +2203,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       const rock=bestRock();
       if(rock){
         objective.phase='mine';objective.home=globalPlayerTile();
-        if(Date.now()-lastAction>=1800&&mineRock(rock)){
+        if(Date.now()-lastAction>=ACTION_INTERVALS.gather&&mineRock(rock)){
           lastAction=Date.now();setBotStatus(`Mining ${lvl} • mining ${rock.ore} • ${used}/${max} slots`);
         }
         return;
@@ -1477,14 +2215,136 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<10){objective.routeIndex=idx+1;return;}
-        if(Date.now()-lastAction>1400){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Mining ${lvl} • travelling to ${hub.label} • ${wp.name}`);}
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Mining ${lvl} • travelling to ${hub.label} • ${wp.name}`);}
         return;
       }
       const search=hub.search,si=Number(objective.searchIndex||0)%search.length,off=search[si];
       const target={x:hub.centre.x+off[0],y:hub.centre.y+off[1]};
       if(nodeDistance(pp,target)<7)objective.searchIndex=si+1;
-      else if(Date.now()-lastAction>1400){shortStepToward(target,16);lastAction=Date.now();}
+      else if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(target,16);lastAction=Date.now();}
       setBotStatus(`Mining ${lvl} • searching ${hub.label} for ${desiredOreDef().name}`);
+    }
+
+    function firemakingGatherTick(){
+      const level=Number(mc.playerStatBase?.[11]||1),wc=wcLevel(),now=Date.now();
+      if(normalLogCount()>0){objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;markProgress('firemaking-log-ready');return;}
+      const ids=Array.from(mc.inventoryItemId||[]).slice(0,inventorySlots());
+      if(!ids.some(id=>[12,87,88,203,204,405,428].includes(Number(id)))){stop(`Continuous Firemaking stopped at level ${level}: no woodcutting axe detected.`);return;}
+      if(inventorySlots()>=Number(mc.inventoryMaxItemCount||30)){stop('Continuous Firemaking stopped: inventory is full and has no regular logs to burn.');return;}
+      const tree=bestTree();
+      if(tree){
+        objective.navRoute=[];objective.routeIndex=0;
+        if(now-lastAction>=ACTION_INTERVALS.gather&&chop(tree)){
+          lastAction=now;setBotStatus(`Firemaking ${level} • chopping a regular tree at Woodcutting ${wc}`);
+        }
+        return;
+      }
+
+      const pp=globalPlayerTile();
+      if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo('lumbridge');objective.routeIndex=0;objective.searchIndex=0;}
+      let idx=Number(objective.routeIndex||0);
+      if(idx<objective.navRoute.length){
+        const wp=objective.navRoute[idx];
+        if(nodeDistance(pp,wp)<10){objective.routeIndex=idx+1;markProgress('firemaking-route-node');return;}
+        if(now-lastAction>=ACTION_INTERVALS.walk){shortStepToward(wp,22);lastAction=now;setBotStatus(`Firemaking ${level} • travelling to normal trees • ${wp.name||'Lumbridge route'}`);}
+        return;
+      }
+
+      const offsets=[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,8],[-12,8],[12,-8],[-12,-8]];
+      const si=Number(objective.searchIndex||0)%offsets.length,off=offsets[si],target={x:122+off[0],y:657+off[1]};
+      if(nodeDistance(pp,target)<7){objective.searchIndex=si+1;markProgress('firemaking-tree-search');}
+      else if(now-lastAction>=ACTION_INTERVALS.walk){shortStepToward(target,16);lastAction=now;}
+      setBotStatus(`Firemaking ${level} • searching Lumbridge for regular trees (${si+1}/${offsets.length})`);
+    }
+
+    function firemakingTick(){
+      const level=Number(mc.playerStatBase?.[11]||1),now=Date.now();
+      if(tinderboxSlot()<0){stop(`Firemaking stopped at level ${level}: no tinderbox detected.`);return;}
+
+      if(objective.phase==='fm-chop'){
+        firemakingGatherTick();return;
+      }
+
+      if(objective.phase==='fm-drop'){
+        if(normalLogCount()<=0){
+          if(objective.supply==='gather'){
+            objective.phase='fm-chop';objective.phaseStarted=now;objective.navRoute=[];objective.routeIndex=0;lastAction=0;
+            setBotStatus(`Firemaking ${level} • no regular logs held • chopping another`);
+            return;
+          }
+          stop(`Firemaking complete • ${sessionStats.fires} fire${sessionStats.fires===1?'':'s'} lit • no regular logs left.`);
+          return;
+        }
+        if(now-lastAction<ACTION_INTERVALS.gather)return;
+        const tile=globalPlayerTile();
+        if(fireAt(tile,0)){
+          objective.fireTile=tile;objective.phase='fm-move';objective.phaseStarted=now;return;
+        }
+        if(dropNormalLog()){
+          objective.fireTile=tile;
+          objective.phase='fm-light';objective.phaseStarted=now;objective.lightAttempts=0;
+          lastAction=now;markProgress('firemaking-drop');
+          setBotStatus(`Firemaking ${level} • dropped regular logs • preparing tinderbox`);
+        }
+        return;
+      }
+
+      if(objective.phase==='fm-light'){
+        const log=groundNormalLogNear(objective.fireTile,3);
+        if(!log){
+          if(now-Number(objective.phaseStarted||now)>7000){
+            objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+            if(objective.stallRecoveries>4){stop('Firemaking stopped: the dropped logs could not be found after repeated recovery attempts.');return;}
+            objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;
+          }
+          return;
+        }
+        objective.fireTile={x:log.gx,y:log.gy};
+        if(now-lastAction<1800)return;
+        if(lightGroundLog(log)){
+          objective.lightAttempts=Number(objective.lightAttempts||0)+1;
+          objective.phase='fm-await';objective.phaseStarted=now;lastAction=now;
+          setBotStatus(`Firemaking ${level} • attempting to light log ${sessionStats.fires+1}`);
+        }
+        return;
+      }
+
+      if(objective.phase==='fm-await'){
+        const log=groundNormalLogNear(objective.fireTile,2);
+        if(fireAt(objective.fireTile,0)||(!log&&now-Number(objective.phaseStarted||now)>1500)){
+          sessionStats.fires++;markProgress('fire-lit');renderMetrics();
+          objective.phase='fm-move';objective.phaseStarted=now;objective.moveTarget=null;objective.moveAttempts=0;
+          setBotStatus(`Firemaking ${level} • fire ${sessionStats.fires} lit • ${normalLogCount()} regular logs left`);
+          return;
+        }
+        if(now-Number(objective.phaseStarted||now)>4200){
+          objective.phase='fm-light';objective.phaseStarted=now;lastAction=0;
+          setBotStatus(`Firemaking ${level} • logs did not catch • retrying (${objective.lightAttempts||1})`);
+        }
+        return;
+      }
+
+      if(objective.phase==='fm-move'){
+        const p=globalPlayerTile(),from=objective.fireTile||p;
+        if(Math.abs(p.x-from.x)+Math.abs(p.y-from.y)>=1){
+          objective.phase='fm-drop';objective.phaseStarted=now;objective.moveTarget=null;lastAction=0;markProgress('fire-line-step');
+          return;
+        }
+        if(now-lastAction<ACTION_INTERVALS.walk)return;
+        const offsets=[[2,0],[0,2],[-2,0],[0,-2],[2,2],[-2,2],[2,-2],[-2,-2]];
+        if(!objective.moveTarget||now-Number(objective.lastMoveAttempt||0)>6000){
+          const idx=Number(objective.moveIndex||0)%offsets.length,off=offsets[idx];
+          objective.moveIndex=idx+1;objective.moveTarget={x:from.x+off[0],y:from.y+off[1]};
+        }
+        if(walkGlobal(objective.moveTarget.x,objective.moveTarget.y)){
+          objective.lastMoveAttempt=now;objective.moveAttempts=Number(objective.moveAttempts||0)+1;lastAction=now;
+          setBotStatus(`Firemaking ${level} • stepping away from fire ${sessionStats.fires}`);
+        }
+        if(objective.moveAttempts>12){stop('Firemaking stopped: no clear tile could be reached for the next fire.');}
+        return;
+      }
+
+      objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;
     }
 
     function tick(){
@@ -1499,6 +2359,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         if(objective.phase==='bank'||objective.phase==='bank-dialogue'||objective.phase==='bank-open'){advanceBankRoute();return;}
         if(objective.phase==='return'){advanceReturnRoute();return;}
         miningTick();return;
+      }
+      if(objective.type==='firemaking'){
+        firemakingTick();return;
       }
 
       const lvl=wcLevel();
@@ -1556,7 +2419,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return;
       }
 
-      if(Date.now()-lastAction<1800) return;
+      if(Date.now()-lastAction<ACTION_INTERVALS.gather) return;
       const tree=bestTree();
       if(!tree){
         const def=selectedTreeDefinition();
@@ -1584,9 +2447,21 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       try{localStorage.setItem('autoscape_combat_target',combatSelect.value);}catch(e){}
       if(objective && objective.type==='combat'){
         objective.target=combatSelect.value;
+        objective.lastTargetTile=null;
+        objective.wasInCombat=false;
+        lastAction=0;
+        beginCombatTravel();
         saveObjective();
         const label=objective.target==='auto'?'safe automatic targets':objective.target;
         setBotStatus(`Combat updated — targeting ${label}.`);
+      }
+    });
+    lootSelect.addEventListener('change',()=>{
+      try{localStorage.setItem('autoscape_loot_mode',lootSelect.value);}catch(e){}
+      if(objective&&objective.type==='combat'){
+        saveObjective();
+        const label=lootSelect.options[lootSelect.selectedIndex]?.text||lootSelect.value;
+        setBotStatus(`Combat loot updated — ${label}.`);
       }
     });
 
@@ -1610,6 +2485,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         saveObjective();setBotStatus(`Mining updated — targeting ${miningSelect.value==='auto'?'best available ore':miningSelect.value}.`);
       }
     });
+    metricFoodCount=inventoryFoodCount;
+    metricNormalLogCount=normalLogCount;
+    installSessionAndMobileUX();
     botTimer=setInterval(tick,600);
     window.AutoScape={start,stop,get objective(){return objective;},mc};
 
@@ -1639,6 +2517,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
             const resource=savedJob.resource||'auto';
             resourceSelect.value=resource;
             combatRow.style.display='none';
+            lootRow.style.display='none';
             resourceSelect.closest('#resourceRow').style.display='flex';
             const gp=globalPlayerTile();
             objective={type:'woodcutting',resource,phase:'chop',home:{x:gp.x,y:gp.y},routeIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
@@ -1647,19 +2526,36 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
             setBotStatus(`Resumed Woodcutting — targeting ${label}. Say “stop” to end it.`);
           }else if(savedJob.type==='mining'){
             const resource=savedJob.resource||'auto';miningSelect.value=resource;
-            combatRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='flex';
+            combatRow.style.display='none';lootRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='flex';
             const gp=globalPlayerTile();objective={type:'mining',resource,phase:'mining-travel',home:{x:gp.x,y:gp.y},navRoute:makeRouteTo(resource==='coal'?'barbarianVillage':'rimmington'),routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
             resetTaskStats();setBotStatus(`Resumed Mining — targeting ${resource==='auto'?'best available ore':resource}. Say “stop” to end it.`);
           }else if(savedJob.type==='combat'){
             const target=savedJob.target||'auto';
             combatSelect.value=target;
+            lootSelect.value=savedJob.lootMode||lootSelect.value||'f2p';
             combatRow.style.display='flex';
+            lootRow.style.display='flex';
             resourceSelect.closest('#resourceRow').style.display='none';
             miningRow.style.display='none';
-            objective={type:'combat',target,phase:'fight',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+            objective={type:'combat',target,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
             resetTaskStats();
             const label=target==='auto'?'safe automatic targets':target;
             setBotStatus(`Resumed Combat — targeting ${label}. Say “stop” to end it.`);
+          }else if(savedJob.type==='firemaking'){
+            combatRow.style.display='none';lootRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='none';
+            const supply=savedJob.supply||'held';
+            const ids=Array.from(mc.inventoryItemId||[]).slice(0,inventorySlots());
+            const canGather=supply==='gather'&&ids.some(id=>[12,87,88,203,204,405,428].includes(Number(id)));
+            if(tinderboxSlot()>=0&&(normalLogCount()>0||canGather)){
+              const gp=globalPlayerTile();
+              objective={type:'firemaking',resource:'normal',supply,phase:normalLogCount()>0?'fm-drop':'fm-chop',home:{x:gp.x,y:gp.y},navRoute:[],routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,moveIndex:0};
+              resetTaskStats();
+              setBotStatus(supply==='gather'?`Resumed continuous Firemaking at level ${Number(mc.playerStatBase?.[11]||1)}. Say “stop” to end it.`:`Resumed Firemaking — ${normalLogCount()} regular logs ready. Say “stop” to end it.`);
+            }else{
+              localStorage.removeItem('autoscape_job');
+              resourceSelect.closest('#resourceRow').style.display='flex';
+              setBotStatus(tinderboxSlot()<0?'Saved Firemaking job needs a tinderbox.':(supply==='gather'?'Saved continuous Firemaking job needs a woodcutting axe.':'Saved Firemaking job finished: no regular logs remain.'));
+            }
           }
         }
       }catch(e){}
@@ -1673,7 +2569,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       const server=await fetchText(SERVER_URL,FALLBACK_SERVER,FALLBACK2_SERVER,'local Classic server');
       // Upstream intentionally allows registration only on F2P worlds.
       // AutoScape is a private local members world, so remove that registration-only guard.
-      let serverCode=server.text;
+      let serverCode=patchServerResources(server.text);
       // Period-correct RuneScape Classic starter inventory:
       // bronze axe (87), cookedmeat (132), tinderbox (166), bronze pickaxe (156).
       const starterInventory=[
@@ -1747,7 +2643,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.7 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThis build needs internet while starting so your phone can fetch the preservation client/server files.\n\nANDROID:\n1. Save this HTML to Downloads.\n2. In My Files / Files, long-press it and choose Open with.\n3. Choose Chrome or Samsung Internet (not the built-in document preview).\n4. Keep internet on for launch.`, 'bad');
@@ -1786,7 +2682,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.5.1 service worker registered',reg.scope);
+      console.log('AutoScape v2.7 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });
