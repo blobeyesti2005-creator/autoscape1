@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.9 — Private Local World</title>
+<title>AutoScape Classic v2.10 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -31,12 +31,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #miningRow{display:none;gap:5px;align-items:center;margin:4px 0}
 #miningRow label{color:#cdbb98;white-space:nowrap}
 #miningSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
-#combatRow{display:none;gap:5px;align-items:center;margin:4px 0}
-#combatRow label{color:#cdbb98;white-space:nowrap}
-#combatSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
-#lootRow{display:none;gap:5px;align-items:center;margin:4px 0}
-#lootRow label{color:#cdbb98;white-space:nowrap}
-#lootSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
+#combatRow,#combatStyleRow,#combatBankRow,#lootRow{display:none;gap:5px;align-items:center;margin:4px 0}
+#combatRow label,#combatStyleRow label,#combatBankRow label,#lootRow label{color:#cdbb98;white-space:nowrap}
+#combatSelect,#combatStyleSelect,#combatBankSelect,#lootSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
 #bot button{background:#655438;color:#fff;border:1px solid #9f8657;padding:8px 10px}
 #botNote{font-size:9px;color:#b8aa8e;margin-top:3px}
 .bad{color:#ff9a8f}.good{color:#aee59f}
@@ -59,7 +56,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.9</h2>
+<h2>AUTOSCAPE CLASSIC v2.10</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -117,6 +114,22 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <option value="hobgoblin">Hobgoblin (Lv 32)</option>
 </select>
 </div>
+<div id="combatStyleRow">
+<label for="combatStyleSelect">Combat style</label>
+<select id="combatStyleSelect">
+<option value="controlled">Controlled</option>
+<option value="strength">Strength (aggressive)</option>
+<option value="attack">Attack (accurate)</option>
+<option value="defence">Defence (defensive)</option>
+</select>
+</div>
+<div id="combatBankRow">
+<label for="combatBankSelect">Combat banking</label>
+<select id="combatBankSelect">
+<option value="safe">Bank loot &amp; restock food</option>
+<option value="never">Never bank — fight to death</option>
+</select>
+</div>
 <div id="lootRow">
 <label for="lootSelect">Loot</label>
 <select id="lootSelect">
@@ -170,12 +183,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <tr><td>Guard</td><td>28</td><td>Falador</td><td>Coins, iron dagger, bronze longsword, helmet, runes, arrows, iron ore, grain</td></tr>
 <tr><td>Hobgoblin</td><td>32</td><td>Crafting Guild coast</td><td>Coins, steel weapons, runes, limpwurt root, goblin armour, gems</td></tr>
 </tbody></table></section>
-<section class="guideEntry" data-guide="starter items inventory axe pickaxe tinderbox cooked meat bank quick bank">
-<h3>Starter kit and safe banking</h3><p>New characters receive a bronze axe <strong>87</strong>, cooked meat <strong>132</strong>, tinderbox <strong>166</strong>, and bronze pickaxe <strong>156</strong>. Existing accounts are preserved. Quick Bank's Gathered and Loot buttons skip equipped items; Carried deposits every unequipped stack intentionally.</p></section>
+<section class="guideEntry" data-guide="starter items inventory axe pickaxe tinderbox cooked meat bank lumbridge nearest quick bank">
+<h3>Starter kit and safe banking</h3><p>New characters receive a bronze axe <strong>87</strong>, cooked meat <strong>132</strong>, tinderbox <strong>166</strong>, and bronze pickaxe <strong>156</strong>. Existing accounts are preserved. This private world adds a Lumbridge banker, and automation chooses the nearest supported bank for its current position. Quick Bank's Gathered and Loot buttons skip equipped items; Carried deposits every unequipped stack intentionally.</p></section>
 <section class="guideEntry" data-guide="item items ids reference loot drops equipment runes ores logs food tools">
 <h3>Supported item reference</h3><table><thead><tr><th>Item ID</th><th>Name</th></tr></thead><tbody id="guideItems"></tbody></table></section>
-<section class="guideEntry" data-guide="commands bot natural language jobs queue chain then comma">
-<h3>Useful commands</h3><p><code>chop 10 logs</code> · <code>mine 20 iron ore</code> · <code>kill 5 skeletons</code> · <code>fight dark wizards</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Example: <code>chop 10 logs, then firemake them</code>. Numbered steps complete after real resources, fires, or kills are confirmed. An unnumbered queued gathering step fills the inventory without banking, then the next step starts automatically. The current step, progress, and remaining queue persist locally after login.</p></section>
+<section class="guideEntry" data-guide="commands bot natural language jobs queue chain then comma combat strength attack defence bank death">
+<h3>Useful commands</h3><p><code>chop 10 logs</code> · <code>mine 20 iron ore</code> · <code>kill 5 skeletons</code> · <code>train strength on chickens</code> · <code>fight chickens to the death</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Combat commands can choose Controlled, Strength, Attack, or Defence XP. “To the death” and “never bank” disable combat banking until changed. Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Example: <code>chop 10 logs, then firemake them</code>. Numbered steps complete after real resources, fires, or kills are confirmed. An unnumbered queued gathering step fills the inventory without banking, then the next step starts automatically. The current step, progress, and remaining queue persist locally after login.</p></section>
 </div>
 <script>
 'use strict';
@@ -207,12 +220,17 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   const miningSelect=document.getElementById('miningSelect');
   const combatRow=document.getElementById('combatRow');
   const combatSelect=document.getElementById('combatSelect');
+  const combatStyleRow=document.getElementById('combatStyleRow');
+  const combatStyleSelect=document.getElementById('combatStyleSelect');
+  const combatBankRow=document.getElementById('combatBankRow');
+  const combatBankSelect=document.getElementById('combatBankSelect');
   const lootRow=document.getElementById('lootRow');
   const lootSelect=document.getElementById('lootSelect');
 
   let worker=null, objective=null, botTimer=null, lastAction=0;
   let commandQueue=[],activeCommandText='';
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
+  let lastMetricsText='',lastQueueText='',lastStatusText='';
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,loot:0,bankTrips:0,deposits:0};
 
   function fmtDuration(ms){
@@ -226,17 +244,22 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   }
   function renderMetrics(){
     if(!botMetrics)return;
-    if(!objective){botMetrics.textContent='Session idle';return;}
+    if(!objective){
+      if(lastMetricsText!=='Session idle'){botMetrics.textContent='Session idle';lastMetricsText='Session idle';}
+      renderQueue();
+      return;
+    }
     const parts=[fmtDuration(Date.now()-(sessionStats.taskStartedAt||Date.now())),`${sessionStats.actions} actions`];
     if(objective.type==='woodcutting')parts.push(`${sessionStats.chops} chops`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='mining')parts.push(`${sessionStats.mines} swings`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='firemaking')parts.push(`${sessionStats.fires} fires lit`,`${sessionStats.chops} chop attempts`,`${metricNormalLogCount()} logs held`);
-    if(objective.type==='combat')parts.push(`${sessionStats.kills} defeated`,`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`);
+    if(objective.type==='combat')parts.push(`${sessionStats.kills} defeated`,`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`,objective.bankMode==='never'?'no banking':`${objective.bankName||'nearest'} bank`);
     if(Number(objective.countGoal)>0)parts.push(`${Math.min(Number(objective.countProgress||0),Number(objective.countGoal))}/${Number(objective.countGoal)} target`);
     if(commandQueue.length)parts.push(`${commandQueue.length} queued`);
     parts.push(`phase ${objective.phase||'idle'}`);
     if(objective.stallRecoveries)parts.push(`${objective.stallRecoveries} recoveries`);
-    botMetrics.textContent=parts.join(' • ');
+    const text=parts.join(' • ');
+    if(text!==lastMetricsText){botMetrics.textContent=text;lastMetricsText=text;}
     renderQueue();
   }
 
@@ -250,11 +273,16 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   }
   function renderQueue(){
     if(!queuePlan)return;
-    if(!objective){queuePlan.textContent=commandQueue.length?`Next: ${commandQueue.join(' → ')}`:'Queue idle';return;}
+    if(!objective){
+      const text=commandQueue.length?`Next: ${commandQueue.join(' → ')}`:'Queue idle';
+      if(text!==lastQueueText){queuePlan.textContent=text;lastQueueText=text;}
+      return;
+    }
     const goal=Number(objective.countGoal||0);
     const progress=goal?` (${Math.min(Number(objective.countProgress||0),goal)}/${goal} ${objectiveUnit(objective)})`:'';
     const current=objective.commandText||activeCommandText||objective.type;
-    queuePlan.textContent=`Now: ${current}${progress}${commandQueue.length?` → ${commandQueue.join(' → ')}`:''}`;
+    const text=`Now: ${current}${progress}${commandQueue.length?` → ${commandQueue.join(' → ')}`:''}`;
+    if(text!==lastQueueText){queuePlan.textContent=text;lastQueueText=text;}
   }
   function markProgress(kind){
     if(!objective)return;
@@ -596,6 +624,33 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     return code;
   }
 
+  // RuneScape Classic predates the Lumbridge bank familiar from later OSRS.
+  // This private-world quality-of-life banker gives the bot (and player) a
+  // genuinely nearby bank instead of forcing every southern trip to Draynor.
+  function patchServerBanking(code){
+    const firstBanker=`    {
+        "id": 95,
+        "x": 502,
+        "y": 447,
+        "minX": 497,
+        "maxX": 507,
+        "minY": 442,
+        "maxY": 452
+    },`;
+    const lumbridgeBanker=`    {
+        "id": 95,
+        "x": 124,
+        "y": 657,
+        "minX": 124,
+        "maxX": 124,
+        "minY": 657,
+        "maxY": 657
+    },
+${firstBanker}`;
+    if(!code.includes(firstBanker))throw new Error('Server banking patch failed: banker locations changed.');
+    return code.replace(firstBanker,lumbridgeBanker);
+  }
+
   // Repair upstream gameplay-state edge cases exposed by frequent browser
   // saves, remove fatigue completely, and let players consume two validated
   // path steps per world movement tick. NPCs and combat keep normal timing.
@@ -751,6 +806,10 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(savedMining&&[...miningSelect.options].some(o=>o.value===savedMining))miningSelect.value=savedMining;
       const savedLoot=localStorage.getItem('autoscape_loot_mode');
       if(savedLoot&&[...lootSelect.options].some(o=>o.value===savedLoot))lootSelect.value=savedLoot;
+      const savedStyle=localStorage.getItem('autoscape_combat_style');
+      if(savedStyle&&[...combatStyleSelect.options].some(o=>o.value===savedStyle))combatStyleSelect.value=savedStyle;
+      const savedBankMode=localStorage.getItem('autoscape_combat_bank_mode');
+      if(savedBankMode&&[...combatBankSelect.options].some(o=>o.value===savedBankMode))combatBankSelect.value=savedBankMode;
     }catch(e){}
 
     // Keep Android's hidden keyboard bridge completely off the visible game surface.
@@ -1115,27 +1174,27 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       return {x:p.x+Number(mc.regionX||0),y:p.y+Number(mc.regionY||0)};
     }
 
-    function walkGlobal(x,y){
+    function walkGlobal(x,y,action=false){
       if(typeof mc._walkToActionSource_from5!=='function') return false;
       const lx=x-Number(mc.regionX||0);
       const ly=y-Number(mc.regionY||0);
       mc._walkToActionSource_from5(
         Number(mc.localRegionX||0),
         Number(mc.localRegionY||0),
-        lx,ly,false
+        lx,ly,!!action
       );
       suppressBotClickMarker();
       return true;
     }
 
     const BANKER_IDS=new Set([95,224,268,540,617]);
-    const DRAYNOR_BANK={x:220,y:635};
 
     // AutoScape navigation graph. This is intentionally generic so additional
     // banks/resources/quest areas can be added as nodes rather than writing a
     // new brittle waypoint loop for every script.
     const NAV_NODES={
       lumbridge:{x:122,y:657},
+      lumbridgeBank:{x:124,y:657},
       lumbridgeSwamp:{x:140,y:667},
       lumbridgeNorth:{x:132,y:639},
       lumbridgeCows:{x:105,y:618},
@@ -1154,18 +1213,24 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       faladorSouth:{x:312,y:585},
       craftingGuild:{x:365,y:604},
       falador:{x:312,y:552},
+      faladorWestBank:{x:282,y:568},
+      faladorEastBank:{x:331,y:553},
       faladorNorth:{x:312,y:510},
       dwarvenVillage:{x:278,y:497},
       goblinVillage:{x:325,y:461},
       barbarianVillage:{x:226,y:512},
       varrockWest:{x:210,y:545},
+      varrockWestBank:{x:150,y:502},
+      varrockEastBank:{x:102,y:512},
       edgeville:{x:216,y:451},
       kandarinApproach:{x:360,y:470},
       camelot:{x:465,y:456},
-      seers:{x:490,y:455}
+      seers:{x:490,y:455},
+      seersBank:{x:501,y:450}
     };
     const NAV_EDGES={
-      lumbridge:['lumbridgeWest','lumbridgeSwamp','lumbridgeNorth'],
+      lumbridge:['lumbridgeBank','lumbridgeWest','lumbridgeSwamp','lumbridgeNorth'],
+      lumbridgeBank:['lumbridge'],
       lumbridgeSwamp:['lumbridge'],
       lumbridgeNorth:['lumbridge','lumbridgeCows','lumbridgeFarm','varrockSouth'],
       lumbridgeCows:['lumbridgeNorth','lumbridgeFarm'],
@@ -1183,16 +1248,32 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       rimmington:['portSarimRoad','faladorSouth','craftingGuild'],
       faladorSouth:['rimmington','portSarimRoad','craftingGuild','falador'],
       craftingGuild:['rimmington','faladorSouth'],
-      falador:['faladorSouth','barbarianVillage','faladorNorth'],
+      falador:['faladorSouth','faladorWestBank','faladorEastBank','barbarianVillage','faladorNorth'],
+      faladorWestBank:['falador','faladorEastBank'],
+      faladorEastBank:['falador','faladorWestBank'],
       faladorNorth:['falador','dwarvenVillage','goblinVillage'],
       dwarvenVillage:['faladorNorth','barbarianVillage','goblinVillage'],
       goblinVillage:['faladorNorth','dwarvenVillage'],
       barbarianVillage:['falador','edgeville','dwarvenVillage','draynorNorth','varrockWest'],
-      varrockWest:['barbarianVillage','draynorNorth','varrockSouth'],
+      varrockWest:['barbarianVillage','draynorNorth','varrockSouth','varrockWestBank'],
+      varrockWestBank:['varrockWest','varrockEastBank'],
+      varrockEastBank:['varrockWestBank','varrockSouth'],
       edgeville:['barbarianVillage','kandarinApproach'],
       kandarinApproach:['edgeville','camelot'],
       camelot:['kandarinApproach','seers'],
-      seers:['camelot']
+      seers:['camelot','seersBank'],
+      seersBank:['seers']
+    };
+
+    const BANKS={
+      lumbridge:{node:'lumbridgeBank',label:'Lumbridge',x:124,y:657},
+      draynor:{node:'draynorBank',label:'Draynor',x:220,y:635},
+      varrockWest:{node:'varrockWestBank',label:'Varrock west',x:150,y:502},
+      varrockEast:{node:'varrockEastBank',label:'Varrock east',x:102,y:512},
+      faladorWest:{node:'faladorWestBank',label:'Falador west',x:282,y:568},
+      faladorEast:{node:'faladorEastBank',label:'Falador east',x:331,y:553},
+      edgeville:{node:'edgeville',label:'Edgeville',x:216,y:451},
+      seers:{node:'seersBank',label:'Seers',x:501,y:450}
     };
 
     function nodeDistance(a,b){
@@ -1235,19 +1316,56 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       return graphPath(start,targetNode).map(name=>({name,...NAV_NODES[name]}));
     }
 
+    function nearestBank(point=globalPlayerTile()){
+      let best=null,bestDistance=Infinity;
+      for(const [key,bank] of Object.entries(BANKS)){
+        const distance=nodeDistance(point,bank);
+        if(distance<bestDistance){best={key,...bank,distance};bestDistance=distance;}
+      }
+      return best;
+    }
+
+    function prepareBankRoute(){
+      const bank=nearestBank();
+      if(!bank)return null;
+      objective.bankKey=bank.key;
+      objective.bankName=bank.label;
+      objective.bankNode=bank.node;
+      objective.bankTarget={x:bank.x,y:bank.y};
+      objective.navRoute=makeRouteTo(bank.node);
+      objective.routeIndex=0;
+      objective.bankTalkSentAt=0;
+      objective.bankOptionSentAt=0;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+      return bank;
+    }
+
+    function objectiveBank(){
+      const savedKey=objective?.bankKey;
+      const bank=savedKey&&BANKS[savedKey]?{key:savedKey,...BANKS[savedKey]}:nearestBank();
+      if(objective&&bank){
+        objective.bankKey=bank.key;
+        objective.bankName=bank.label;
+        objective.bankNode=bank.node;
+        objective.bankTarget={x:bank.x,y:bank.y};
+      }
+      return bank;
+    }
+
     let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
     const MAX_NAV_RETRIES=12;
 
     function navRetryTarget(target){
       const pp=globalPlayerTile();
       if(navWatch.x!==pp.x || navWatch.y!==pp.y){
-        navWatch={x:pp.x,y:pp.y,lastMove:Date.now(),stalls:0};
+        navWatch={x:pp.x,y:pp.y,lastMove:Date.now(),stalls:0,retries:0};
         return target;
       }
       if(!navWatch.lastMove) navWatch.lastMove=Date.now();
       if(Date.now()-navWatch.lastMove>3500){
         navWatch.lastMove=Date.now();
         navWatch.stalls++;
+        navWatch.retries=Number(navWatch.retries||0)+1;
       }
       if(navWatch.stalls<1) return target;
       const offsets=[[2,0],[0,2],[-2,0],[0,-2],[3,2],[-3,2],[3,-2],[-3,-2]];
@@ -1261,17 +1379,23 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       for(let i=0;i<(mc.npcCount||0);i++){
         const npc=mc.npcs?.[i];
         if(!npc || !BANKER_IDS.has(Number(npc.npcId))) continue;
-        const x=((Number(npc.currentX||0)/Number(mc.magicLoc||128))|0)+Number(mc.regionX||0);
-        const y=((Number(npc.currentY||0)/Number(mc.magicLoc||128))|0)+Number(mc.regionY||0);
+        const lx=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
+        const ly=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
+        const x=lx+Number(mc.regionX||0);
+        const y=ly+Number(mc.regionY||0);
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
-        if(d<bd){bd=d;best={npc,x,y,d};}
+        if(d<bd){bd=d;best={npc,x,y,lx,ly,d};}
       }
       return best;
     }
 
     function sendTalkToBanker(b){
       if(!b || !mc.packetStream) return false;
-      walkGlobal(b.x,b.y);
+      mc._walkToActionSource_from5(
+        Number(mc.localRegionX||0),Number(mc.localRegionY||0),
+        Number(b.lx),Number(b.ly),true
+      );
+      suppressBotClickMarker();
       mc.packetStream.newPacket(153);
       mc.packetStream.putShort(Number(b.npc.serverIndex));
       mc.packetStream.sendPacket();
@@ -1292,10 +1416,14 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     function advanceBankRoute(){
       const pp=globalPlayerTile();
       const banker=nearestLoadedBanker();
+      const bank=objectiveBank()||prepareBankRoute();
+      if(!bank)return false;
 
       if(mc.showDialogBank){
         if(depositGatheredItemsIfBankOpen()){
           objective.phase='return';
+          objective.returnNode=objective.home?nearestNavNode(objective.home):null;
+          objective.navRoute=objective.returnNode?makeRouteTo(objective.returnNode):[];
           objective.routeIndex=0;
           navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
           lastAction=Date.now();
@@ -1308,24 +1436,31 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(mc.showOptionMenu){
         if(chooseFirstDialogueOption()){
           objective.phase='bank-open';
+          objective.bankOptionSentAt=Date.now();
           lastAction=Date.now();
-          setBotStatus(`${gatherSkillLabel()} • asking banker to open bank`);
+          setBotStatus(`${gatherSkillLabel()} • opening ${bank.label} bank`);
           return true;
         }
       }
 
-      if(banker && banker.d<=10){
+      // Banker speech is asynchronous. Re-sending NPC_TALK while the greeting
+      // is running resets the server walk action and can prevent the menu.
+      if(objective.phase==='bank-dialogue'&&Date.now()-Number(objective.bankTalkSentAt||0)<9000)return false;
+      if(objective.phase==='bank-open'&&Date.now()-Number(objective.bankOptionSentAt||0)<6000)return false;
+
+      if(banker && banker.d<=7){
         if(Date.now()-lastAction>ACTION_INTERVALS.walk && sendTalkToBanker(banker)){
           objective.phase='bank-dialogue';
+          objective.bankTalkSentAt=Date.now();
           lastAction=Date.now();
-          setBotStatus(`${gatherSkillLabel()} • talking to banker`);
+          setBotStatus(`${gatherSkillLabel()} • talking to ${bank.label} banker`);
           return true;
         }
         return false;
       }
 
       if(!Array.isArray(objective.navRoute) || objective.navRoute.length===0){
-        objective.navRoute=makeRouteTo('draynorBank');
+        objective.navRoute=makeRouteTo(bank.node);
         objective.routeIndex=0;
       }
 
@@ -1338,7 +1473,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
         if(navWatch.retries>=MAX_NAV_RETRIES){
           setBotStatus(`${gatherSkillLabel()} • navigation recovery limit reached near ${wp.name||'route node'} • retrying route`);
-          objective.navRoute=makeRouteTo('draynorBank');
+          objective.navRoute=makeRouteTo(bank.node);
           objective.routeIndex=0;
           navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
           lastAction=Date.now();
@@ -1348,29 +1483,28 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         if(Date.now()-lastAction>ACTION_INTERVALS.walk){
           const retry=navRetryTarget(wp);
           walkGlobal(retry.x,retry.y);
-          navWatch.retries++;
           lastAction=Date.now();
-          setBotStatus(`${gatherSkillLabel()} • banking • ${wp.name||'route'} (${idx+1}/${route.length})`);
+          setBotStatus(`${gatherSkillLabel()} • ${bank.label} bank • ${wp.name||'route'} (${idx+1}/${route.length})`);
         }
         return true;
       }
 
       if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-        const retry=navRetryTarget(DRAYNOR_BANK);
+        const retry=navRetryTarget(bank);
         walkGlobal(retry.x,retry.y);
         lastAction=Date.now();
-        setBotStatus(`${gatherSkillLabel()} • locating banker`);
+        setBotStatus(`${gatherSkillLabel()} • locating ${bank.label} banker`);
       }
       return true;
     }
 
-    function shortStepToward(target,maxStep=22){
+    function shortStepToward(target,maxStep=14){
       const pp=globalPlayerTile();
       const dx=target.x-pp.x, dy=target.y-pp.y;
       const d=Math.abs(dx)+Math.abs(dy);
       if(d<=5) return true;
       const mag=Math.max(Math.abs(dx),Math.abs(dy),1);
-      const scale=Math.min(1,maxStep/mag);
+      const scale=Math.min(1,Math.min(maxStep,14)/mag);
       const tx=Math.round(pp.x+dx*scale);
       const ty=Math.round(pp.y+dy*scale);
       const retry=navRetryTarget({x:tx,y:ty});
@@ -1425,9 +1559,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
           return;
         }
         if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,22);
+          shortStepToward(wp,14);
           lastAction=Date.now();
-          navWatch.retries++;
           setBotStatus(`Woodcutting ${wcLevel()} • travelling for ${type} • ${wp.name||hub.node}`);
         }
         if(navWatch.retries>MAX_NAV_RETRIES*5){
@@ -1476,9 +1609,30 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         return;
       }
 
+      if(!Array.isArray(objective.navRoute)){
+        objective.returnNode=nearestNavNode(home);
+        objective.navRoute=objective.returnNode?makeRouteTo(objective.returnNode):[];
+        objective.routeIndex=0;
+      }
+      let idx=Number(objective.routeIndex||0);
+      while(idx<objective.navRoute.length){
+        const wp=objective.navRoute[idx];
+        if(nodeDistance(pp,wp)<9){
+          objective.routeIndex=++idx;
+          markProgress('return-route-node');
+          continue;
+        }
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
+          shortStepToward(wp,14);
+          lastAction=Date.now();
+          setBotStatus(`${gatherSkillLabel()} • returning • ${wp.name||objective.returnNode}`);
+        }
+        return;
+      }
+
       // Move toward the remembered training position in short global steps so
       // the client's normal collision/path logic stays in control.
-      const step=24;
+      const step=14;
       const tx=pp.x+Math.max(-step,Math.min(step,dx));
       const ty=pp.y+Math.max(-step,Math.min(step,dy));
       if(Date.now()-lastAction>ACTION_INTERVALS.walk){
@@ -1501,7 +1655,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     }
     function setBotStatus(s){
       const queued=commandQueue.length?` • Queue: ${commandQueue.length} next`:'';
-      botStatus.textContent=`${s}${queued}`;
+      const text=`${s}${queued}`;
+      if(text!==lastStatusText){botStatus.textContent=text;lastStatusText=text;}
       renderQueue();
     }
 
@@ -1514,6 +1669,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             supply:objective.supply||'held',
             target:objective.target||'auto',
             lootMode:lootSelect.value||'f2p',
+            combatStyle:objective.combatStyle||combatStyleSelect.value||'controlled',
+            bankMode:objective.bankMode||combatBankSelect.value||'safe',
             commandText:objective.commandText||activeCommandText||'',
             chainAdvance:!!objective.chainAdvance,
             countGoal:Number(objective.countGoal||0),
@@ -1524,7 +1681,11 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
           localStorage.setItem('autoscape_job',JSON.stringify(saved));
           localStorage.setItem('autoscape_resource',saved.resource);
           if(objective.type==='mining')localStorage.setItem('autoscape_mining_resource',saved.resource);
-          if(objective.type==='combat')localStorage.setItem('autoscape_loot_mode',saved.lootMode);
+          if(objective.type==='combat'){
+            localStorage.setItem('autoscape_loot_mode',saved.lootMode);
+            localStorage.setItem('autoscape_combat_style',saved.combatStyle);
+            localStorage.setItem('autoscape_combat_bank_mode',saved.bankMode);
+          }
         }else{
           localStorage.removeItem('autoscape_job');
         }
@@ -1533,6 +1694,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
     function resetObjectiveControls(){
       combatRow.style.display='none';
+      combatStyleRow.style.display='none';
+      combatBankRow.style.display='none';
       lootRow.style.display='none';
       miningRow.style.display='none';
       resourceSelect.closest('#resourceRow').style.display='flex';
@@ -1780,7 +1943,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         if(!open){dismissed=false;wasOpen=false;bar.style.display='none';return;}
         if(!wasOpen){dismissed=false;wasOpen=true;}
         bar.style.display=dismissed?'none':'flex';
-      },200);
+      },750);
     }
 
     function shouldTakeLoot(id){
@@ -1791,6 +1954,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     }
 
     function nearestGroundLoot(){
+      if(inventorySlots()>=Number(mc.inventoryMaxItemCount||30))return null;
       const pp=playerTile(),anchor=objective?.lastTargetTile;
       let best=null,bd=1e9;
       for(let i=0;i<Number(mc.groundItemCount||0);i++){
@@ -1939,7 +2103,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
           return;
         }
         if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,22);
+          shortStepToward(wp,14);
           lastAction=Date.now();
           objective.combatNavRetries=Number(objective.combatNavRetries||0)+1;
           setBotStatus(`Combat ${playerCombatEstimate()} • travelling for ${type} • ${wp.name||hub.node}`);
@@ -1973,6 +2137,25 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     function maxHits(){
       const base=mc.playerStatBase||[];
       return Number(base[3]||10);
+    }
+
+    const COMBAT_STYLE_IDS={controlled:0,strength:1,attack:2,defence:3};
+    function applyCombatStyle(style){
+      const selected=Object.prototype.hasOwnProperty.call(COMBAT_STYLE_IDS,style)?style:'controlled';
+      combatStyleSelect.value=selected;
+      mc.combatStyle=COMBAT_STYLE_IDS[selected];
+      if(mc.packetStream&&loggedIn()){
+        mc.packetStream.newPacket(29); // COMBAT_STYLE
+        mc.packetStream.putByte(mc.combatStyle);
+        mc.packetStream.sendPacket();
+      }
+      if(objective?.type==='combat')objective.combatStyle=selected;
+      try{localStorage.setItem('autoscape_combat_style',selected);}catch(e){}
+      return selected;
+    }
+
+    function combatBankingEnabled(){
+      return (objective?.bankMode||combatBankSelect.value||'safe')!=='never';
     }
 
     function inCombat(){
@@ -2076,23 +2259,24 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       return true;
     }
     function beginCombatBanking(reason='food'){
-      if(!objective||objective.type!=='combat')return false;
+      if(!objective||objective.type!=='combat'||!combatBankingEnabled())return false;
       objective.combatBankReason=reason;
       objective.returnCombatType=chooseCombatTargetType();
-      objective.navRoute=makeRouteTo('draynorBank');
-      objective.routeIndex=0;
+      const bank=prepareBankRoute();
+      if(!bank)return false;
       objective.bankRetries=0;
       objective.combatLootDeposited=false;
       objective.combatLootDepositAt=0;
       objective.combatBankFinishing=false;
-      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
-      setPhase('combat-bank',`Combat • heading to bank for loot and supplies`);
+      setPhase('combat-bank',`Combat • heading to ${bank.label} bank for loot and supplies`);
       return true;
     }
 
     function advanceCombatBanking(){
       const pp=globalPlayerTile();
       const banker=nearestLoadedBanker();
+      const bank=objectiveBank()||prepareBankRoute();
+      if(!bank)return;
 
       if(mc.showDialogBank){
         if(!objective.combatLootDeposited){
@@ -2132,21 +2316,26 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(mc.showOptionMenu){
         if(chooseFirstDialogueOption()){
           setPhase('combat-bank-open','Combat • asking banker to open bank');
+          objective.bankOptionSentAt=Date.now();
           lastAction=Date.now();
           return;
         }
       }
 
-      if(banker&&banker.d<=10){
+      if(objective.phase==='combat-bank-dialogue'&&Date.now()-Number(objective.bankTalkSentAt||0)<9000)return;
+      if(objective.phase==='combat-bank-open'&&Date.now()-Number(objective.bankOptionSentAt||0)<6000)return;
+
+      if(banker&&banker.d<=7){
         if(Date.now()-lastAction>ACTION_INTERVALS.walk&&sendTalkToBanker(banker)){
-          setPhase('combat-bank-dialogue','Combat • talking to banker');
+          objective.bankTalkSentAt=Date.now();
+          setPhase('combat-bank-dialogue',`Combat • talking to ${bank.label} banker`);
           lastAction=Date.now();
         }
         return;
       }
 
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){
-        objective.navRoute=makeRouteTo('draynorBank');
+        objective.navRoute=makeRouteTo(bank.node);
         objective.routeIndex=0;
       }
       const route=objective.navRoute;
@@ -2155,17 +2344,17 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         const wp=route[idx];
         if(nodeDistance(pp,wp)<8){objective.routeIndex=++idx;markProgress('combat-bank-node');continue;}
         if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,22);
+          shortStepToward(wp,14);
           lastAction=Date.now();
           objective.bankRetries=Number(objective.bankRetries||0)+1;
-          setBotStatus(`Combat • banking for food • ${wp.name||'route'} (${idx+1}/${route.length})`);
+          setBotStatus(`Combat • ${bank.label} bank • ${wp.name||'route'} (${idx+1}/${route.length})`);
           if(objective.bankRetries>MAX_NAV_RETRIES*5){
-            objective.navRoute=makeRouteTo('draynorBank');objective.routeIndex=0;objective.bankRetries=0;
+            objective.navRoute=makeRouteTo(bank.node);objective.routeIndex=0;objective.bankRetries=0;
           }
         }
         return;
       }
-      if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(DRAYNOR_BANK,16);lastAction=Date.now();}
+      if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(bank,14);lastAction=Date.now();}
     }
 
     // ---------- TASK 4: return to the selected combat training region ----------
@@ -2193,7 +2382,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<9){objective.routeIndex=idx+1;markProgress('combat-return-node');return;}
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Combat • returning • ${wp.name||hub.node}`);}
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,14);lastAction=Date.now();setBotStatus(`Combat • returning • ${wp.name||hub.node}`);}
         return;
       }
       // Once inside the hub, reuse the regional live-NPC search logic.
@@ -2203,6 +2392,11 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
     function combatTick(){
       const hp=currentHits(), max=maxHits();
+
+      if(objective.attackSentAt&&(hp<=0||Number(mc.deathScreenTimeout||0)>0||mc.world?.playerAlive===false)){
+        stop(`Combat ended — your character fought until defeated after ${sessionStats.kills} kill${sessionStats.kills===1?'':'s'}.`);
+        return;
+      }
 
       // A reload can occur during the short post-kill loot window. The kill
       // was already persisted, so complete it instead of attacking one extra.
@@ -2230,18 +2424,20 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
       if(hp>0 && hp<=Math.max(3,Math.floor(max*0.25))){
         if(eatFoodIfNeeded()) return;
-        if(fighting){
+        if(combatBankingEnabled()&&fighting){
           // Do not issue a new attack while critically low. As soon as combat
           // disengages, the next tick routes to the bank.
           objective.needsFoodBank=true;
           setBotStatus(`Combat • critical hits ${hp}/${max} • waiting to disengage, then banking`);
           return;
         }
-        beginCombatBanking('critical-low-hp');
-        return;
+        if(combatBankingEnabled()){
+          beginCombatBanking('critical-low-hp');
+          return;
+        }
       }
 
-      if(objective.needsFoodBank&&!fighting){
+      if(combatBankingEnabled()&&objective.needsFoodBank&&!fighting){
         objective.needsFoodBank=false;
         beginCombatBanking('post-combat-low-food');
         return;
@@ -2249,19 +2445,19 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
       // Proactive restock: once we are out of food and have taken meaningful
       // damage, bank before beginning another fight instead of waiting for crisis HP.
-      if(!fighting&&inventorySlots()>=Number(mc.inventoryMaxItemCount||30)){
+      if(combatBankingEnabled()&&!fighting&&inventorySlots()>=Number(mc.inventoryMaxItemCount||30)){
         beginCombatBanking('inventory-full');
         return;
       }
 
-      if(!fighting && inventoryFoodCount()===0 && hp<Math.max(5,Math.floor(max*0.70))){
+      if(combatBankingEnabled()&&!fighting && inventoryFoodCount()===0 && hp<Math.max(5,Math.floor(max*0.70))){
         beginCombatBanking('proactive-restock');
         return;
       }
 
       if(fighting){
         markProgress('fighting');
-        setBotStatus(`Combat ${playerCombatEstimate()} • fighting • hits ${hp}/${max}`);
+        setBotStatus(`Combat ${playerCombatEstimate()} • ${objective.combatStyle||'controlled'} • fighting • hits ${hp}/${max}${combatBankingEnabled()?'':' • no banking'}`);
         return;
       }
 
@@ -2406,9 +2602,18 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       const combatWords=[
         'combat','fight','fighting','kill','killing','attack','strength',
         'defence','defense','melee','train combat','train attack',
-        'train strength','train defence','train defense'
+        'train strength','train defence','train defense','never bank','no bank','don t bank','do not bank',
+        'fight to the death','fight till death','fight until death'
       ];
       if(hasAny(t,combatWords)){
+        let combatStyle=null;
+        if(hasAny(t,['strength','aggressive']))combatStyle='strength';
+        else if(hasAny(t,['defence','defense','defensive']))combatStyle='defence';
+        else if(hasAny(t,['train attack','attack training','accurate']))combatStyle='attack';
+        else if(hasAny(t,['controlled','balanced']))combatStyle='controlled';
+        let bankMode=null;
+        if(hasAny(t,['never bank','no bank','don t bank','do not bank','without banking','to the death','till death','until death']))bankMode='never';
+        else if(hasAny(t,['safe banking','bank normally','use the bank','auto bank']))bankMode='safe';
         let target=null;
         if(hasAny(t,['dark wizard','dark wizards','darkwizard']))target='darkwizard';
         else if(hasAny(t,['highwayman','highwaymen']))target='highwayman';
@@ -2427,7 +2632,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         else if(hasAny(t,['imp','imps']))target='imp';
         else if(hasAny(t,['rat','rats']))target='rat';
         else if(hasAny(t,['man','men','human','humans']))target='man';
-        return {type:'combat',target,amount};
+        return {type:'combat',target,combatStyle,bankMode,amount};
       }
 
       // Reserve common skill intents for future loops.
@@ -2462,23 +2667,30 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         const supply=o.supply||'held';
         objective={type:'firemaking',resource:'normal',supply,phase:normalLogCount()>0?'fm-drop':'fm-chop',home:{x:gp.x,y:gp.y},navRoute:[],routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,moveIndex:0};
         resetTaskStats();lastAction=0;
-        combatRow.style.display='none';lootRow.style.display='none';miningRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';
+        combatRow.style.display='none';combatStyleRow.style.display='none';combatBankRow.style.display='none';lootRow.style.display='none';miningRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';
         saveObjective();
         setBotStatus(supply==='gather'?`Firemaking ${Number(mc.playerStatBase?.[11]||1)} • continuous chop-and-burn training started`:`Firemaking ${Number(mc.playerStatBase?.[11]||1)} • ${normalLogCount()} regular logs ready • starting a fire line`);
         return;
       }
       if(o.type==='combat'){
         const target=o.target||combatSelect.value||'auto';
+        const combatStyle=o.combatStyle||combatStyleSelect.value||'controlled';
+        const bankMode=o.bankMode||combatBankSelect.value||'safe';
         combatSelect.value=target;
-        objective={type:'combat',target,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        combatStyleSelect.value=combatStyle;
+        combatBankSelect.value=bankMode;
+        objective={type:'combat',target,combatStyle,bankMode,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        applyCombatStyle(combatStyle);
         resetTaskStats();
         combatRow.style.display='flex';
+        combatStyleRow.style.display='flex';
+        combatBankRow.style.display='flex';
         lootRow.style.display='flex';
         resourceSelect.closest('#resourceRow').style.display='none';
         miningRow.style.display='none';
         saveObjective();
         const label=target==='auto'?'safe automatic targets':target;
-        setBotStatus(`Combat started — targeting ${label} until you tell me to stop.`);
+        setBotStatus(`Combat started — targeting ${label} with ${combatStyle} XP${bankMode==='never'?' • banking disabled • fighting to the death':' • nearest-bank restocking enabled'}.`);
         lastAction=0;
         return;
       }
@@ -2493,6 +2705,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         if(bestRock())objective.phase='mine';
         resetTaskStats();lastAction=0;
         combatRow.style.display='none';
+        combatStyleRow.style.display='none';
+        combatBankRow.style.display='none';
         lootRow.style.display='none';
         resourceSelect.closest('#resourceRow').style.display='none';
         miningRow.style.display='flex';
@@ -2508,6 +2722,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       }
 
       combatRow.style.display='none';
+      combatStyleRow.style.display='none';
+      combatBankRow.style.display='none';
       lootRow.style.display='none';
       miningRow.style.display='none';
       resourceSelect.closest('#resourceRow').style.display='flex';
@@ -2602,8 +2818,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
           finishObjective(`Mining step complete • inventory filled at Mining ${lvl}.`);
           return;
         }
-        sessionStats.bankTrips++;objective.phase='bank';objective.routeIndex=0;objective.navRoute=makeRouteTo('draynorBank');
-        navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};lastAction=0;advanceBankRoute();return;
+        sessionStats.bankTrips++;objective.phase='bank';prepareBankRoute();
+        lastAction=0;advanceBankRoute();return;
       }
       const rock=bestRock();
       if(rock){
@@ -2620,7 +2836,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<10){objective.routeIndex=idx+1;return;}
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Mining ${lvl} • travelling to ${hub.label} • ${wp.name}`);}
+        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,14);lastAction=Date.now();setBotStatus(`Mining ${lvl} • travelling to ${hub.label} • ${wp.name}`);}
         return;
       }
       const search=hub.search,si=Number(objective.searchIndex||0)%search.length,off=search[si];
@@ -2651,7 +2867,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<10){objective.routeIndex=idx+1;markProgress('firemaking-route-node');return;}
-        if(now-lastAction>=ACTION_INTERVALS.walk){shortStepToward(wp,22);lastAction=now;setBotStatus(`Firemaking ${level} • travelling to normal trees • ${wp.name||'Lumbridge route'}`);}
+        if(now-lastAction>=ACTION_INTERVALS.walk){shortStepToward(wp,14);lastAction=now;setBotStatus(`Firemaking ${level} • travelling to normal trees • ${wp.name||'Lumbridge route'}`);}
         return;
       }
 
@@ -2819,10 +3035,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         }
         sessionStats.bankTrips++;renderMetrics();
         objective.phase='bank';
-        objective.routeIndex=0;
-        objective.navRoute=makeRouteTo('draynorBank');
-        navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
-        setBotStatus(`Woodcutting ${lvl} • inventory full • heading to bank`);
+        prepareBankRoute();
+        setBotStatus(`Woodcutting ${lvl} • inventory full • heading to ${objective.bankName||'nearest'} bank`);
         advanceBankRoute();
         return;
       }
@@ -2884,6 +3098,31 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         setBotStatus(`Combat updated — targeting ${label}.`);
       }
     });
+    combatStyleSelect.addEventListener('change',()=>{
+      const style=applyCombatStyle(combatStyleSelect.value);
+      if(objective&&objective.type==='combat'){
+        objective.combatStyle=style;
+        saveObjective();
+        setBotStatus(`Combat style updated — training ${style}.`);
+      }
+    });
+    combatBankSelect.addEventListener('change',()=>{
+      const bankMode=combatBankSelect.value==='never'?'never':'safe';
+      try{localStorage.setItem('autoscape_combat_bank_mode',bankMode);}catch(e){}
+      if(objective&&objective.type==='combat'){
+        objective.bankMode=bankMode;
+        objective.needsFoodBank=false;
+        if(bankMode==='never'&&String(objective.phase||'').startsWith('combat-bank')){
+          try{
+            if(mc.showDialogBank){mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}
+          }catch(e){}
+          objective.navRoute=[];
+          beginCombatTravel();
+        }
+        saveObjective();
+        setBotStatus(bankMode==='never'?'Combat banking disabled — the bot will use held food, skip full-inventory loot, and fight until defeated.':'Combat banking enabled — the nearest bank will be used for loot and food.');
+      }
+    });
     lootSelect.addEventListener('change',()=>{
       try{localStorage.setItem('autoscape_loot_mode',lootSelect.value);}catch(e){}
       if(objective&&objective.type==='combat'){
@@ -2916,7 +3155,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     metricFoodCount=inventoryFoodCount;
     metricNormalLogCount=normalLogCount;
     installSessionAndMobileUX();
-    botTimer=setInterval(tick,600);
+    botTimer=setInterval(tick,1000);
     window.AutoScape={start,stop,get objective(){return objective;},get queue(){return [...commandQueue];},mc};
 
     // Auto-login remembered local account on future launches.
@@ -2953,6 +3192,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             const resource=savedJob.resource||'auto';
             resourceSelect.value=resource;
             combatRow.style.display='none';
+            combatStyleRow.style.display='none';
+            combatBankRow.style.display='none';
             lootRow.style.display='none';
             resourceSelect.closest('#resourceRow').style.display='flex';
             const gp=globalPlayerTile();
@@ -2962,23 +3203,30 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             setBotStatus(`Resumed Woodcutting — targeting ${label}. Say “stop” to end it.`);
           }else if(savedJob.type==='mining'){
             const resource=savedJob.resource||'auto';miningSelect.value=resource;
-            combatRow.style.display='none';lootRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='flex';
+            combatRow.style.display='none';combatStyleRow.style.display='none';combatBankRow.style.display='none';lootRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='flex';
             const gp=globalPlayerTile();objective={type:'mining',resource,phase:'mining-travel',home:{x:gp.x,y:gp.y},navRoute:makeRouteTo(resource==='coal'?'barbarianVillage':'rimmington'),routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
             resetTaskStats();setBotStatus(`Resumed Mining — targeting ${resource==='auto'?'best available ore':resource}. Say “stop” to end it.`);
           }else if(savedJob.type==='combat'){
             const target=savedJob.target||'auto';
+            const combatStyle=savedJob.combatStyle||combatStyleSelect.value||'controlled';
+            const bankMode=savedJob.bankMode||combatBankSelect.value||'safe';
             combatSelect.value=target;
+            combatStyleSelect.value=combatStyle;
+            combatBankSelect.value=bankMode;
             lootSelect.value=savedJob.lootMode||lootSelect.value||'f2p';
             combatRow.style.display='flex';
+            combatStyleRow.style.display='flex';
+            combatBankRow.style.display='flex';
             lootRow.style.display='flex';
             resourceSelect.closest('#resourceRow').style.display='none';
             miningRow.style.display='none';
-            objective={type:'combat',target,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
+            objective={type:'combat',target,combatStyle,bankMode,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
+            applyCombatStyle(combatStyle);
             resetTaskStats();
             const label=target==='auto'?'safe automatic targets':target;
-            setBotStatus(`Resumed Combat — targeting ${label}. Say “stop” to end it.`);
+            setBotStatus(`Resumed Combat — targeting ${label} with ${combatStyle} XP${bankMode==='never'?' and no banking':''}. Say “stop” to end it.`);
           }else if(savedJob.type==='firemaking'){
-            combatRow.style.display='none';lootRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='none';
+            combatRow.style.display='none';combatStyleRow.style.display='none';combatBankRow.style.display='none';lootRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='none';
             const supply=savedJob.supply||'held';
             const ids=Array.from(mc.inventoryItemId||[]).slice(0,inventorySlots());
             const canGather=supply==='gather'&&ids.some(id=>[12,87,88,203,204,405,428].includes(Number(id)));
@@ -3007,7 +3255,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       const server=await fetchText(SERVER_URL,FALLBACK_SERVER,FALLBACK2_SERVER,'local Classic server');
       // Upstream intentionally allows registration only on F2P worlds.
       // AutoScape is a private local members world, so remove that registration-only guard.
-      let serverCode=patchServerGameplay(patchServerPersistence(patchServerResources(server.text)));
+      let serverCode=patchServerGameplay(patchServerBanking(patchServerPersistence(patchServerResources(server.text))));
       // Period-correct RuneScape Classic starter inventory:
       // bronze axe (87), cookedmeat (132), tinderbox (166), bronze pickaxe (156).
       const starterInventory=[
@@ -3081,7 +3329,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.9 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.10 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThis build needs internet while starting so your phone can fetch the preservation client/server files.\n\nANDROID:\n1. Save this HTML to Downloads.\n2. In My Files / Files, long-press it and choose Open with.\n3. Choose Chrome or Samsung Internet (not the built-in document preview).\n4. Keep internet on for launch.`, 'bad');
@@ -3120,7 +3368,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.9 service worker registered',reg.scope);
+      console.log('AutoScape v2.10 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });
