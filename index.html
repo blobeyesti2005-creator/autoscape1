@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.8 — Private Local World</title>
+<title>AutoScape Classic v2.9 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -42,6 +42,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 .bad{color:#ff9a8f}.good{color:#aee59f}
 
 #botMetrics{font-size:11px;color:#aaa;margin-top:3px;min-height:14px}
+#queuePlan{font-size:10px;color:#d8c18d;margin:3px 0;min-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #guidePanel{position:fixed;z-index:9300;inset:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));overflow:auto;background:rgba(24,21,15,.985);border:2px solid #9f8657;padding:12px;color:#eee;font-size:12px;line-height:1.45}
 #guidePanel h2{margin:0;color:#ffd875;font-size:19px}
 #guidePanel h3{color:#e5c777;margin:14px 0 5px;font-size:14px}
@@ -58,7 +59,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.8</h2>
+<h2>AUTOSCAPE CLASSIC v2.9</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -69,6 +70,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <div id="botTitle">AUTOSCAPE BOT</div>
 <div id="botStatus">Log in or create a local character, then run one objective.</div>
 <div id="botMetrics">Session idle</div>
+<div id="queuePlan">Queue idle</div>
 <div id="resourceRow">
 <label for="resourceSelect">Resource</label>
 <select id="resourceSelect">
@@ -98,13 +100,21 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <option value="auto">Safe automatic</option>
 <option value="rat">Rat (Lv 2)</option>
 <option value="chicken">Chicken (Lv 3)</option>
+<option value="imp">Imp (Lv 5)</option>
 <option value="cow">Cow (Lv 8)</option>
 <option value="man">Man (Lv 9)</option>
+<option value="mugger">Mugger (Lv 10)</option>
 <option value="goblin">Goblin (Lv 13)</option>
 <option value="darkwizard">Dark wizard (Lv 13)</option>
+<option value="highwayman">Highwayman (Lv 13)</option>
 <option value="barbarian">Barbarian (Lv 16)</option>
+<option value="wizard">Wizard (Lv 16)</option>
 <option value="dwarf">Dwarf (Lv 18)</option>
+<option value="skeleton">Skeleton (Lv 21)</option>
+<option value="bear">Bear (Lv 24)</option>
+<option value="pirate">Pirate (Lv 27)</option>
 <option value="guard">Guard (Lv 28)</option>
+<option value="hobgoblin">Hobgoblin (Lv 32)</option>
 </select>
 </div>
 <div id="lootRow">
@@ -120,7 +130,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <input id="botInput" value="chop wood, firemake the logs" autocomplete="off" autocapitalize="off" spellcheck="false">
 <button type="submit">Run</button><button type="button" id="botStop">Stop</button>
 </form>
-<div id="botNote">Chain steps with commas or “then”: “chop wood, firemake the logs”. Stop cancels the whole queue.</div>
+<div id="botNote">Try “chop 10 logs, then firemake them”. Numbered steps count confirmed results; Stop cancels the queue.</div>
 </div>
 <div id="guidePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
 <button id="guideClose" type="button">Close</button>
@@ -139,25 +149,33 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 </tbody></table></section>
 <section class="guideEntry" data-guide="firemaking tinderbox regular logs fire item ashes ids burn light">
 <h3>Firemaking</h3><p>RuneScape Classic lights <strong>regular logs only</strong>: drop item <strong>14</strong>, then use tinderbox <strong>166</strong> on the ground log. <code>burn logs</code> consumes the regular logs already held; <code>train firemaking</code> continuously chops regular trees and burns the logs. AutoScape retries failed rolls and moves off each fire. Fires use object <strong>97</strong> and eventually leave ashes <strong>181</strong>.</p></section>
-<section class="guideEntry" data-guide="monsters npcs combat drops rat chicken cow man goblin dark wizard barbarian dwarf guard">
+<section class="guideEntry" data-guide="monsters npcs combat drops rat chicken imp cow man mugger goblin dark wizard highwayman barbarian wizard dwarf skeleton bear pirate guard hobgoblin">
 <h3>Supported combat targets and notable drops</h3>
 <table><thead><tr><th>Target</th><th>Level</th><th>Search area</th><th>Notable native drops</th></tr></thead><tbody>
 <tr><td>Rat</td><td>2</td><td>Lumbridge Swamp</td><td>Bones</td></tr>
 <tr><td>Chicken</td><td>3</td><td>Lumbridge farm</td><td>Bones, raw chicken, feathers</td></tr>
+<tr><td>Imp</td><td>5</td><td>Edgeville wilderness edge</td><td>Quest beads, food ingredients, tinderbox, tools, wizard hat</td></tr>
 <tr><td>Cow</td><td>8</td><td>Lumbridge cow field</td><td>Bones, cow hide, raw beef</td></tr>
 <tr><td>Man</td><td>9</td><td>North Lumbridge</td><td>Coins, elemental/body/chaos runes, bronze arrows, bait, copper ore, helmet, dagger</td></tr>
+<tr><td>Mugger</td><td>10</td><td>South-west Varrock</td><td>Coins, elemental/mind runes, rope, bait, copper ore, bronze helmet, knife</td></tr>
 <tr><td>Goblin</td><td>13</td><td>Goblin Village</td><td>Coins, goblin armour, bronze scimitar/axe, runes, cape, tin ore, grapes</td></tr>
 <tr><td>Dark wizard</td><td>13</td><td>South Varrock</td><td>Staff, wizard hat, black robe, elemental/nature/chaos/law runes, coins</td></tr>
+<tr><td>Highwayman</td><td>13</td><td>North of Draynor</td><td>Bones, cape</td></tr>
 <tr><td>Barbarian</td><td>16</td><td>Barbarian Village</td><td>Coins, bronze axe, staff, iron mace, runes, arrows, cooked meat, ring mould, gems</td></tr>
+<tr><td>Wizard</td><td>16</td><td>Wizard's Tower</td><td>Bones, wizard hat, wizard robe</td></tr>
 <tr><td>Dwarf</td><td>18</td><td>Dwarven Village</td><td>Bronze pickaxe, hammer, bronze/iron bars, ores, nature runes, battleaxes, gems</td></tr>
+<tr><td>Skeleton</td><td>21</td><td>West of Varrock</td><td>Coins, bronze armour, iron mace, gloves, arrows, runes, bucket</td></tr>
+<tr><td>Bear</td><td>24</td><td>South of Falador</td><td>Bones, fur, raw bear meat</td></tr>
+<tr><td>Pirate</td><td>27</td><td>Port Sarim</td><td>Coins, weapons, iron plate top, runes, arrows, eye patch, iron bar</td></tr>
 <tr><td>Guard</td><td>28</td><td>Falador</td><td>Coins, iron dagger, bronze longsword, helmet, runes, arrows, iron ore, grain</td></tr>
+<tr><td>Hobgoblin</td><td>32</td><td>Crafting Guild coast</td><td>Coins, steel weapons, runes, limpwurt root, goblin armour, gems</td></tr>
 </tbody></table></section>
 <section class="guideEntry" data-guide="starter items inventory axe pickaxe tinderbox cooked meat bank quick bank">
 <h3>Starter kit and safe banking</h3><p>New characters receive a bronze axe <strong>87</strong>, cooked meat <strong>132</strong>, tinderbox <strong>166</strong>, and bronze pickaxe <strong>156</strong>. Existing accounts are preserved. Quick Bank's Gathered and Loot buttons skip equipped items; Carried deposits every unequipped stack intentionally.</p></section>
 <section class="guideEntry" data-guide="item items ids reference loot drops equipment runes ores logs food tools">
 <h3>Supported item reference</h3><table><thead><tr><th>Item ID</th><th>Name</th></tr></thead><tbody id="guideItems"></tbody></table></section>
 <section class="guideEntry" data-guide="commands bot natural language jobs queue chain then comma">
-<h3>Useful commands</h3><p><code>cut oaks</code> · <code>mine iron</code> · <code>fight dark wizards</code> · <code>kill guards</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Example: <code>chop wood, firemake the logs</code>. A queued gathering step fills the inventory without banking, then the next step starts automatically. The current step and remaining queue persist locally after login.</p></section>
+<h3>Useful commands</h3><p><code>chop 10 logs</code> · <code>mine 20 iron ore</code> · <code>kill 5 skeletons</code> · <code>fight dark wizards</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Example: <code>chop 10 logs, then firemake them</code>. Numbered steps complete after real resources, fires, or kills are confirmed. An unnumbered queued gathering step fills the inventory without banking, then the next step starts automatically. The current step, progress, and remaining queue persist locally after login.</p></section>
 </div>
 <script>
 'use strict';
@@ -182,6 +200,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   const gameHost=document.getElementById('game-host');
   const botStatus=document.getElementById('botStatus');
   const botMetrics=document.getElementById('botMetrics');
+  const queuePlan=document.getElementById('queuePlan');
   const botInput=document.getElementById('botInput');
   const resourceSelect=document.getElementById('resourceSelect');
   const miningRow=document.getElementById('miningRow');
@@ -194,7 +213,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   let worker=null, objective=null, botTimer=null, lastAction=0;
   let commandQueue=[],activeCommandText='';
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
-  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,eats:0,chops:0,mines:0,fires:0,loot:0,bankTrips:0,deposits:0};
+  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,loot:0,bankTrips:0,deposits:0};
 
   function fmtDuration(ms){
     const sec=Math.max(0,Math.floor(ms/1000)), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
@@ -202,7 +221,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   }
   function resetTaskStats(){
     sessionStats.taskStartedAt=Date.now();
-    for(const k of ['actions','attacks','eats','chops','mines','fires','loot','bankTrips','deposits']) sessionStats[k]=0;
+    for(const k of ['actions','attacks','kills','eats','chops','mines','fires','loot','bankTrips','deposits']) sessionStats[k]=0;
     renderMetrics();
   }
   function renderMetrics(){
@@ -212,11 +231,30 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     if(objective.type==='woodcutting')parts.push(`${sessionStats.chops} chops`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='mining')parts.push(`${sessionStats.mines} swings`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='firemaking')parts.push(`${sessionStats.fires} fires lit`,`${sessionStats.chops} chop attempts`,`${metricNormalLogCount()} logs held`);
-    if(objective.type==='combat')parts.push(`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`);
+    if(objective.type==='combat')parts.push(`${sessionStats.kills} defeated`,`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`);
+    if(Number(objective.countGoal)>0)parts.push(`${Math.min(Number(objective.countProgress||0),Number(objective.countGoal))}/${Number(objective.countGoal)} target`);
     if(commandQueue.length)parts.push(`${commandQueue.length} queued`);
     parts.push(`phase ${objective.phase||'idle'}`);
     if(objective.stallRecoveries)parts.push(`${objective.stallRecoveries} recoveries`);
     botMetrics.textContent=parts.join(' • ');
+    renderQueue();
+  }
+
+  function objectiveUnit(o){
+    if(!o)return 'actions';
+    if(o.type==='woodcutting')return 'logs';
+    if(o.type==='mining')return 'ore';
+    if(o.type==='firemaking')return 'fires';
+    if(o.type==='combat')return 'kills';
+    return 'actions';
+  }
+  function renderQueue(){
+    if(!queuePlan)return;
+    if(!objective){queuePlan.textContent=commandQueue.length?`Next: ${commandQueue.join(' → ')}`:'Queue idle';return;}
+    const goal=Number(objective.countGoal||0);
+    const progress=goal?` (${Math.min(Number(objective.countProgress||0),goal)}/${goal} ${objectiveUnit(objective)})`:'';
+    const current=objective.commandText||activeCommandText||objective.type;
+    queuePlan.textContent=`Now: ${current}${progress}${commandQueue.length?` → ${commandQueue.join(' → ')}`:''}`;
   }
   function markProgress(kind){
     if(!objective)return;
@@ -884,6 +922,49 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       return total;
     }
 
+    function inventoryCountForIds(ids){
+      let total=0;
+      const wanted=ids instanceof Set?ids:new Set(ids||[]);
+      for(let i=0;i<inventorySlots();i++){
+        const id=Number(mc.inventoryItemId?.[i]);
+        if(wanted.has(id))total+=Number(mc.inventoryItemStackCount?.[i]||1);
+      }
+      return total;
+    }
+
+    function gatheredCountForObjective(o=objective){
+      if(!o)return 0;
+      if(o.type==='woodcutting'){
+        const def=o.resource&&o.resource!=='auto'?TREE_DEFS.find(item=>item.name===o.resource):null;
+        return inventoryCountForIds(def?[def.log]:LOG_IDS);
+      }
+      if(o.type==='mining'){
+        const def=o.resource&&o.resource!=='auto'?ROCK_DEFS.find(item=>item.name===o.resource):null;
+        return inventoryCountForIds(def?[def.ore]:ORE_IDS);
+      }
+      return 0;
+    }
+
+    function updateGatherProgress(){
+      if(!objective||!['woodcutting','mining'].includes(objective.type))return 0;
+      const current=gatheredCountForObjective();
+      if(!Number.isFinite(Number(objective.lastCount))){objective.lastCount=current;return 0;}
+      const gained=Math.max(0,current-Number(objective.lastCount||0));
+      objective.lastCount=current;
+      if(gained>0){
+        objective.countProgress=Number(objective.countProgress||0)+gained;
+        markProgress(`${objective.type}-resource-gained`);
+        saveObjective();
+        renderMetrics();
+      }
+      return gained;
+    }
+
+    function objectiveGoalReached(){
+      const goal=Number(objective?.countGoal||0);
+      return goal>0&&Number(objective?.countProgress||0)>=goal;
+    }
+
     function normalLogSlot(){
       for(let i=0;i<inventorySlots();i++){
         if(Number(mc.inventoryItemId?.[i])===14&&Number(mc.inventoryEquipped?.[i])!==1)return i;
@@ -1064,15 +1145,20 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       lumbridgeWest:{x:145,y:655},
       roadEastDraynor:{x:170,y:650},
       roadDraynor:{x:195,y:643},
+      draynorNorth:{x:198,y:604},
       draynorBank:{x:220,y:635},
       portSarimRoad:{x:270,y:646},
+      portSarim:{x:283,y:659},
+      wizardTower:{x:213,y:697},
       rimmington:{x:324,y:661},
       faladorSouth:{x:312,y:585},
+      craftingGuild:{x:365,y:604},
       falador:{x:312,y:552},
       faladorNorth:{x:312,y:510},
       dwarvenVillage:{x:278,y:497},
       goblinVillage:{x:325,y:461},
       barbarianVillage:{x:226,y:512},
+      varrockWest:{x:210,y:545},
       edgeville:{x:216,y:451},
       kandarinApproach:{x:360,y:470},
       camelot:{x:465,y:456},
@@ -1084,20 +1170,25 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       lumbridgeNorth:['lumbridge','lumbridgeCows','lumbridgeFarm','varrockSouth'],
       lumbridgeCows:['lumbridgeNorth','lumbridgeFarm'],
       lumbridgeFarm:['lumbridgeNorth','lumbridgeCows'],
-      varrockSouth:['lumbridgeNorth','darkWizards'],
+      varrockSouth:['lumbridgeNorth','darkWizards','varrockWest'],
       darkWizards:['varrockSouth'],
       lumbridgeWest:['lumbridge','roadEastDraynor'],
       roadEastDraynor:['lumbridgeWest','roadDraynor'],
-      roadDraynor:['roadEastDraynor','draynorBank'],
+      roadDraynor:['roadEastDraynor','draynorNorth','draynorBank','wizardTower'],
+      draynorNorth:['roadDraynor','barbarianVillage','varrockWest'],
       draynorBank:['roadDraynor','portSarimRoad'],
-      portSarimRoad:['draynorBank','rimmington','faladorSouth'],
-      rimmington:['portSarimRoad','faladorSouth'],
-      faladorSouth:['rimmington','portSarimRoad','falador'],
+      portSarimRoad:['draynorBank','portSarim','rimmington','faladorSouth'],
+      portSarim:['portSarimRoad'],
+      wizardTower:['roadDraynor'],
+      rimmington:['portSarimRoad','faladorSouth','craftingGuild'],
+      faladorSouth:['rimmington','portSarimRoad','craftingGuild','falador'],
+      craftingGuild:['rimmington','faladorSouth'],
       falador:['faladorSouth','barbarianVillage','faladorNorth'],
       faladorNorth:['falador','dwarvenVillage','goblinVillage'],
       dwarvenVillage:['faladorNorth','barbarianVillage','goblinVillage'],
       goblinVillage:['faladorNorth','dwarvenVillage'],
-      barbarianVillage:['falador','edgeville','dwarvenVillage'],
+      barbarianVillage:['falador','edgeville','dwarvenVillage','draynorNorth','varrockWest'],
+      varrockWest:['barbarianVillage','draynorNorth','varrockSouth'],
       edgeville:['barbarianVillage','kandarinApproach'],
       kandarinApproach:['edgeville','camelot'],
       camelot:['kandarinApproach','seers'],
@@ -1411,6 +1502,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     function setBotStatus(s){
       const queued=commandQueue.length?` • Queue: ${commandQueue.length} next`:'';
       botStatus.textContent=`${s}${queued}`;
+      renderQueue();
     }
 
     function saveObjective(){
@@ -1424,6 +1516,8 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
             lootMode:lootSelect.value||'f2p',
             commandText:objective.commandText||activeCommandText||'',
             chainAdvance:!!objective.chainAdvance,
+            countGoal:Number(objective.countGoal||0),
+            countProgress:Number(objective.countProgress||0),
             queue:[...commandQueue],
             active:true
           };
@@ -1510,9 +1604,9 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     // Canonical free-to-play drops for the supported surface monsters. The
     // world remains members-capable, but the default loot mode deliberately
     // builds the classic F2P economy first.
-    const F2P_LOOT_IDS=new Set([0,10,11,18,20,28,29,31,32,33,34,35,36,40,41,42,70,82,87,89,100,104,132,133,143,146,147,150,151,155,156,157,158,159,160,168,169,170,183,193,199,201,202,205,216,273,293,380,381,504]);
-    const VALUABLE_LOOT_IDS=new Set([0,10,11,28,31,32,33,34,35,36,40,41,42,70,82,89,100,104,147,150,151,155,156,157,158,159,160,168,169,170,183,199,202,205,216,273,293,381]);
-    const ITEM_NAMES={0:'Iron mace',10:'coins',11:'bronze arrows',18:'cabbage',20:'bones',28:'iron dagger',29:'grain',31:'fire runes',32:'water runes',33:'air runes',34:'earth runes',35:'mind runes',36:'body runes',40:'nature runes',41:'chaos runes',42:'law runes',70:'bronze longsword',82:'bronze scimitar',87:'bronze axe',89:'iron battleaxe',100:'staff',104:'bronze medium helmet',132:'cooked meat',133:'raw chicken',143:'grapes',146:'fur',147:'cow hide',150:'copper ore',151:'iron ore',155:'coal',156:'bronze pickaxe',157:'uncut diamond',158:'uncut ruby',159:'uncut emerald',160:'uncut sapphire',168:'hammer',169:'bronze bar',170:'iron bar',183:'cape',193:'beer',199:'wizard hat',201:'flier',202:'tin ore',205:'bronze battleaxe',216:'black robe',273:'goblin armour',293:'ring mould',380:'fishing bait',381:'feathers',504:'raw beef'};
+    const F2P_LOOT_IDS=new Set([0,1,10,11,13,16,18,19,20,21,23,28,29,31,32,33,34,35,36,40,41,42,46,50,55,58,60,63,70,72,82,87,89,100,104,113,132,133,134,135,137,138,139,140,141,143,144,146,147,149,150,151,155,156,157,158,159,160,168,169,170,183,184,185,190,192,193,199,201,202,205,207,209,216,220,231,232,233,234,237,273,293,312,380,381,502,504,609]);
+    const VALUABLE_LOOT_IDS=new Set([0,1,10,11,28,31,32,33,34,35,36,40,41,42,46,60,63,70,72,82,89,100,104,113,147,150,151,155,156,157,158,159,160,168,169,170,183,184,185,190,199,202,205,209,216,220,231,232,233,234,273,293,312,381,609,827,1088,1089]);
+    const ITEM_NAMES={0:'iron mace',1:'iron short sword',10:'coins',11:'bronze arrows',13:'knife',16:'leather gloves',18:'cabbage',19:'egg',20:'bones',21:'bucket',23:'flour',28:'iron dagger',29:'grain',31:'fire runes',32:'water runes',33:'air runes',34:'earth runes',35:'mind runes',36:'body runes',40:'nature runes',41:'chaos runes',42:'law runes',46:'cosmic runes',50:'water',55:'cadava berries',58:'potion',60:'crossbow',63:'steel dagger',70:'bronze longsword',72:'steel longsword',82:'bronze scimitar',87:'bronze axe',89:'iron battleaxe',100:'staff',104:'bronze medium helmet',113:'bronze chainmail',132:'cooked meat',133:'raw chicken',134:'burnt meat',135:'pot',137:'bread dough',138:'bread',139:'burnt bread',140:'jug',141:'water',143:'grapes',144:'shears',146:'fur',147:'cow hide',149:'clay',150:'copper ore',151:'iron ore',155:'coal',156:'bronze pickaxe',157:'uncut diamond',158:'uncut ruby',159:'uncut emerald',160:'uncut sapphire',168:'hammer',169:'bronze bar',170:'iron bar',183:'cape',184:'wizard robe',185:'wizard hat',190:'crossbow bolts',192:"chef's hat",193:'beer',199:'wizard hat',201:'flier',202:'tin ore',205:'bronze battleaxe',207:'ball of wool',209:'cape',216:'black robe',220:'limpwurt root',231:'red bead',232:'yellow bead',233:'black bead',234:'white bead',237:'rope',273:'goblin armour',293:'ring mould',312:'iron plate top',380:'fishing bait',381:'feathers',502:'raw bear meat',504:'raw beef',609:'eye patch',827:'bronze spear',1088:'iron spear',1089:'steel spear'};
     Object.assign(ITEM_NAMES,{14:'logs',152:'gold ore',166:'tinderbox',181:'ashes',632:'oak logs',633:'willow logs',634:'maple logs',635:'yew logs',636:'magic logs'});
     const guideItems=document.getElementById('guideItems');
     if(guideItems&&!guideItems.children.length){
@@ -1760,13 +1854,21 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     const SAFE_COMBAT_TARGETS={
       rat:{ids:[29],level:2,name:'rat'},
       chicken:{ids:[3],level:3,name:'chicken'},
+      imp:{ids:[114],level:5,name:'imp'},
       cow:{ids:[6],level:8,name:'cow'},
       man:{ids:[11],level:9,name:'man'},
+      mugger:{ids:[21],level:10,name:'mugger'},
       goblin:{ids:[153,154,4],level:13,name:'goblin'},
       darkwizard:{ids:[57],level:13,name:'dark wizard'},
+      highwayman:{ids:[89],level:13,name:'highwayman'},
       barbarian:{ids:[76],level:16,name:'barbarian'},
+      wizard:{ids:[81],level:16,name:'wizard'},
       dwarf:{ids:[94],level:18,name:'dwarf'},
-      guard:{ids:[65],level:28,name:'guard'}
+      skeleton:{ids:[40],level:21,name:'skeleton'},
+      bear:{ids:[8],level:24,name:'bear'},
+      pirate:{ids:[137],level:27,name:'pirate'},
+      guard:{ids:[65],level:28,name:'guard'},
+      hobgoblin:{ids:[67],level:32,name:'hobgoblin'}
     };
 
     // Regional search hubs: travel to a known area, then let the live NPC list
@@ -1774,13 +1876,21 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     const COMBAT_HUBS={
       rat:{node:'lumbridgeSwamp',centre:{x:140,y:667},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,8],[-10,8]]},
       chicken:{node:'lumbridgeFarm',centre:{x:119,y:604},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,6],[-10,6]]},
+      imp:{node:'edgeville',centre:{x:199,y:461},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[12,8],[-12,8]]},
       cow:{node:'lumbridgeCows',centre:{x:105,y:619},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,8],[-12,8]]},
       man:{node:'lumbridgeNorth',centre:{x:132,y:639},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,10],[-10,10]]},
+      mugger:{node:'varrockSouth',centre:{x:162,y:548},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[12,6],[-12,6]]},
       goblin:{node:'goblinVillage',centre:{x:325,y:461},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,12],[-12,12]]},
       darkwizard:{node:'darkWizards',centre:{x:112,y:552},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,8],[-10,8]]},
+      highwayman:{node:'draynorNorth',centre:{x:198,y:604},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,6],[-10,6]]},
       barbarian:{node:'barbarianVillage',centre:{x:232,y:508},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,10],[-12,10]]},
+      wizard:{node:'wizardTower',centre:{x:213,y:697},search:[[0,0],[6,0],[-6,0],[0,6],[0,-6],[8,6],[-8,6]]},
       dwarf:{node:'dwarvenVillage',centre:{x:278,y:497},search:[[0,0],[9,0],[-9,0],[0,9],[0,-9],[11,8],[-11,8]]},
-      guard:{node:'falador',centre:{x:319,y:535},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,10],[-12,10]]}
+      skeleton:{node:'varrockWest',centre:{x:210,y:545},search:[[0,0],[5,0],[-5,0],[0,5],[0,-5],[7,5],[-7,5]]},
+      bear:{node:'faladorSouth',centre:{x:303,y:596},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,8],[-10,8]]},
+      pirate:{node:'portSarim',centre:{x:283,y:659},search:[[0,0],[5,0],[-5,0],[0,5],[0,-5],[7,5],[-7,5]]},
+      guard:{node:'falador',centre:{x:319,y:535},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,10],[-12,10]]},
+      hobgoblin:{node:'craftingGuild',centre:{x:365,y:604},search:[[0,0],[7,0],[-7,0],[0,7],[0,-7],[10,7],[-10,7]]}
     };
 
     function combatHub(){
@@ -1935,9 +2045,21 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       mc.packetStream.putShort(Number(target.npc.serverIndex));
       mc.packetStream.sendPacket();
       objective.lastTargetTile={x:target.x,y:target.y};
+      objective.lastTargetServerIndex=Number(target.npc.serverIndex);
       objective.attackSentAt=Date.now();
       sessionStats.actions++;sessionStats.attacks++;markProgress('attack');renderMetrics();
       return true;
+    }
+
+    function lastCombatTargetStillAlive(){
+      const serverIndex=Number(objective?.lastTargetServerIndex);
+      if(!Number.isFinite(serverIndex))return false;
+      const live=Array.from(mc.npcs||[]).find(npc=>npc&&Number(npc.serverIndex)===serverIndex);
+      if(!live)return false;
+      // Health is populated by the native damage update. An active NPC whose
+      // health is unknown or positive has not produced a confirmed kill yet.
+      if(Number(live.healthMax||0)<=0)return true;
+      return Number(live.healthCurrent||0)>0;
     }
 
     function eatFoodIfNeeded(){
@@ -2082,6 +2204,13 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     function combatTick(){
       const hp=currentHits(), max=maxHits();
 
+      // A reload can occur during the short post-kill loot window. The kill
+      // was already persisted, so complete it instead of attacking one extra.
+      if(objectiveGoalReached()&&objective.phase!=='loot'){
+        finishObjective(`Combat step complete • ${objective.countProgress}/${objective.countGoal} targets defeated.`);
+        return;
+      }
+
       if(objective.phase==='combat-travel'){
         advanceCombatTravel();
         return;
@@ -2141,9 +2270,20 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       // native GROUNDITEM_TAKE packet before choosing another opponent.
       if(objective.wasInCombat){
         objective.wasInCombat=false;
+        if(lastCombatTargetStillAlive()){
+          objective.lastTargetTile=null;
+          setPhase('fight','Combat • target disengaged alive • reacquiring');
+          return;
+        }
+        sessionStats.kills++;
+        objective.countProgress=Number(objective.countProgress||0)+1;
+        markProgress('target-defeated');
+        saveObjective();
+        renderMetrics();
         objective.lootUntil=Date.now()+(lootSelect.value==='none'?1000:4500);
         lastAction=0;
-        setPhase('loot',lootSelect.value==='none'?'Combat • target defeated • continuing':`Combat • target defeated • checking ${lootSelect.options[lootSelect.selectedIndex]?.text||'drops'}`);
+        const count=Number(objective.countGoal||0)>0?` • ${Math.min(objective.countProgress,objective.countGoal)}/${objective.countGoal} kills`:'';
+        setPhase('loot',lootSelect.value==='none'?`Combat • target defeated${count} • continuing`:`Combat • target defeated${count} • checking ${lootSelect.options[lootSelect.selectedIndex]?.text||'drops'}`);
         return;
       }
 
@@ -2156,6 +2296,10 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
           return;
         }
         if(Date.now()<Number(objective.lootUntil||0))return;
+        if(objectiveGoalReached()){
+          finishObjective(`Combat step complete • ${objective.countProgress}/${objective.countGoal} targets defeated.`);
+          return;
+        }
         objective.lastTargetTile=null;
         setPhase('fight',`Combat ${playerCombatEstimate()} • looking for the next ${chooseCombatTargetType()}`);
       }
@@ -2197,9 +2341,17 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       return words.some(w => text.includes(w));
     }
 
+    function requestedAmount(text){
+      const verb=String(text||'').match(/\b(?:chop|cut|mine|kill|fight|attack|burn|light|firemake)\s+(?:the\s+)?(\d{1,4})\b/i);
+      const unit=String(text||'').match(/\b(\d{1,4})\s*(?:logs?|trees?|ores?|rocks?|fires?|kills?|monsters?|rats?|chickens?|cows?|men|goblins?|wizards?|barbarians?|dwarves?|guards?|imps?|muggers?|highwaymen|skeletons?|bears?|pirates?|hobgoblins?)\b/i);
+      const value=Number(verb?.[1]||unit?.[1]||0);
+      return value>0?Math.min(value,9999):0;
+    }
+
     function parse(s){
       const t=normalizeIntent(s);
       if(!t) return null;
+      const amount=requestedAmount(t);
 
       // Natural stop / pause language.
       if(hasAny(t,['stop','halt','pause','cancel','quit','enough','done'])){
@@ -2211,7 +2363,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       // tinderbox on the ground item.
       if(hasAny(t,['firemaking','fire making','firemake','firemake logs','firemake the logs','light fire','light fires','light logs','make fire','make fires','burn log','burn logs'])){
         const finite=hasAny(t,['firemake','light fire','light fires','light logs','burn log','burn logs']);
-        return {type:'firemaking',supply:finite?'held':'gather'};
+        return {type:'firemaking',supply:finite?'held':'gather',amount};
       }
 
       // Specific resource names override the dropdown.
@@ -2234,7 +2386,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         'chop','chopping','cut wood','cut trees','lumber'
       ];
       if(hasAny(t,woodWords) || requestedTree){
-        return {type:'woodcutting',resource:requestedTree};
+        return {type:'woodcutting',resource:requestedTree,amount};
       }
 
       const oreAliases=[
@@ -2247,7 +2399,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       let requestedOre=null;
       for(const [resource,aliases] of oreAliases){if(hasAny(t,aliases)){requestedOre=resource;break;}}
       if(requestedOre||hasAny(t,['mine','mining','ore','ores','rocks','train mining'])){
-        return {type:'mining',resource:requestedOre};
+        return {type:'mining',resource:requestedOre,amount};
       }
 
       // Combat synonyms and named Classic targets.
@@ -2259,15 +2411,23 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(hasAny(t,combatWords)){
         let target=null;
         if(hasAny(t,['dark wizard','dark wizards','darkwizard']))target='darkwizard';
+        else if(hasAny(t,['highwayman','highwaymen']))target='highwayman';
+        else if(hasAny(t,['hobgoblin','hobgoblins']))target='hobgoblin';
         else if(hasAny(t,['barbarian','barbarians','barb','barbs']))target='barbarian';
+        else if(hasAny(t,['skeleton','skeletons']))target='skeleton';
+        else if(hasAny(t,['mugger','muggers']))target='mugger';
         else if(hasAny(t,['chicken','chickens']))target='chicken';
+        else if(hasAny(t,['pirate','pirates']))target='pirate';
+        else if(hasAny(t,['wizard','wizards']))target='wizard';
         else if(hasAny(t,['cow','cows']))target='cow';
         else if(hasAny(t,['goblin','goblins']))target='goblin';
         else if(hasAny(t,['guard','guards']))target='guard';
         else if(hasAny(t,['dwarf','dwarves']))target='dwarf';
+        else if(hasAny(t,['bear','bears']))target='bear';
+        else if(hasAny(t,['imp','imps']))target='imp';
         else if(hasAny(t,['rat','rats']))target='rat';
         else if(hasAny(t,['man','men','human','humans']))target='man';
-        return {type:'combat',target};
+        return {type:'combat',target,amount};
       }
 
       // Reserve common skill intents for future loops.
@@ -2406,7 +2566,11 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       }
       objective.commandText=activeCommandText;
       objective.chainAdvance=commandQueue.length>0;
+      objective.countGoal=Number(intent.amount||0);
+      objective.countProgress=0;
+      objective.lastCount=['woodcutting','mining'].includes(objective.type)?gatheredCountForObjective(objective):undefined;
       saveObjective();
+      renderMetrics();
       return true;
     }
 
@@ -2424,8 +2588,17 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       const lvl=miningLevel(),max=Number(mc.inventoryMaxItemCount||30),used=inventorySlots();
       const ids=Array.from(mc.inventoryItemId||[]).slice(0,used);
       if(!ids.some(id=>PICKAXE_IDS.has(Number(id)))){stop(`No pickaxe detected at Mining ${lvl}.`);return;}
+      updateGatherProgress();
+      if(objectiveGoalReached()){
+        finishObjective(`Mining step complete • ${objective.countProgress}/${objective.countGoal} ore gathered.`);
+        return;
+      }
       if(used>=max){
         if(objective.chainAdvance){
+          if(Number(objective.countGoal||0)>0){
+            stop(`Mining stopped at ${objective.countProgress}/${objective.countGoal} ore: the inventory is full, so the queued step cannot receive the requested amount. Try a smaller amount or run Mining by itself so it can bank.`);
+            return;
+          }
           finishObjective(`Mining step complete • inventory filled at Mining ${lvl}.`);
           return;
         }
@@ -2498,10 +2671,18 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       }
 
       if(objective.phase==='fm-drop'){
+        if(objectiveGoalReached()){
+          finishObjective(`Firemaking step complete • ${objective.countProgress}/${objective.countGoal} fires lit.`);
+          return;
+        }
         if(normalLogCount()<=0){
           if(objective.supply==='gather'){
             objective.phase='fm-chop';objective.phaseStarted=now;objective.navRoute=[];objective.routeIndex=0;lastAction=0;
             setBotStatus(`Firemaking ${level} • no regular logs held • chopping another`);
+            return;
+          }
+          if(Number(objective.countGoal||0)>0&&Number(objective.countProgress||0)<Number(objective.countGoal)){
+            stop(`Firemaking stopped at ${objective.countProgress||0}/${objective.countGoal} fires: no regular logs remain.`);
             return;
           }
           finishObjective(`Firemaking complete • ${sessionStats.fires} fire${sessionStats.fires===1?'':'s'} lit • no regular logs left.`);
@@ -2544,7 +2725,9 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
       if(objective.phase==='fm-await'){
         const log=groundNormalLogNear(objective.fireTile,2);
         if(fireAt(objective.fireTile,0)||(!log&&now-Number(objective.phaseStarted||now)>1500)){
-          sessionStats.fires++;markProgress('fire-lit');renderMetrics();
+          sessionStats.fires++;
+          objective.countProgress=Number(objective.countProgress||0)+1;
+          markProgress('fire-lit');saveObjective();renderMetrics();
           objective.phase='fm-move';objective.phaseStarted=now;objective.moveTarget=null;objective.moveAttempts=0;
           setBotStatus(`Firemaking ${level} • fire ${sessionStats.fires} lit • ${normalLogCount()} regular logs left`);
           return;
@@ -2605,6 +2788,11 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         stop(`No woodcutting axe detected at Woodcutting ${lvl}.`);
         return;
       }
+      updateGatherProgress();
+      if(objectiveGoalReached()){
+        finishObjective(`Woodcutting step complete • ${objective.countProgress}/${objective.countGoal} logs gathered.`);
+        return;
+      }
       if(objective.phase==='resource-travel'){
         advanceResourceTravel();
         return;
@@ -2622,6 +2810,10 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
       if(used>=max){
         if(objective.chainAdvance){
+          if(Number(objective.countGoal||0)>0){
+            stop(`Woodcutting stopped at ${objective.countProgress}/${objective.countGoal} logs: the inventory is full, so the queued step cannot receive the requested amount. Try a smaller amount or run Woodcutting by itself so it can bank.`);
+            return;
+          }
           finishObjective(`Woodcutting step complete • inventory filled at Woodcutting ${lvl}.`);
           return;
         }
@@ -2751,7 +2943,12 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         if(savedJob && savedJob.active && !objective){
           commandQueue=Array.isArray(savedJob.queue)?savedJob.queue.filter(item=>typeof item==='string'&&item.trim()):[];
           activeCommandText=String(savedJob.commandText||savedJob.type||'');
-          const resumeChain={commandText:activeCommandText,chainAdvance:!!savedJob.chainAdvance&&commandQueue.length>0};
+          const resumeChain={
+            commandText:activeCommandText,
+            chainAdvance:!!savedJob.chainAdvance&&commandQueue.length>0,
+            countGoal:Number(savedJob.countGoal||0),
+            countProgress:Number(savedJob.countProgress||0)
+          };
           if(savedJob.type==='woodcutting'){
             const resource=savedJob.resource||'auto';
             resourceSelect.value=resource;
@@ -2884,7 +3081,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.8 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.9 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThis build needs internet while starting so your phone can fetch the preservation client/server files.\n\nANDROID:\n1. Save this HTML to Downloads.\n2. In My Files / Files, long-press it and choose Open with.\n3. Choose Chrome or Samsung Internet (not the built-in document preview).\n4. Keep internet on for launch.`, 'bad');
@@ -2923,7 +3120,7 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.8 service worker registered',reg.scope);
+      console.log('AutoScape v2.9 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });
