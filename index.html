@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.4 — Private Local World</title>
+<title>AutoScape Classic v2.5 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -27,6 +27,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #resourceRow{display:flex;gap:5px;align-items:center;margin:4px 0}
 #resourceRow label{color:#cdbb98;white-space:nowrap}
 #resourceSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
+#miningRow{display:none;gap:5px;align-items:center;margin:4px 0}
+#miningRow label{color:#cdbb98;white-space:nowrap}
+#miningSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
 #combatRow{display:none;gap:5px;align-items:center;margin:4px 0}
 #combatRow label{color:#cdbb98;white-space:nowrap}
 #combatSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
@@ -40,7 +43,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.4</h2>
+<h2>AUTOSCAPE CLASSIC v2.5</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -62,6 +65,17 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <option value="magic">Magic (Lv 75)</option>
 </select>
 </div>
+<div id="miningRow">
+<label for="miningSelect">Ore</label>
+<select id="miningSelect">
+<option value="auto">Best available</option>
+<option value="copper">Copper (Lv 1)</option>
+<option value="tin">Tin (Lv 1)</option>
+<option value="iron">Iron (Lv 15)</option>
+<option value="coal">Coal (Lv 30)</option>
+<option value="gold">Gold (Lv 40)</option>
+</select>
+</div>
 <div id="combatRow">
 <label for="combatSelect">Combat target</label>
 <select id="combatSelect">
@@ -75,7 +89,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <input id="botInput" value="cut trees" autocomplete="off" autocapitalize="off" spellcheck="false">
 <button type="submit">Run</button><button type="button" id="botStop">Stop</button>
 </form>
-<div id="botNote">Pick a resource or type naturally: “cut oaks”, “get yew logs”, “train woodcutting”, “train combat”, or “stop”. Jobs continue until stopped.</div>
+<div id="botNote">Try “cut oaks”, “mine iron”, “get coal”, “train combat”, or “stop”. Jobs continue until stopped.</div>
 </div>
 <script>
 'use strict';
@@ -98,11 +112,13 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   const botMetrics=document.getElementById('botMetrics');
   const botInput=document.getElementById('botInput');
   const resourceSelect=document.getElementById('resourceSelect');
+  const miningRow=document.getElementById('miningRow');
+  const miningSelect=document.getElementById('miningSelect');
   const combatRow=document.getElementById('combatRow');
   const combatSelect=document.getElementById('combatSelect');
 
   let worker=null, objective=null, botTimer=null, lastAction=0;
-  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,eats:0,chops:0,bankTrips:0,deposits:0};
+  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,eats:0,chops:0,mines:0,bankTrips:0,deposits:0};
 
   function fmtDuration(ms){
     const sec=Math.max(0,Math.floor(ms/1000)), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
@@ -110,7 +126,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   }
   function resetTaskStats(){
     sessionStats.taskStartedAt=Date.now();
-    for(const k of ['actions','attacks','eats','chops','bankTrips','deposits']) sessionStats[k]=0;
+    for(const k of ['actions','attacks','eats','chops','mines','bankTrips','deposits']) sessionStats[k]=0;
     renderMetrics();
   }
   function renderMetrics(){
@@ -118,6 +134,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     if(!objective){botMetrics.textContent='Session idle';return;}
     const parts=[fmtDuration(Date.now()-(sessionStats.taskStartedAt||Date.now())),`${sessionStats.actions} actions`];
     if(objective.type==='woodcutting')parts.push(`${sessionStats.chops} chops`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
+    if(objective.type==='mining')parts.push(`${sessionStats.mines} swings`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='combat')parts.push(`${sessionStats.attacks} attacks`,`${sessionStats.eats} food eaten`,`${inventoryFoodCount()} food held`);
     parts.push(`phase ${objective.phase||'idle'}`);
     if(objective.stallRecoveries)parts.push(`${objective.stallRecoveries} recoveries`);
@@ -273,6 +290,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(savedCombat && [...combatSelect.options].some(o=>o.value===savedCombat)){
         combatSelect.value=savedCombat;
       }
+      const savedMining=localStorage.getItem('autoscape_mining_resource');
+      if(savedMining&&[...miningSelect.options].some(o=>o.value===savedMining))miningSelect.value=savedMining;
     }catch(e){}
 
     // Keep Android's hidden keyboard bridge completely off the visible game surface.
@@ -300,6 +319,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       return mc.loggedIn===1 || (mc.localPlayerServerIndex!==undefined && mc.localPlayerServerIndex>=0 && mc.packetStream);
     }
     function wcLevel(){ return (mc.playerStatBase && mc.playerStatBase.length>8 && mc.playerStatBase[8]) || 1; }
+    function miningLevel(){ return (mc.playerStatBase && mc.playerStatBase.length>14 && mc.playerStatBase[14]) || 1; }
     function inventorySlots(){ return Number(mc.inventoryItemsCount||0); }
     function playerTile(){
       const p=mc.localPlayer;
@@ -316,6 +336,19 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       {ids:[0,1,70],level:1,name:'normal',log:14}
     ];
     const LOG_IDS=new Set(TREE_DEFS.map(t=>t.log));
+    const ROCK_DEFS=[
+      {ids:[112,113],level:40,name:'gold',ore:152},
+      {ids:[110,111],level:30,name:'coal',ore:155},
+      {ids:[102,103],level:15,name:'iron',ore:151},
+      {ids:[100,101],level:1,name:'copper',ore:150},
+      {ids:[104,105],level:1,name:'tin',ore:202}
+    ];
+    const ORE_IDS=new Set(ROCK_DEFS.map(r=>r.ore));
+    const PICKAXE_IDS=new Set([156,1258,1259,1260,1261,1262]);
+    const MINING_HUBS={
+      rimmington:{node:'rimmington',label:'Rimmington mine',centre:{x:312,y:640},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,8],[-10,-8]]},
+      coal:{node:'barbarianVillage',label:'Barbarian Village mine',centre:{x:226,y:505},search:[[0,0],[6,0],[-6,0],[0,6],[0,-6],[8,8],[-8,-8]]}
+    };
 
     // Search hubs are deliberately areas, not "magic exact tiles". Once the
     // client reaches the documented region it scans the real loaded objects.
@@ -420,6 +453,41 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       return counts.size>0;
     }
     function depositAllLogsIfBankOpen(){return depositItemsIfBankOpen(LOG_IDS);}
+    function depositGatheredItemsIfBankOpen(){
+      return depositItemsIfBankOpen(objective?.type==='mining'?ORE_IDS:LOG_IDS);
+    }
+
+    function desiredOreDef(){
+      const requested=objective?.resource||'auto';
+      if(requested!=='auto')return ROCK_DEFS.find(r=>r.name===requested)||ROCK_DEFS[ROCK_DEFS.length-1];
+      const lvl=miningLevel();
+      return ROCK_DEFS.find(r=>lvl>=r.level)||ROCK_DEFS[ROCK_DEFS.length-1];
+    }
+    function desiredMiningHub(){return desiredOreDef().name==='coal'?MINING_HUBS.coal:MINING_HUBS.rimmington;}
+
+    function bestRock(){
+      const p=playerTile(),def=desiredOreDef();
+      if(!def||miningLevel()<def.level)return null;
+      let best=null,bd=1e9;
+      for(let i=0;i<(mc.objectCount||0);i++){
+        const id=Number(mc.objectId[i]);
+        if(!def.ids.includes(id))continue;
+        const x=mc.objectX[i],y=mc.objectY[i],d=Math.abs(x-p.x)+Math.abs(y-p.y);
+        if(d<bd){bd=d;best={id,x,y,dir:mc.objectDirection[i]||0,ore:def.name};}
+      }
+      return best;
+    }
+
+    function mineRock(rock){
+      if(!rock||!mc.packetStream)return false;
+      mc.walkToObject(rock.x,rock.y,rock.id,rock.dir);
+      mc.packetStream.newPacket(136);
+      mc.packetStream.putShort(rock.x+(mc.regionX||0));
+      mc.packetStream.putShort(rock.y+(mc.regionY||0));
+      mc.packetStream.sendPacket();
+      sessionStats.actions++;sessionStats.mines++;markProgress('mine');renderMetrics();
+      return true;
+    }
 
     function withdrawBankItem(itemId,amount){
       if(!mc.showDialogBank||!mc.packetStream||amount<=0)return false;
@@ -597,17 +665,19 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       return true;
     }
 
+    function gatherSkillLabel(){return objective?.type==='mining'?`Mining ${miningLevel()}`:`Woodcutting ${wcLevel()}`;}
+
     function advanceBankRoute(){
       const pp=globalPlayerTile();
       const banker=nearestLoadedBanker();
 
       if(mc.showDialogBank){
-        if(depositAllLogsIfBankOpen()){
+        if(depositGatheredItemsIfBankOpen()){
           objective.phase='return';
           objective.routeIndex=0;
           navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
           lastAction=Date.now();
-          setBotStatus(`Woodcutting ${wcLevel()} • depositing logs`);
+          setBotStatus(`${gatherSkillLabel()} • depositing resources`);
           return true;
         }
         return false;
@@ -617,7 +687,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         if(chooseFirstDialogueOption()){
           objective.phase='bank-open';
           lastAction=Date.now();
-          setBotStatus(`Woodcutting ${wcLevel()} • asking banker to open bank`);
+          setBotStatus(`${gatherSkillLabel()} • asking banker to open bank`);
           return true;
         }
       }
@@ -626,7 +696,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         if(Date.now()-lastAction>1800 && sendTalkToBanker(banker)){
           objective.phase='bank-dialogue';
           lastAction=Date.now();
-          setBotStatus(`Woodcutting ${wcLevel()} • talking to banker`);
+          setBotStatus(`${gatherSkillLabel()} • talking to banker`);
           return true;
         }
         return false;
@@ -645,7 +715,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         if(d<8){idx++; objective.routeIndex=idx; continue;}
 
         if(navWatch.retries>=MAX_NAV_RETRIES){
-          setBotStatus(`Woodcutting ${wcLevel()} • navigation recovery limit reached near ${wp.name||'route node'} • retrying route`);
+          setBotStatus(`${gatherSkillLabel()} • navigation recovery limit reached near ${wp.name||'route node'} • retrying route`);
           objective.navRoute=makeRouteTo('draynorBank');
           objective.routeIndex=0;
           navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
@@ -658,7 +728,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
           walkGlobal(retry.x,retry.y);
           navWatch.retries++;
           lastAction=Date.now();
-          setBotStatus(`Woodcutting ${wcLevel()} • banking • ${wp.name||'route'} (${idx+1}/${route.length})`);
+          setBotStatus(`${gatherSkillLabel()} • banking • ${wp.name||'route'} (${idx+1}/${route.length})`);
         }
         return true;
       }
@@ -667,7 +737,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         const retry=navRetryTarget(DRAYNOR_BANK);
         walkGlobal(retry.x,retry.y);
         lastAction=Date.now();
-        setBotStatus(`Woodcutting ${wcLevel()} • locating banker`);
+        setBotStatus(`${gatherSkillLabel()} • locating banker`);
       }
       return true;
     }
@@ -780,7 +850,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(d<12){
         objective.phase='chop';
         objective.routeIndex=0;
-        setBotStatus(`Woodcutting ${wcLevel()} • back at training area`);
+        setBotStatus(`${gatherSkillLabel()} • back at training area`);
         return;
       }
 
@@ -792,7 +862,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(Date.now()-lastAction>1400){
         walkGlobal(tx,ty);
         lastAction=Date.now();
-        setBotStatus(`Woodcutting ${wcLevel()} • returning to trees`);
+        setBotStatus(`${gatherSkillLabel()} • returning to training area`);
       }
     }
 
@@ -819,6 +889,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
           };
           localStorage.setItem('autoscape_job',JSON.stringify(saved));
           localStorage.setItem('autoscape_resource',saved.resource);
+          if(objective.type==='mining')localStorage.setItem('autoscape_mining_resource',saved.resource);
         }else{
           localStorage.removeItem('autoscape_job');
         }
@@ -829,6 +900,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       objective=null;
       saveObjective();
       combatRow.style.display='none';
+      miningRow.style.display='none';
       resourceSelect.closest('#resourceRow').style.display='flex';
       setBotStatus(msg||'Stopped.');
     }
@@ -1271,6 +1343,19 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         return {type:'woodcutting',resource:requestedTree};
       }
 
+      const oreAliases=[
+        ['gold',['gold ore','gold rock','gold rocks']],
+        ['coal',['coal','coal rock','coal rocks']],
+        ['iron',['iron ore','iron rock','iron rocks']],
+        ['copper',['copper','copper ore','copper rock','copper rocks']],
+        ['tin',['tin','tin ore','tin rock','tin rocks']]
+      ];
+      let requestedOre=null;
+      for(const [resource,aliases] of oreAliases){if(hasAny(t,aliases)){requestedOre=resource;break;}}
+      if(requestedOre||hasAny(t,['mine','mining','ore','ores','rocks','train mining'])){
+        return {type:'mining',resource:requestedOre};
+      }
+
       // Combat synonyms. The underlying combat loop is a later milestone,
       // but recognize the intent now so the command language stays natural.
       const combatWords=[
@@ -1288,7 +1373,6 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 
       // Reserve common skill intents for future loops.
       const skills = [
-        ['mining',['mine','mining','ore','ores','rocks']],
         ['fishing',['fish','fishing']],
         ['firemaking',['firemaking','fire making','light fires','burn logs']],
         ['cooking',['cook','cooking','food']],
@@ -1318,10 +1402,28 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         resetTaskStats();
         combatRow.style.display='flex';
         resourceSelect.closest('#resourceRow').style.display='none';
+        miningRow.style.display='none';
         saveObjective();
         const label=target==='auto'?'safe automatic targets':target;
         setBotStatus(`Combat started — targeting ${label} until you tell me to stop.`);
         lastAction=0;
+        return;
+      }
+
+      if(o.type==='mining'){
+        const resource=o.resource||miningSelect.value||'auto';
+        miningSelect.value=resource;
+        const def=resource==='auto'?null:ROCK_DEFS.find(r=>r.name===resource);
+        if(def&&miningLevel()<def.level){setBotStatus(`${def.name} requires Mining ${def.level}; current level is ${miningLevel()}.`);return;}
+        const gp=globalPlayerTile();
+        objective={type:'mining',resource,phase:'mining-travel',home:{x:gp.x,y:gp.y},navRoute:makeRouteTo(resource==='coal'?'barbarianVillage':'rimmington'),routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        if(bestRock())objective.phase='mine';
+        resetTaskStats();lastAction=0;
+        combatRow.style.display='none';
+        resourceSelect.closest('#resourceRow').style.display='none';
+        miningRow.style.display='flex';
+        saveObjective();
+        setBotStatus(`Mining started — targeting ${resource==='auto'?'best available ore':resource} until you tell me to stop.`);
         return;
       }
 
@@ -1332,6 +1434,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       }
 
       combatRow.style.display='none';
+      miningRow.style.display='none';
       resourceSelect.closest('#resourceRow').style.display='flex';
       const gp=globalPlayerTile();
       const resource=o.resource || resourceSelect.value || 'auto';
@@ -1347,6 +1450,39 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       saveObjective();
       setBotStatus(`Woodcutting started — targeting ${label} until you tell me to stop.`);
     }
+    function miningTick(){
+      const lvl=miningLevel(),max=Number(mc.inventoryMaxItemCount||30),used=inventorySlots();
+      const ids=Array.from(mc.inventoryItemId||[]).slice(0,used);
+      if(!ids.some(id=>PICKAXE_IDS.has(Number(id)))){stop(`No pickaxe detected at Mining ${lvl}.`);return;}
+      if(used>=max){
+        sessionStats.bankTrips++;objective.phase='bank';objective.routeIndex=0;objective.navRoute=makeRouteTo('draynorBank');
+        navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};lastAction=0;advanceBankRoute();return;
+      }
+      const rock=bestRock();
+      if(rock){
+        objective.phase='mine';objective.home=globalPlayerTile();
+        if(Date.now()-lastAction>=1800&&mineRock(rock)){
+          lastAction=Date.now();setBotStatus(`Mining ${lvl} • mining ${rock.ore} • ${used}/${max} slots`);
+        }
+        return;
+      }
+      objective.phase='mining-travel';
+      const pp=globalPlayerTile(),hub=desiredMiningHub();
+      if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo(hub.node);objective.routeIndex=0;}
+      let idx=Number(objective.routeIndex||0);
+      if(idx<objective.navRoute.length){
+        const wp=objective.navRoute[idx];
+        if(nodeDistance(pp,wp)<10){objective.routeIndex=idx+1;return;}
+        if(Date.now()-lastAction>1400){shortStepToward(wp,22);lastAction=Date.now();setBotStatus(`Mining ${lvl} • travelling to ${hub.label} • ${wp.name}`);}
+        return;
+      }
+      const search=hub.search,si=Number(objective.searchIndex||0)%search.length,off=search[si];
+      const target={x:hub.centre.x+off[0],y:hub.centre.y+off[1]};
+      if(nodeDistance(pp,target)<7)objective.searchIndex=si+1;
+      else if(Date.now()-lastAction>1400){shortStepToward(target,16);lastAction=Date.now();}
+      setBotStatus(`Mining ${lvl} • searching ${hub.label} for ${desiredOreDef().name}`);
+    }
+
     function tick(){
       if(!objective){renderMetrics();return;}
       renderMetrics();
@@ -1354,6 +1490,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       if(objective.type==='combat'){
         combatTick();
         return;
+      }
+      if(objective.type==='mining'){
+        if(objective.phase==='bank'||objective.phase==='bank-dialogue'||objective.phase==='bank-open'){advanceBankRoute();return;}
+        if(objective.phase==='return'){advanceReturnRoute();return;}
+        miningTick();return;
       }
 
       const lvl=wcLevel();
@@ -1458,6 +1599,13 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
         setBotStatus(`Woodcutting updated — targeting ${label}.`);
       }
     });
+    miningSelect.addEventListener('change',()=>{
+      try{localStorage.setItem('autoscape_mining_resource',miningSelect.value);}catch(e){}
+      if(objective&&objective.type==='mining'){
+        objective.resource=miningSelect.value;objective.phase='mining-travel';objective.navRoute=[];objective.routeIndex=0;objective.searchIndex=0;
+        saveObjective();setBotStatus(`Mining updated — targeting ${miningSelect.value==='auto'?'best available ore':miningSelect.value}.`);
+      }
+    });
     botTimer=setInterval(tick,600);
     window.AutoScape={start,stop,get objective(){return objective;},mc};
 
@@ -1493,11 +1641,17 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
             resetTaskStats();
             const label=resource==='auto'?'best available trees':`${resource} trees`;
             setBotStatus(`Resumed Woodcutting — targeting ${label}. Say “stop” to end it.`);
+          }else if(savedJob.type==='mining'){
+            const resource=savedJob.resource||'auto';miningSelect.value=resource;
+            combatRow.style.display='none';resourceSelect.closest('#resourceRow').style.display='none';miningRow.style.display='flex';
+            const gp=globalPlayerTile();objective={type:'mining',resource,phase:'mining-travel',home:{x:gp.x,y:gp.y},navRoute:makeRouteTo(resource==='coal'?'barbarianVillage':'rimmington'),routeIndex:0,searchIndex:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+            resetTaskStats();setBotStatus(`Resumed Mining — targeting ${resource==='auto'?'best available ore':resource}. Say “stop” to end it.`);
           }else if(savedJob.type==='combat'){
             const target=savedJob.target||'auto';
             combatSelect.value=target;
             combatRow.style.display='flex';
             resourceSelect.closest('#resourceRow').style.display='none';
+            miningRow.style.display='none';
             objective={type:'combat',target,phase:'fight',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
             resetTaskStats();
             const label=target==='auto'?'safe automatic targets':target;
@@ -1517,11 +1671,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
       // AutoScape is a private local members world, so remove that registration-only guard.
       let serverCode=server.text;
       // Period-correct RuneScape Classic starter inventory:
-      // bronze axe (87), cookedmeat (132), tinderbox (166).
+      // bronze axe (87), cookedmeat (132), tinderbox (166), bronze pickaxe (156).
       const starterInventory=[
         { id: 87, amount: 1, equipped: false },
         { id: 132, amount: 1, equipped: false },
-        { id: 166, amount: 1, equipped: false }
+        { id: 166, amount: 1, equipped: false },
+        { id: 156, amount: 1, equipped: false }
       ];
       serverCode=serverCode.replace(
         'inventory: [],',
@@ -1540,9 +1695,17 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
             player.inventory = [
               { id: 87, amount: 1, equipped: false },
               { id: 132, amount: 1, equipped: false },
-              { id: 166, amount: 1, equipped: false }
+              { id: 166, amount: 1, equipped: false },
+              { id: 156, amount: 1, equipped: false }
             ];
             player.cache.autoscapeAuthenticStarterV11 = true;
+          }
+          if (!player.cache.autoscapeMiningStarterV25) {
+            const pickaxes = new Set([156, 1258, 1259, 1260, 1261, 1262]);
+            if (!player.inventory.some(item => pickaxes.has(Number(item.id)))) {
+              player.inventory.push({ id: 156, amount: 1, equipped: false });
+            }
+            player.cache.autoscapeMiningStarterV25 = true;
           }
         }`
       );
@@ -1619,7 +1782,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.4 service worker registered',reg.scope);
+      console.log('AutoScape v2.5 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

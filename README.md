@@ -1,7 +1,7 @@
 # AutoScape Classic
 
 AutoScape is a private, browser-based RuneScape Classic-inspired world with
-built-in woodcutting and combat automation. Character data is stored locally in
+built-in woodcutting, mining, and combat automation. Character data is stored locally in
 the browser on the site where the game is hosted.
 
 ## Play
@@ -25,3 +25,12 @@ origin.
 
 The app can be installed only when it is hosted over HTTPS (or localhost during
 development).
+
+## Automated skills
+
+- Woodcutting: normal, oak, willow, maple, yew, and magic trees
+- Mining: copper, tin, iron, coal, and gold with automatic mine travel and banking
+- Combat: safe automatic targeting or chickens, cows, and goblins
+
+Commands accept natural phrases such as `mine iron`, `get coal`, `cut willows`,
+or `train combat`. Active jobs are saved locally and resume after login.
