@@ -17,6 +17,11 @@ For reliable character saves, always use the same HTTPS address. Opening a
 downloaded `index.html` file directly creates a different, less durable storage
 origin.
 
+AutoScape v2.7.1 commits a new account to IndexedDB immediately and checkpoints
+active characters every 15 seconds. A normal logout also saves. Browser storage
+remains device- and browser-profile-specific, so private/incognito windows and a
+different browser do not share the same local character database.
+
 ## Install on a phone
 
 1. Open the hosted game once while connected to the internet.
