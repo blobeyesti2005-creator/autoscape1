@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.5 — Private Local World</title>
+<title>AutoScape Classic v2.5.1 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -43,7 +43,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.5</h2>
+<h2>AUTOSCAPE CLASSIC v2.5.1</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -196,7 +196,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
     rep(/if\s*\(this\.mouseActionTimeout\s*>\s*4500\s*&&\s*this\.combatTimeout\s*===\s*0\s*&&\s*this\.logoutTimeout\s*===\s*0\)\s*\{\s*this\.mouseActionTimeout\s*-=\s*500;\s*this\.sendLogout\(\);\s*return;\s*\}/,
         '');
     if(code===beforeInactivityPatch) throw new Error('Client patch failed: could not disable inactivity logout.');
-    rep(/mobile:\s*false/g,'mobile: true');
+    // The upstream client installs either touch listeners or mouse listeners at
+    // startup. Forcing mobile mode on every device made desktop canvas clicks
+    // invisible. Select touch mode only when the browser's primary pointer is
+    // coarse; desktops retain normal mouse input while phones retain touch UI.
+    rep(/mobile:\s*false/g,"mobile: !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)");
     rep(/mc\.members\s*=\s*args\[0\]\s*===\s*['"]members['"]\s*;/,'mc.members = true;');
     rep(/window\.mcOptions\s*=\s*mc\.options\s*;/,'window.mcOptions = mc.options; window.autoscapeClient = mc;');
     rep(/mc\.server\s*=\s*args\[1\]\s*\?\s*args\[1\]\s*:\s*['"]127\.0\.0\.1['"]\s*;/,'mc.server = window.__AUTOSCAPE_SERVER__;');
@@ -1782,7 +1786,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.5 service worker registered',reg.scope);
+      console.log('AutoScape v2.5.1 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });
