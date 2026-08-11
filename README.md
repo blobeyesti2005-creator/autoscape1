@@ -1,7 +1,7 @@
 # AutoScape Classic
 
 AutoScape is a private, browser-based RuneScape Classic-inspired world with
-built-in woodcutting, mining, and combat automation. Character data is stored locally in
+built-in woodcutting, mining, Firemaking, and combat automation. Character data is stored locally in
 the browser on the site where the game is hosted.
 
 ## Play
@@ -34,13 +34,20 @@ development).
   before its authentic respawn delay begins.
 - Mining: copper, tin, iron, coal, and gold with repaired ore rewards, timed
   multi-yield veins, automatic mine travel, and banking.
+- Firemaking: authentic Classic drop-and-light behavior for regular logs. The
+  bot retries failed lighting rolls and moves clear of each fire. `burn logs`
+  consumes held logs; `train firemaking` continuously chops and burns.
 - Combat: safe automatic progression or rats, chickens, cows, men, goblins,
   dark wizards, barbarians, dwarves, and guards.
 - Loot: native ground-item pickup with F2P, valuable-only, all, and leave-drop
   filters. Collected loot is banked before food is restocked.
+- Guide: an in-game searchable reference for resource levels and timers,
+  supported NPC combat targets, notable native drops, item IDs, starter tools,
+  commands, and Classic Firemaking behavior.
 
 Commands accept natural phrases such as `mine iron`, `get coal`, `cut willows`,
-`fight barbarians`, `kill guards`, or `train combat`. Active jobs and loot
+`fight barbarians`, `burn logs`, `train firemaking`, `kill guards`, or `train combat`. Active jobs and loot
 preferences are saved locally and resume after login. Automated world actions
 are paced and no longer draw false click crosses at the user's last pointer
-position.
+position. Touch devices also get drag camera rotation, persistent pinch zoom,
+tap-again-to-close HUD tabs, and equipped-item-safe Quick Bank controls.
