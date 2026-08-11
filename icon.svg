@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">AutoScape Classic</title>
+  <rect width="512" height="512" rx="96" fill="#29251b"/>
+  <path d="M256 64 82 154v204l174 90 174-90V154L256 64Z" fill="#655438" stroke="#f2cf72" stroke-width="18"/>
+  <path d="m256 126-91 237h48l18-52h89l19 52h48l-91-237h-40Zm19 70 31 76h-61l30-76Z" fill="#f2cf72"/>
+  <path d="M116 385h280" stroke="#aee59f" stroke-width="16" stroke-linecap="round"/>
+</svg>
