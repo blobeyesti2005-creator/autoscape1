@@ -99,6 +99,42 @@ test('account, stat, and job persistence safeguards remain installed', () => {
   assert.match(html, /fatigue:false/);
 });
 
+test('server persistence patch performs durable registration and recurring saves', () => {
+  const persistenceSource = section(
+    html,
+    '  function patchServerPersistence(code){',
+    '  // RuneScape Classic predates the Lumbridge bank'
+  );
+  const patchServerPersistence = new Function(
+    `${persistenceSource}\nreturn patchServerPersistence;`
+  )();
+  const fixture = `
+                this.players.set(player.username, player);
+
+                return {
+                    success: true,
+                    code: 2
+                };
+const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
+        this.boundSaveAllPlayers = this.saveAllPlayers.bind(this);
+
+        this.ticks = 0;
+    async saveAllPlayers() {
+        if (!this.players.length) {
+            return;
+        }`;
+  const patched = patchServerPersistence(fixture);
+
+  assert.match(patched, /this\.players\.set\(player\.username, player\);\s*await this\.save\(\);/);
+  assert.match(patched, /const PLAYER_SAVE_INTERVAL = 1000 \* 15/);
+  assert.match(patched, /this\.ticks = 0;\s*setTimeout\(this\.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL\);/);
+  assert.match(patched, /if \(!this\.players\.length\) \{\s*setTimeout\(this\.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL\);\s*return;/);
+  assert.throws(
+    () => patchServerPersistence(fixture.replace('this.players.set(player.username, player);', 'this.players.add(player);')),
+    /registration block changed/
+  );
+});
+
 test('natural-language command parser keeps key command chains usable', () => {
   const parserSource = section(html, '    function normalizeIntent(s){', '    function startSingle(s,intent){');
   const { parse } = new Function(`${parserSource}\nreturn { parse };`)();
@@ -209,7 +245,39 @@ test('banker targeting stays scoped to the selected bank', () => {
 
   assert.equal(nearestLoadedBanker({ x: 220, y: 635 }).npc.serverIndex, 2);
   assert.equal(nearestLoadedBanker({ x: 400, y: 400 }), null);
-  assert.match(functionSource(html, 'advanceBankRoute'), /nearestLoadedBanker\(bank\)/);
+  for (const name of ['advanceBankRoute', 'advanceCombatBanking']) {
+    const source = functionSource(html, name);
+    assert.match(source, /nearestLoadedBanker\(bank\)/, `${name} must target the selected bank`);
+    assert.match(source, /bankDialogueOptionExpected\(/, `${name} must reject unrelated dialogue menus`);
+  }
+});
+
+test('bank dialogue choices require a recent bot-initiated banker conversation', () => {
+  const expectedSource = functionSource(html, 'bankDialogueOptionExpected');
+  const makeExpected = objective => new Function(
+    'objective', `${expectedSource}\nreturn bankDialogueOptionExpected;`
+  )(objective);
+  const now = 50_000;
+
+  assert.equal(makeExpected({ phase: 'bank-dialogue', bankTalkSentAt: now - 1_000 })(false, now), true);
+  assert.equal(makeExpected({ phase: 'combat-bank-dialogue', bankTalkSentAt: now - 1_000 })(true, now), true);
+  assert.equal(makeExpected({ phase: 'bank', bankTalkSentAt: now - 1_000 })(false, now), false);
+  assert.equal(makeExpected({ phase: 'bank-dialogue', bankTalkSentAt: now - 16_000 })(false, now), false);
+  assert.equal(makeExpected({ phase: 'bank-dialogue', bankTalkSentAt: 0 })(false, now), false);
+
+  const waitingSource = functionSource(html, 'bankInteractionWaiting');
+  const makeWaiting = objective => new Function(
+    'objective', `${waitingSource}\nreturn bankInteractionWaiting;`
+  )(objective);
+  const active = { phase: 'bank-dialogue', bankTalkSentAt: now - 1_000 };
+  assert.equal(makeWaiting(active)(false, now), true);
+  assert.equal(active.phase, 'bank-dialogue');
+
+  const expired = { phase: 'combat-bank-open', bankOptionSentAt: now - 7_000 };
+  assert.equal(makeWaiting(expired)(true, now), false);
+  assert.equal(expired.phase, 'combat-bank');
+  assert.equal(expired.bankOptionSentAt, 0);
+  assert.equal(expired.bankOptionTimeouts, 1);
 });
 
 test('performance guards avoid unchanged UI and storage writes', () => {

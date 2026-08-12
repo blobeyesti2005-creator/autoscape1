@@ -29,6 +29,8 @@ deleting history, or changing GitHub Pages.
   distance across obstacles.
 - [x] Choose weighted shortest routes and scope banker interaction to the bank
   selected for the current trip.
+- [x] Extend bank scoping to combat restocking and reject stale or unrelated
+  dialogue menus before sending a bank option.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -71,4 +73,19 @@ deleting history, or changing GitHub Pages.
 - Loaded banker selection ignores bankers more than 20 tiles from the chosen
   bank, preventing interaction with a different nearby bank region.
 - App-shell cache advanced to `autoscape-app-v2.11.1` for the eventual reviewed
+  release.
+
+### Bank-dialogue safety and executable persistence checks
+
+- `npm test` (12 regression groups)
+- Combat and gathering banking now both filter loaded bankers against the bank
+  selected for the trip.
+- Bank dialogue options are sent only after a recent bot-initiated banker talk;
+  stale menus are cleared when a trip begins.
+- Timed-out banker speech and bank-opening phases now reset explicitly to a
+  retryable state and retain timeout counters for diagnosis.
+- Registration durability and recurring 15-second saves are verified by
+  executing the server persistence transformer against a representative source
+  fixture, including its fail-closed compatibility guard.
+- App-shell cache advanced to `autoscape-app-v2.11.2` for the eventual reviewed
   release.

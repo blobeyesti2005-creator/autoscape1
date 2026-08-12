@@ -1365,6 +1365,11 @@ ${firstBanker}`;
       objective.routeIndex=0;
       objective.bankTalkSentAt=0;
       objective.bankOptionSentAt=0;
+      objective.bankTalkTimeouts=0;
+      objective.bankOptionTimeouts=0;
+      // Do not let a menu left open before this bank trip get mistaken for a
+      // banker's response on the next bot tick.
+      if(mc.showOptionMenu)mc.showOptionMenu=false;
       navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
       return bank;
     }
@@ -1443,6 +1448,31 @@ ${firstBanker}`;
       return true;
     }
 
+    function bankDialogueOptionExpected(combat=false,now=Date.now()){
+      const phase=combat?'combat-bank-dialogue':'bank-dialogue';
+      const sentAt=Number(objective?.bankTalkSentAt||0);
+      return objective?.phase===phase&&sentAt>0&&now-sentAt<15000;
+    }
+
+    function bankInteractionWaiting(combat=false,now=Date.now()){
+      const basePhase=combat?'combat-bank':'bank';
+      const dialoguePhase=combat?'combat-bank-dialogue':'bank-dialogue';
+      const openPhase=combat?'combat-bank-open':'bank-open';
+      if(objective?.phase===dialoguePhase){
+        if(now-Number(objective.bankTalkSentAt||0)<9000)return true;
+        objective.bankTalkTimeouts=Number(objective.bankTalkTimeouts||0)+1;
+        objective.bankTalkSentAt=0;
+        objective.phase=basePhase;
+      }
+      if(objective?.phase===openPhase){
+        if(now-Number(objective.bankOptionSentAt||0)<6000)return true;
+        objective.bankOptionTimeouts=Number(objective.bankOptionTimeouts||0)+1;
+        objective.bankOptionSentAt=0;
+        objective.phase=basePhase;
+      }
+      return false;
+    }
+
     function gatherSkillLabel(){return objective?.type==='mining'?`Mining ${miningLevel()}`:`Woodcutting ${wcLevel()}`;}
 
     function advanceBankRoute(){
@@ -1465,7 +1495,7 @@ ${firstBanker}`;
         return false;
       }
 
-      if(mc.showOptionMenu){
+      if(mc.showOptionMenu&&bankDialogueOptionExpected(false)){
         if(chooseFirstDialogueOption()){
           objective.phase='bank-open';
           objective.bankOptionSentAt=Date.now();
@@ -1477,8 +1507,7 @@ ${firstBanker}`;
 
       // Banker speech is asynchronous. Re-sending NPC_TALK while the greeting
       // is running resets the server walk action and can prevent the menu.
-      if(objective.phase==='bank-dialogue'&&Date.now()-Number(objective.bankTalkSentAt||0)<9000)return false;
-      if(objective.phase==='bank-open'&&Date.now()-Number(objective.bankOptionSentAt||0)<6000)return false;
+      if(bankInteractionWaiting(false))return false;
 
       if(banker && banker.d<=7){
         if(Date.now()-lastAction>ACTION_INTERVALS.walk && sendTalkToBanker(banker)){
@@ -2315,9 +2344,9 @@ ${firstBanker}`;
 
     function advanceCombatBanking(){
       const pp=globalPlayerTile();
-      const banker=nearestLoadedBanker();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return;
+      const banker=nearestLoadedBanker(bank);
 
       if(mc.showDialogBank){
         if(!objective.combatLootDeposited){
@@ -2354,7 +2383,7 @@ ${firstBanker}`;
         return;
       }
 
-      if(mc.showOptionMenu){
+      if(mc.showOptionMenu&&bankDialogueOptionExpected(true)){
         if(chooseFirstDialogueOption()){
           setPhase('combat-bank-open','Combat • asking banker to open bank');
           objective.bankOptionSentAt=Date.now();
@@ -2363,8 +2392,7 @@ ${firstBanker}`;
         }
       }
 
-      if(objective.phase==='combat-bank-dialogue'&&Date.now()-Number(objective.bankTalkSentAt||0)<9000)return;
-      if(objective.phase==='combat-bank-open'&&Date.now()-Number(objective.bankOptionSentAt||0)<6000)return;
+      if(bankInteractionWaiting(true))return;
 
       if(banker&&banker.d<=7){
         if(Date.now()-lastAction>ACTION_INTERVALS.walk&&sendTalkToBanker(banker)){
