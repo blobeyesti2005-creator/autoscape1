@@ -23,8 +23,12 @@ deleting history, or changing GitHub Pages.
   requests.
 - [ ] Add browser-level smoke coverage for account creation, save/load, and
   basic UI controls.
-- [ ] Profile the main loop and reduce avoidable bot, banking, and rendering
-  work.
+- [x] Reduce avoidable metrics DOM updates, unchanged camera-storage writes,
+  and unchanged Quick Bank style writes without slowing bot decisions.
+- [x] Choose banks by connected navigation-route cost instead of straight-line
+  distance across obstacles.
+- [ ] Continue profiling the main loop and reduce avoidable object/inventory
+  scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
 - [ ] Expand command chaining and intent handling across gathering, processing,
   banking, combat, and supplies.
@@ -44,3 +48,15 @@ deleting history, or changing GitHub Pages.
   checkpoints, cloned skill serialization, persistent command queues, disabled
   fatigue, stable-origin storage, connected navigation, nearest Lumbridge bank,
   timed resource depletion, and bot click-marker suppression
+
+### Performance and route-aware banking
+
+- `npm test` (9 regression groups)
+- Metrics rendering is capped at one update every two seconds while the action
+  loop continues at its existing cadence.
+- Mobile camera preferences write only after zoom or rotation changes.
+- Quick Bank changes display style only when its visible state changes.
+- Nearest-bank selection measures the connected navigation path and retains a
+  high-cost fallback for any future temporarily disconnected node.
+- App-shell cache advanced to `autoscape-app-v2.11.0` so the eventual reviewed
+  release cannot retain an older `index.html`.

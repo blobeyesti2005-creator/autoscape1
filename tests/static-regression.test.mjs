@@ -119,9 +119,12 @@ test('natural-language command parser keeps key command chains usable', () => {
   assert.deepEqual(parse('stop the bot'), { type: 'stop' });
 });
 
-test('navigation graph and bank registry are connected and valid', () => {
-  const dataSource = section(html, '    const NAV_NODES={', '    function nodeDistance(a,b){');
-  const { NAV_NODES, NAV_EDGES, BANKS } = new Function(`${dataSource}\nreturn { NAV_NODES, NAV_EDGES, BANKS };`)();
+test('navigation graph and bank registry are connected and route-aware', () => {
+  const dataSource = section(html, '    const NAV_NODES={', '    function prepareBankRoute(){');
+  const { NAV_NODES, NAV_EDGES, BANKS, nearestBank } = new Function(
+    'globalPlayerTile',
+    `${dataSource}\nreturn { NAV_NODES, NAV_EDGES, BANKS, nearestBank };`
+  )(() => ({ x: 122, y: 657 }));
 
   for (const [name, edges] of Object.entries(NAV_EDGES)) {
     assert.ok(NAV_NODES[name], `edge source ${name} has no node`);
@@ -134,10 +137,10 @@ test('navigation graph and bank registry are connected and valid', () => {
     assert.ok(Number.isFinite(bank.x) && Number.isFinite(bank.y));
   }
 
-  const nearest = point => Object.entries(BANKS)
-    .map(([key, bank]) => ({ key, ...bank, distance: Math.abs(point.x - bank.x) + Math.abs(point.y - bank.y) }))
-    .sort((a, b) => a.distance - b.distance)[0];
-  assert.equal(nearest({ x: 122, y: 657 }).key, 'lumbridge');
+  assert.equal(nearestBank({ x: 122, y: 657 }).key, 'lumbridge');
+  for (const [key, bank] of Object.entries(BANKS)) {
+    assert.equal(nearestBank({ x: bank.x, y: bank.y }).key, key);
+  }
 
   const reached = new Set(['lumbridge']);
   const queue = ['lumbridge'];
@@ -151,6 +154,13 @@ test('navigation graph and bank registry are connected and valid', () => {
     }
   }
   assert.deepEqual([...Object.keys(NAV_NODES).filter(name => !reached.has(name))], []);
+});
+
+test('performance guards avoid unchanged UI and storage writes', () => {
+  assert.match(html, /const METRICS_RENDER_INTERVAL=2000/);
+  assert.match(html, /now-lastMetricsRenderAt<METRICS_RENDER_INTERVAL/);
+  assert.match(html, /if\(zoom===savedZoom&&rotation===savedRotation\)return/);
+  assert.match(html, /if\(bar\.style\.display!==display\)bar\.style\.display=display/);
 });
 
 test('resource depletion supports timed multi-yield gathering', () => {

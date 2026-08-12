@@ -230,7 +230,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   let worker=null, objective=null, botTimer=null, lastAction=0;
   let commandQueue=[],activeCommandText='';
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
-  let lastMetricsText='',lastQueueText='',lastStatusText='';
+  let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
+  const METRICS_RENDER_INTERVAL=2000;
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,loot:0,bankTrips:0,deposits:0};
 
   function fmtDuration(ms){
@@ -240,16 +241,19 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
   function resetTaskStats(){
     sessionStats.taskStartedAt=Date.now();
     for(const k of ['actions','attacks','kills','eats','chops','mines','fires','loot','bankTrips','deposits']) sessionStats[k]=0;
-    renderMetrics();
+    renderMetrics(true);
   }
-  function renderMetrics(){
+  function renderMetrics(force=false){
     if(!botMetrics)return;
+    const now=Date.now();
+    if(!force&&now-lastMetricsRenderAt<METRICS_RENDER_INTERVAL){renderQueue();return;}
+    lastMetricsRenderAt=now;
     if(!objective){
       if(lastMetricsText!=='Session idle'){botMetrics.textContent='Session idle';lastMetricsText='Session idle';}
       renderQueue();
       return;
     }
-    const parts=[fmtDuration(Date.now()-(sessionStats.taskStartedAt||Date.now())),`${sessionStats.actions} actions`];
+    const parts=[fmtDuration(now-(sessionStats.taskStartedAt||now)),`${sessionStats.actions} actions`];
     if(objective.type==='woodcutting')parts.push(`${sessionStats.chops} chops`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='mining')parts.push(`${sessionStats.mines} swings`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='firemaking')parts.push(`${sessionStats.fires} fires lit`,`${sessionStats.chops} chop attempts`,`${metricNormalLogCount()} logs held`);
@@ -1311,15 +1315,30 @@ ${firstBanker}`;
       return [];
     }
 
+    function graphPathDistance(path){
+      let total=0;
+      for(let i=1;i<path.length;i++)total+=nodeDistance(NAV_NODES[path[i-1]],NAV_NODES[path[i]]);
+      return total;
+    }
+
     function makeRouteTo(targetNode){
       const start=nearestNavNode(globalPlayerTile());
       return graphPath(start,targetNode).map(name=>({name,...NAV_NODES[name]}));
     }
 
     function nearestBank(point=globalPlayerTile()){
+      const startName=nearestNavNode(point);
+      const startNode=startName&&NAV_NODES[startName];
       let best=null,bestDistance=Infinity;
       for(const [key,bank] of Object.entries(BANKS)){
-        const distance=nodeDistance(point,bank);
+        const path=graphPath(startName,bank.node);
+        // Route cost follows the connected navigation graph instead of using a
+        // straight-line guess that may point across walls, rivers, or gates.
+        // If a future content node is temporarily disconnected, retain a safe
+        // direct-distance fallback rather than making banking impossible.
+        const distance=path.length
+          ? nodeDistance(point,startNode)+graphPathDistance(path)+nodeDistance(NAV_NODES[bank.node],bank)
+          : nodeDistance(point,bank)+100000;
         if(distance<bestDistance){best={key,...bank,distance};bestDistance=distance;}
       }
       return best;
@@ -1893,10 +1912,14 @@ ${firstBanker}`;
           e.preventDefault();e.stopImmediatePropagation();
         },{capture:true,passive:false});
 
+        let savedZoom=Number(mc.cameraZoom),savedRotation=Number(mc.cameraRotation);
         mc.__autoscapeCameraSaveTimer=setInterval(()=>{
+          const zoom=Number(mc.cameraZoom),rotation=Number(mc.cameraRotation);
+          if(zoom===savedZoom&&rotation===savedRotation)return;
           try{
-            localStorage.setItem('autoscape_camera_zoom',String(mc.cameraZoom));
-            localStorage.setItem('autoscape_camera_rotation',String(mc.cameraRotation));
+            localStorage.setItem('autoscape_camera_zoom',String(zoom));
+            localStorage.setItem('autoscape_camera_rotation',String(rotation));
+            savedZoom=zoom;savedRotation=rotation;
           }catch(e){}
         },2000);
       }
@@ -1940,9 +1963,14 @@ ${firstBanker}`;
       document.body.appendChild(bar);
       mc.__autoscapeQuickBankTimer=setInterval(()=>{
         const open=!!(mc.showDialogBank&&loggedIn());
-        if(!open){dismissed=false;wasOpen=false;bar.style.display='none';return;}
+        if(!open){
+          dismissed=false;wasOpen=false;
+          if(bar.style.display!=='none')bar.style.display='none';
+          return;
+        }
         if(!wasOpen){dismissed=false;wasOpen=true;}
-        bar.style.display=dismissed?'none':'flex';
+        const display=dismissed?'none':'flex';
+        if(bar.style.display!==display)bar.style.display=display;
       },750);
     }
 
