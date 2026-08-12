@@ -1395,13 +1395,24 @@ ${firstBanker}`;
 
     function navRetryTarget(target){
       const pp=globalPlayerTile();
-      if(navWatch.x!==pp.x || navWatch.y!==pp.y){
-        navWatch={x:pp.x,y:pp.y,lastMove:Date.now(),stalls:0,retries:0};
+      const now=Date.now();
+      const targetKey=`${target.x}:${target.y}`;
+      const distance=nodeDistance(pp,target);
+      // Movement only counts as navigation progress when it actually closes
+      // distance to the current waypoint. Collision shuffling and sideways
+      // steps used to reset recovery forever even though the bot stayed lost.
+      if(navWatch.targetKey!==targetKey){
+        navWatch={x:pp.x,y:pp.y,lastMove:now,stalls:0,retries:0,targetKey,bestDistance:distance};
         return target;
       }
-      if(!navWatch.lastMove) navWatch.lastMove=Date.now();
-      if(Date.now()-navWatch.lastMove>3500){
-        navWatch.lastMove=Date.now();
+      if(!Number.isFinite(Number(navWatch.bestDistance))||distance<Number(navWatch.bestDistance)){
+        navWatch.x=pp.x;navWatch.y=pp.y;navWatch.bestDistance=distance;
+        navWatch.lastMove=now;navWatch.stalls=0;navWatch.retries=0;
+        return target;
+      }
+      if(!navWatch.lastMove)navWatch.lastMove=now;
+      if(now-navWatch.lastMove>3500){
+        navWatch.x=pp.x;navWatch.y=pp.y;navWatch.lastMove=now;
         navWatch.stalls++;
         navWatch.retries=Number(navWatch.retries||0)+1;
       }
@@ -1565,15 +1576,15 @@ ${firstBanker}`;
 
     function shortStepToward(target,maxStep=14){
       const pp=globalPlayerTile();
-      const dx=target.x-pp.x, dy=target.y-pp.y;
+      const retry=navRetryTarget(target);
+      const dx=retry.x-pp.x, dy=retry.y-pp.y;
       const d=Math.abs(dx)+Math.abs(dy);
       if(d<=5) return true;
       const mag=Math.max(Math.abs(dx),Math.abs(dy),1);
       const scale=Math.min(1,Math.min(maxStep,14)/mag);
       const tx=Math.round(pp.x+dx*scale);
       const ty=Math.round(pp.y+dy*scale);
-      const retry=navRetryTarget({x:tx,y:ty});
-      walkGlobal(retry.x,retry.y);
+      walkGlobal(tx,ty);
       return false;
     }
 

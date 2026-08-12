@@ -222,6 +222,47 @@ test('navigation graph uses shortest travel distance for bank routes', () => {
   }
 });
 
+test('navigation recovery measures forward progress instead of any movement', () => {
+  const recoverySource = section(
+    html,
+    '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
+    '    function nearestLoadedBanker(bank){'
+  );
+  let point = { x: 0, y: 0 };
+  let now = 1_000;
+  const { navRetryTarget, watch } = new Function(
+    'globalPlayerTile', 'nodeDistance', 'Date',
+    `${recoverySource}\nreturn {navRetryTarget,watch:()=>({...navWatch})};`
+  )(
+    () => point,
+    (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    { now: () => now }
+  );
+  const target = { x: 10, y: 0 };
+
+  assert.deepEqual(navRetryTarget(target), target);
+  point = { x: 0, y: 1 }; // moved, but no closer
+  now += 3_600;
+  assert.notDeepEqual(navRetryTarget(target), target);
+  assert.equal(watch().retries, 1);
+
+  point = { x: 2, y: 0 }; // genuine forward progress
+  now += 100;
+  assert.deepEqual(navRetryTarget(target), target);
+  assert.equal(watch().retries, 0);
+  assert.equal(watch().bestDistance, 8);
+
+  const nextTarget = { x: 20, y: 0 };
+  now += 100;
+  assert.deepEqual(navRetryTarget(nextTarget), nextTarget);
+  assert.equal(watch().targetKey, '20:0');
+  assert.equal(watch().retries, 0);
+
+  const shortStepSource = functionSource(html, 'shortStepToward');
+  assert.match(shortStepSource, /navRetryTarget\(target\)/);
+  assert.doesNotMatch(shortStepSource, /navRetryTarget\(\{x:tx,y:ty\}\)/);
+});
+
 test('banker targeting stays scoped to the selected bank', () => {
   const bankerSource = functionSource(html, 'nearestLoadedBanker');
   const nearestLoadedBanker = new Function(

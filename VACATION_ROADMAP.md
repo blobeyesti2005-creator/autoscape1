@@ -33,6 +33,8 @@ deleting history, or changing GitHub Pages.
   dialogue menus before sending a bank option.
 - [x] Collapse automatic combat and woodcutting target discovery to one loaded
   entity scan per decision while retaining target priority.
+- [x] Measure navigation progress by distance gained toward the active waypoint
+  so collision shuffling cannot indefinitely suppress obstacle recovery.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -102,4 +104,16 @@ deleting history, or changing GitHub Pages.
 - Executable instrumentation verifies one ID read per loaded object/NPC while
   also protecting target-selection behavior.
 - App-shell cache advanced to `autoscape-app-v2.11.3` for the eventual reviewed
+  release.
+
+### Progress-aware obstacle recovery
+
+- `npm test` (14 regression groups)
+- Navigation recovery now resets only after the character gets closer to the
+  active waypoint, rather than after any change in tile coordinates.
+- Sideways collision movement now advances recovery offsets; genuine forward
+  movement clears recovery state, and changing waypoints starts a clean watch.
+- Short-step navigation watches the stable final waypoint instead of a newly
+  calculated intermediate tile, allowing stall history to accumulate.
+- App-shell cache advanced to `autoscape-app-v2.11.4` for the eventual reviewed
   release.
