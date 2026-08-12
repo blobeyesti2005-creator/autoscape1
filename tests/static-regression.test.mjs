@@ -119,11 +119,11 @@ test('natural-language command parser keeps key command chains usable', () => {
   assert.deepEqual(parse('stop the bot'), { type: 'stop' });
 });
 
-test('navigation graph and bank registry are connected and route-aware', () => {
+test('navigation graph uses shortest travel distance for bank routes', () => {
   const dataSource = section(html, '    const NAV_NODES={', '    function prepareBankRoute(){');
-  const { NAV_NODES, NAV_EDGES, BANKS, nearestBank } = new Function(
+  const { NAV_NODES, NAV_EDGES, BANKS, graphPath, graphPathDistance, nearestBank } = new Function(
     'globalPlayerTile',
-    `${dataSource}\nreturn { NAV_NODES, NAV_EDGES, BANKS, nearestBank };`
+    `${dataSource}\nreturn { NAV_NODES, NAV_EDGES, BANKS, graphPath, graphPathDistance, nearestBank };`
   )(() => ({ x: 122, y: 657 }));
 
   for (const [name, edges] of Object.entries(NAV_EDGES)) {
@@ -154,6 +154,62 @@ test('navigation graph and bank registry are connected and route-aware', () => {
     }
   }
   assert.deepEqual([...Object.keys(NAV_NODES).filter(name => !reached.has(name))], []);
+
+  // Independently calculate minimum graph costs and require the production
+  // pathfinder to match for every pair, guarding against hop-count routing.
+  const shortestCost = (start, end) => {
+    const pending = new Set(Object.keys(NAV_NODES));
+    const costs = new Map([[start, 0]]);
+    while (pending.size) {
+      const current = [...pending].reduce((best, name) =>
+        (costs.get(name) ?? Infinity) < (costs.get(best) ?? Infinity) ? name : best
+      );
+      const cost = costs.get(current) ?? Infinity;
+      if (current === end || cost === Infinity) return cost;
+      pending.delete(current);
+      for (const next of NAV_EDGES[current] || []) {
+        if (!pending.has(next)) continue;
+        const edge = Math.abs(NAV_NODES[current].x - NAV_NODES[next].x)
+          + Math.abs(NAV_NODES[current].y - NAV_NODES[next].y);
+        costs.set(next, Math.min(costs.get(next) ?? Infinity, cost + edge));
+      }
+    }
+    return Infinity;
+  };
+  for (const start of Object.keys(NAV_NODES)) {
+    for (const end of Object.keys(NAV_NODES)) {
+      const route = graphPath(start, end);
+      assert.equal(route[0], start);
+      assert.equal(route.at(-1), end);
+      assert.equal(graphPathDistance(route), shortestCost(start, end), `${start} -> ${end}`);
+    }
+  }
+});
+
+test('banker targeting stays scoped to the selected bank', () => {
+  const bankerSource = functionSource(html, 'nearestLoadedBanker');
+  const nearestLoadedBanker = new Function(
+    'mc', 'BANKER_IDS', 'globalPlayerTile', 'nodeDistance',
+    `${bankerSource}\nreturn nearestLoadedBanker;`
+  )(
+    {
+      npcCount: 2,
+      magicLoc: 128,
+      regionX: 0,
+      regionY: 0,
+      npcs: [
+        { npcId: 95, currentX: 124 * 128 + 64, currentY: 657 * 128 + 64, serverIndex: 1 },
+        { npcId: 95, currentX: 220 * 128 + 64, currentY: 635 * 128 + 64, serverIndex: 2 }
+      ]
+    },
+    new Set([95]),
+    () => ({ x: 124, y: 657 }),
+    (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
+  );
+
+  assert.equal(nearestLoadedBanker({ x: 220, y: 635 }).npc.serverIndex, 2);
+  assert.equal(nearestLoadedBanker({ x: 400, y: 400 }), null);
+  assert.match(functionSource(html, 'advanceBankRoute'), /nearestLoadedBanker\(bank\)/);
 });
 
 test('performance guards avoid unchanged UI and storage writes', () => {

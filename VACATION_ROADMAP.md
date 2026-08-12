@@ -27,6 +27,8 @@ deleting history, or changing GitHub Pages.
   and unchanged Quick Bank style writes without slowing bot decisions.
 - [x] Choose banks by connected navigation-route cost instead of straight-line
   distance across obstacles.
+- [x] Choose weighted shortest routes and scope banker interaction to the bank
+  selected for the current trip.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -60,3 +62,13 @@ deleting history, or changing GitHub Pages.
   high-cost fallback for any future temporarily disconnected node.
 - App-shell cache advanced to `autoscape-app-v2.11.0` so the eventual reviewed
   release cannot retain an older `index.html`.
+
+### Weighted navigation and banker targeting
+
+- `npm test` (10 regression groups, including all-pairs shortest-path checks)
+- Route construction now minimizes actual Manhattan travel distance instead of
+  waypoint count.
+- Loaded banker selection ignores bankers more than 20 tiles from the chosen
+  bank, preventing interaction with a different nearby bank region.
+- App-shell cache advanced to `autoscape-app-v2.11.1` for the eventual reviewed
+  release.

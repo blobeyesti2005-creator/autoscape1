@@ -1296,23 +1296,33 @@ ${firstBanker}`;
     function graphPath(startName,endName){
       if(!startName || !endName) return [];
       if(startName===endName) return [startName];
-      const queue=[startName];
+      // Use travel distance rather than waypoint count. A route with one long
+      // edge can be much slower (and less reliable) than several short edges.
+      const unvisited=new Set(Object.keys(NAV_NODES));
+      const distance=new Map([[startName,0]]);
       const prev=new Map([[startName,null]]);
-      while(queue.length){
-        const cur=queue.shift();
+      while(unvisited.size){
+        let cur=null,curDistance=Infinity;
+        for(const name of unvisited){
+          const candidate=distance.get(name)??Infinity;
+          if(candidate<curDistance){cur=name;curDistance=candidate;}
+        }
+        if(!cur || curDistance===Infinity)break;
+        unvisited.delete(cur);
+        if(cur===endName)break;
         for(const next of NAV_EDGES[cur]||[]){
-          if(prev.has(next)) continue;
-          prev.set(next,cur);
-          if(next===endName){
-            const out=[next];
-            let p=cur;
-            while(p){out.push(p);p=prev.get(p);}
-            return out.reverse();
+          if(!unvisited.has(next) || !NAV_NODES[next])continue;
+          const candidate=curDistance+nodeDistance(NAV_NODES[cur],NAV_NODES[next]);
+          if(candidate<(distance.get(next)??Infinity)){
+            distance.set(next,candidate);
+            prev.set(next,cur);
           }
-          queue.push(next);
         }
       }
-      return [];
+      if(!prev.has(endName))return [];
+      const out=[];
+      for(let node=endName;node;node=prev.get(node))out.push(node);
+      return out.reverse();
     }
 
     function graphPathDistance(path){
@@ -1392,7 +1402,7 @@ ${firstBanker}`;
       return {x:target.x+off[0],y:target.y+off[1]};
     }
 
-    function nearestLoadedBanker(){
+    function nearestLoadedBanker(bank){
       const pp=globalPlayerTile();
       let best=null,bd=1e9;
       for(let i=0;i<(mc.npcCount||0);i++){
@@ -1402,6 +1412,9 @@ ${firstBanker}`;
         const ly=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
         const x=lx+Number(mc.regionX||0);
         const y=ly+Number(mc.regionY||0);
+        // Loaded regions can contain multiple banks. Only interact with a
+        // banker at the bank selected for this trip.
+        if(bank&&nodeDistance({x,y},bank)>20)continue;
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
         if(d<bd){bd=d;best={npc,x,y,lx,ly,d};}
       }
@@ -1434,9 +1447,9 @@ ${firstBanker}`;
 
     function advanceBankRoute(){
       const pp=globalPlayerTile();
-      const banker=nearestLoadedBanker();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return false;
+      const banker=nearestLoadedBanker(bank);
 
       if(mc.showDialogBank){
         if(depositGatheredItemsIfBankOpen()){
