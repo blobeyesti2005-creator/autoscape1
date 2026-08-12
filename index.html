@@ -949,22 +949,26 @@ ${firstBanker}`;
       const defs=requested==='auto'
         ? TREE_DEFS
         : TREE_DEFS.filter(def=>def.name===requested);
-
-      for(const def of defs){
-        if(lvl<def.level) continue;
-
-        let best=null,bd=1e9;
-        for(let i=0;i<(mc.objectCount||0);i++){
-          const id=Number(mc.objectId[i]);
-          if(!def.ids.includes(id)) continue;
-          const x=mc.objectX[i], y=mc.objectY[i];
-          const d=Math.abs(x-p.x)+Math.abs(y-p.y);
-          if(d<bd){
-            bd=d;
-            best={index:i,id,x,y,dir:mc.objectDirection[i]||0,tree:def.name,required:def.level};
-          }
+      const eligible=defs.filter(def=>lvl>=def.level);
+      const byId=new Map();
+      for(const def of eligible)for(const id of def.ids)byId.set(Number(id),def);
+      const nearest=new Map();
+      // Scan loaded objects once, then retain the original highest-tier-first
+      // selection order. Previously automatic mode could traverse the full
+      // object list once for every unavailable tree tier.
+      for(let i=0;i<(mc.objectCount||0);i++){
+        const id=Number(mc.objectId[i]),def=byId.get(id);
+        if(!def)continue;
+        const x=mc.objectX[i],y=mc.objectY[i];
+        const d=Math.abs(x-p.x)+Math.abs(y-p.y);
+        const current=nearest.get(def.name);
+        if(!current||d<current.distance){
+          nearest.set(def.name,{index:i,id,x,y,dir:mc.objectDirection[i]||0,tree:def.name,required:def.level,distance:d});
         }
-        if(best) return best;
+      }
+      for(const def of eligible){
+        const best=nearest.get(def.name);
+        if(best){delete best.distance;return best;}
       }
       return null;
     }
@@ -2251,39 +2255,27 @@ ${firstBanker}`;
       const wanted=chooseCombatTargetType();
       const preferred=SAFE_COMBAT_TARGETS[wanted];
       const pp=playerTile();
-      let best=null,bd=1e9;
+      const automatic=(objective?.target||combatSelect.value||'auto')==='auto';
+      const maxFallbackLevel=automatic?playerCombatEstimate()+2:-1;
+      const definitions=Object.values(SAFE_COMBAT_TARGETS);
+      const byId=new Map();
+      for(const def of definitions)for(const id of def.ids)byId.set(Number(id),def);
+      let preferredBest=null,fallbackBest=null;
 
-      function scan(def){
-        if(!def) return null;
-        let localBest=null,localDist=1e9;
-        for(let i=0;i<(mc.npcCount||0);i++){
-          const npc=mc.npcs?.[i];
-          if(!npc || !def.ids.includes(Number(npc.npcId))) continue;
-          const x=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
-          const y=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
-          const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
-          if(d<localDist){
-            localDist=d;
-            localBest={npc,x,y,d,name:def.name,level:def.level};
-          }
-        }
-        return localBest;
+      // One loaded-NPC pass supplies both the exact requested target and the
+      // conservative automatic fallback. The old fallback loop rescanned all
+      // NPCs once per eligible monster definition.
+      for(let i=0;i<(mc.npcCount||0);i++){
+        const npc=mc.npcs?.[i],def=npc&&byId.get(Number(npc.npcId));
+        if(!def)continue;
+        const x=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
+        const y=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
+        const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
+        const candidate={npc,x,y,d,name:def.name,level:def.level};
+        if(def===preferred&&(!preferredBest||d<preferredBest.d))preferredBest=candidate;
+        if(automatic&&def.level<=maxFallbackLevel&&(!fallbackBest||d<fallbackBest.d))fallbackBest=candidate;
       }
-
-      best=scan(preferred);
-      if(best) return best;
-
-      // In auto mode, fall back only to another conservative target at or
-      // below the player's estimated combat level.
-      if((objective?.target||combatSelect.value||'auto')==='auto'){
-        const pl=playerCombatEstimate();
-        for(const def of Object.values(SAFE_COMBAT_TARGETS).sort((a,b)=>b.level-a.level)){
-          if(def.level>pl+2) continue;
-          const candidate=scan(def);
-          if(candidate && candidate.d<bd){bd=candidate.d;best=candidate;}
-        }
-      }
-      return best;
+      return preferredBest||fallbackBest;
     }
 
     function attackNpc(target){

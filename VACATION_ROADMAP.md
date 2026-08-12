@@ -31,6 +31,8 @@ deleting history, or changing GitHub Pages.
   selected for the current trip.
 - [x] Extend bank scoping to combat restocking and reject stale or unrelated
   dialogue menus before sending a bank option.
+- [x] Collapse automatic combat and woodcutting target discovery to one loaded
+  entity scan per decision while retaining target priority.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -88,4 +90,16 @@ deleting history, or changing GitHub Pages.
   executing the server persistence transformer against a representative source
   fixture, including its fail-closed compatibility guard.
 - App-shell cache advanced to `autoscape-app-v2.11.2` for the eventual reviewed
+  release.
+
+### Single-pass hot-path targeting
+
+- `npm test` (13 regression groups)
+- Automatic woodcutting scans loaded objects once, records the nearest tree per
+  eligible tier, then preserves the original highest-tier-first choice.
+- Automatic combat scans loaded NPCs once for both the requested target and a
+  level-safe nearest fallback instead of rescanning for every monster type.
+- Executable instrumentation verifies one ID read per loaded object/NPC while
+  also protecting target-selection behavior.
+- App-shell cache advanced to `autoscape-app-v2.11.3` for the eventual reviewed
   release.

@@ -287,6 +287,66 @@ test('performance guards avoid unchanged UI and storage writes', () => {
   assert.match(html, /if\(bar\.style\.display!==display\)bar\.style\.display=display/);
 });
 
+test('hot target searches scan each loaded entity list only once', () => {
+  const treeSource = functionSource(html, 'bestTree');
+  let objectReads = 0;
+  const objectIds = new Proxy([310, 310, 0, 1], {
+    get(target, property) {
+      if (/^\d+$/.test(String(property))) objectReads += 1;
+      return target[property];
+    }
+  });
+  const bestTree = new Function(
+    'playerTile', 'wcLevel', 'objective', 'TREE_DEFS', 'mc',
+    `${treeSource}\nreturn bestTree;`
+  )(
+    () => ({ x: 0, y: 0 }),
+    () => 99,
+    { resource: 'auto' },
+    [
+      { ids: [310], level: 75, name: 'magic', log: 636 },
+      { ids: [309], level: 60, name: 'yew', log: 635 },
+      { ids: [0, 1], level: 1, name: 'normal', log: 14 }
+    ],
+    { objectCount: 4, objectId: objectIds, objectX: [20, 5, 8, 2], objectY: [0, 0, 0, 0], objectDirection: [] }
+  );
+  const tree = bestTree();
+  assert.equal(tree.tree, 'magic', 'must retain highest available tier priority');
+  assert.equal(tree.index, 1, 'must retain nearest object within the chosen tier');
+  assert.equal(objectReads, 4, 'woodcutting should read every loaded object ID once');
+
+  const npcSource = functionSource(html, 'nearestCombatNpc');
+  let npcReads = 0;
+  const npcs = new Proxy([
+    { npcId: 3, currentX: 8 * 128 + 64, currentY: 64 },
+    { npcId: 6, currentX: 3 * 128 + 64, currentY: 64 },
+    { npcId: 999, currentX: 128 + 64, currentY: 64 }
+  ], {
+    get(target, property) {
+      if (/^\d+$/.test(String(property))) npcReads += 1;
+      return target[property];
+    }
+  });
+  const nearestCombatNpc = new Function(
+    'chooseCombatTargetType', 'SAFE_COMBAT_TARGETS', 'playerTile', 'objective',
+    'combatSelect', 'playerCombatEstimate', 'mc', `${npcSource}\nreturn nearestCombatNpc;`
+  )(
+    () => 'guard',
+    {
+      chicken: { ids: [3], level: 3, name: 'chicken' },
+      cow: { ids: [6], level: 8, name: 'cow' },
+      guard: { ids: [65], level: 28, name: 'guard' }
+    },
+    () => ({ x: 0, y: 0 }),
+    { target: 'auto' },
+    { value: 'auto' },
+    () => 10,
+    { npcCount: 3, npcs, magicLoc: 128 }
+  );
+  assert.equal(nearestCombatNpc().name, 'cow', 'automatic fallback should remain nearest safe target');
+  assert.equal(npcReads, 3, 'combat should read every loaded NPC once');
+});
+
 test('resource depletion supports timed multi-yield gathering', () => {
   assert.match(html, /autoscapeResourceTimer/);
   for (const milliseconds of [18000, 24000, 30000, 36000, 42000, 48000]) {
