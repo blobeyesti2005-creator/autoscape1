@@ -263,6 +263,51 @@ test('navigation recovery measures forward progress instead of any movement', ()
   assert.doesNotMatch(shortStepSource, /navRetryTarget\(\{x:tx,y:ty\}\)/);
 });
 
+test('all routed travel modes rebuild stalled routes from the current position', () => {
+  const recoverySource = section(
+    html,
+    '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
+    '    function nearestLoadedBanker(bank){'
+  );
+  const objective = { navRoute: [{ name: 'stale' }], routeIndex: 4 };
+  let makeRouteCalls = 0;
+  const { rebuildRouteIfStalled, setRetries } = new Function(
+    'globalPlayerTile', 'nodeDistance', 'Date', 'objective', 'makeRouteTo',
+    `${recoverySource}\nreturn {
+      rebuildRouteIfStalled,
+      setRetries:value=>{navWatch.retries=value;}
+    };`
+  )(
+    () => ({ x: 0, y: 0 }),
+    (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    { now: () => 10_000 },
+    objective,
+    target => { makeRouteCalls += 1; return [{ name: `current-to-${target}` }]; }
+  );
+
+  setRetries(11);
+  assert.equal(rebuildRouteIfStalled('lumbridge'), false);
+  assert.equal(makeRouteCalls, 0);
+  setRetries(12);
+  assert.equal(rebuildRouteIfStalled('lumbridge'), true);
+  assert.deepEqual(objective.navRoute, [{ name: 'current-to-lumbridge' }]);
+  assert.equal(objective.routeIndex, 0);
+  assert.equal(objective.routeRebuilds, 1);
+
+  const routedFunctions = [
+    'advanceBankRoute', 'advanceResourceTravel', 'advanceReturnRoute',
+    'advanceCombatTravel', 'advanceCombatBanking', 'advanceCombatReturn',
+    'miningTick', 'firemakingGatherTick'
+  ];
+  for (const name of routedFunctions) {
+    assert.match(
+      functionSource(html, name),
+      /rebuildRouteIfStalled\(/,
+      `${name} must rebuild after progress-aware recovery is exhausted`
+    );
+  }
+});
+
 test('banker targeting stays scoped to the selected bank', () => {
   const bankerSource = functionSource(html, 'nearestLoadedBanker');
   const nearestLoadedBanker = new Function(

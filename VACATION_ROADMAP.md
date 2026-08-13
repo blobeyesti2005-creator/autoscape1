@@ -35,6 +35,8 @@ deleting history, or changing GitHub Pages.
   entity scan per decision while retaining target priority.
 - [x] Measure navigation progress by distance gained toward the active waypoint
   so collision shuffling cannot indefinitely suppress obstacle recovery.
+- [x] Rebuild stalled routes from the character's current location across bank,
+  gathering, mining, firemaking, combat, and return travel modes.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -116,4 +118,16 @@ deleting history, or changing GitHub Pages.
 - Short-step navigation watches the stable final waypoint instead of a newly
   calculated intermediate tile, allowing stall history to accumulate.
 - App-shell cache advanced to `autoscape-app-v2.11.4` for the eventual reviewed
+  release.
+
+### Consistent route rebuilding
+
+- `npm test` (15 regression groups)
+- All eight routed travel loops use the same progress-aware rebuild threshold.
+- A rebuild discards stale waypoints, recalculates from the current character
+  position, resets the route index and recovery watch, and records a diagnostic
+  rebuild count without changing persisted save structure.
+- Combat banking no longer rebuilds merely because it issued many successful
+  walk commands; it now rebuilds only after measured lack of forward progress.
+- App-shell cache advanced to `autoscape-app-v2.11.5` for the eventual reviewed
   release.
