@@ -39,6 +39,8 @@ deleting history, or changing GitHub Pages.
   gathering, mining, firemaking, combat, and return travel modes.
 - [x] Execute command-job save/reload round trips covering queued steps, partial
   progress, combat style, no-bank intent, legacy defaults, and damaged input.
+- [x] Execute server stat load/save behavior covering boosted, drained, and
+  missing current levels without mutating live skills, inventory, or bank data.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -146,3 +148,17 @@ deleting history, or changing GitHub Pages.
   malformed counts, enum values, and queue entries are safely normalized.
 - App-shell cache advanced to `autoscape-app-v2.11.6` for the eventual reviewed
   release.
+
+### Server stat save/load regression fixture
+
+- `npm test` (17 regression groups)
+- A runnable miniature server passes through the real gameplay transformer and
+  verifies derived base levels plus boosted, drained, and missing current
+  levels.
+- Saving clones skill records before stripping derived base values, proving the
+  live player stats remain unchanged while inventory, bank, appearance,
+  experience, and current levels survive serialization.
+- The test also executes disabled fatigue behavior and the transformer's
+  fail-closed compatibility guard.
+- Package metadata advanced to `2.11.7`; the app-shell cache remains `2.11.6`
+  because this batch changes tests and documentation only.

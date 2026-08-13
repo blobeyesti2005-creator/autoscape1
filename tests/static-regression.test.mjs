@@ -135,6 +135,97 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
   );
 });
 
+test('server gameplay patch preserves live stats through load and save', () => {
+  const gameplaySource = section(
+    html,
+    '  function patchServerGameplay(code){',
+    '  function waitWorkerReady('
+  );
+  const patchServerGameplay = new Function(
+    `${gameplaySource}\nreturn patchServerGameplay;`
+  )();
+  const fixture = `
+function loadSkills(playerData, experienceToLevel) {
+        this.skills = playerData.skills;
+
+        for (const skillName of Object.keys(this.skills)) {
+            this.skills[skillName].base = experienceToLevel(
+                this.skills[skillName].experience
+            );
+        }
+    return this.skills;
+}
+function savePlayer(message) {
+        message = { ...message, ...this.appearance };
+
+        for (const skillName of Object.keys(message.skills)) {
+        delete message.skills[skillName].base;
+    }
+    return message;
+}
+function loadFatigue(playerData) {
+        this.fatigue = playerData.fatigue;
+    return this.fatigue;
+}
+function awardExperience(useFatigue) {
+        if (useFatigue) {
+        return 'fatigued';
+    }
+    return 'awarded';
+}
+function movePlayer() {
+        if (this.walkQueue.length && !this.locked) {
+            const { deltaX, deltaY } = this.walkQueue.shift();
+
+            if (this.canWalk(deltaX, deltaY)) {
+                this.walkTo(deltaX, deltaY);
+            } else {
+                this.following = null;
+                this.walkQueue.length = 0;
+                this.faceDirection(deltaX * -1, deltaY * -1);
+            }
+        }
+}
+return { loadSkills, savePlayer, loadFatigue, awardExperience, movePlayer };`;
+  const patched = patchServerGameplay(fixture);
+  const server = new Function(patched)();
+  const originalSkills = {
+    attack: { experience: 900, base: 1, current: 15 },
+    strength: { experience: 400, base: 1 },
+    hits: { experience: 1_600, base: 1, current: 7 }
+  };
+  const player = { appearance: { hairColour: 2 } };
+  server.loadSkills.call(player, { skills: structuredClone(originalSkills) }, xp => Math.floor(Math.sqrt(xp) / 3) + 1);
+
+  assert.equal(player.skills.attack.base, 11);
+  assert.equal(player.skills.attack.current, 15, 'boosted current level must survive loading');
+  assert.equal(player.skills.strength.base, 7);
+  assert.equal(player.skills.strength.current, 7, 'missing current level should recover to base');
+  assert.equal(player.skills.hits.base, 14);
+  assert.equal(player.skills.hits.current, 7, 'drained current level must survive loading');
+
+  const liveSnapshot = structuredClone(player.skills);
+  const inventory = [{ id: 14, amount: 12 }];
+  const bank = [{ id: 10, amount: 4_200 }];
+  const saved = server.savePlayer.call(player, { skills: player.skills, inventory, bank });
+  assert.deepEqual(player.skills, liveSnapshot, 'saving must never mutate live skill objects');
+  assert.deepEqual(saved.inventory, inventory);
+  assert.deepEqual(saved.bank, bank);
+  assert.equal(saved.hairColour, 2);
+  for (const skill of Object.values(saved.skills)) {
+    assert.equal('base' in skill, false, 'serialized base remains derived from experience');
+    assert.ok(Number.isFinite(skill.current));
+    assert.ok(Number.isFinite(skill.experience));
+  }
+
+  assert.equal(server.loadFatigue.call({}, { fatigue: 700 }), 0);
+  assert.equal(server.awardExperience(true), 'awarded');
+  assert.throws(
+    () => patchServerGameplay(fixture.replace('this.skills = playerData.skills;', 'this.skills = { ...playerData.skills };')),
+    /skill initialization changed/
+  );
+});
+
 test('natural-language command parser keeps key command chains usable', () => {
   const parserSource = section(html, '    function normalizeIntent(s){', '    function startSingle(s,intent){');
   const { parse } = new Function(`${parserSource}\nreturn { parse };`)();
