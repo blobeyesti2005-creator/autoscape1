@@ -25,6 +25,8 @@ deleting history, or changing GitHub Pages.
   basic UI controls.
 - [x] Reduce avoidable metrics DOM updates, unchanged camera-storage writes,
   and unchanged Quick Bank style writes without slowing bot decisions.
+- [x] Reuse single-pass inventory summaries in active gathering, firemaking, and
+  combat ticks, and capture loot-filter mode once per ground-item decision.
 - [x] Choose banks by connected navigation-route cost instead of straight-line
   distance across obstacles.
 - [x] Choose weighted shortest routes and scope banker interaction to the bank
@@ -191,4 +193,18 @@ deleting history, or changing GitHub Pages.
 - Banker scoping, dialogue freshness checks, and retry timeouts remain intact.
 - Arrival counters are runtime-only diagnostics and do not alter save schemas.
 - Package and app-shell cache metadata advanced to `2.11.9` for the eventual
+  reviewed release.
+
+### Inventory and ground-loot hot paths
+
+- `npm test` (20 regression groups)
+- Active woodcutting, mining, firemaking, and combat decisions now build one
+  inventory summary and reuse its counts, food, tools, slots, and capacity.
+- Mining and woodcutting progress checks no longer rescan the same inventory
+  after checking tools, and firemaking no longer allocates copied item arrays.
+- Ground-loot selection reads the chosen loot mode once per decision and scans
+  every loaded ground-item ID once while preserving distance and drop filters.
+- Proxy-instrumented tests enforce the one-read-per-item behavior and validate
+  the resulting tool, food, log, and loot decisions.
+- Package and app-shell cache metadata advanced to `2.12.0` for the eventual
   reviewed release.

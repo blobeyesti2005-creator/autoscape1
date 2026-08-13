@@ -677,6 +677,77 @@ test('hot target searches scan each loaded entity list only once', () => {
   assert.equal(npcReads, 3, 'combat should read every loaded NPC once');
 });
 
+test('hot inventory and ground-loot decisions use single-pass snapshots', () => {
+  const snapshotSource = functionSource(html, 'inventorySnapshot');
+  let inventoryIdReads = 0;
+  const inventoryIds = new Proxy([87, 14, 166, 132, 156], {
+    get(target, property) {
+      if (/^\d+$/.test(String(property))) inventoryIdReads += 1;
+      return target[property];
+    }
+  });
+  const inventorySnapshot = new Function(
+    'inventorySlots', 'mc', 'FOOD_HEALS', 'AXE_IDS', 'PICKAXE_IDS',
+    `${snapshotSource}\nreturn inventorySnapshot;`
+  )(
+    () => 5,
+    {
+      inventoryItemId: inventoryIds,
+      inventoryItemStackCount: [1, 3, 1, 2, 1],
+      inventoryEquipped: [1, 0, 0, 0, 0]
+    },
+    { 132: 3 },
+    new Set([87]),
+    new Set([156])
+  );
+  const inventory = inventorySnapshot();
+  assert.equal(inventoryIdReads, 5, 'each carried item ID should be read once');
+  assert.equal(inventory.used, 5);
+  assert.equal(inventory.counts.get(14), 3);
+  assert.equal(inventory.normalLogSlot, 1);
+  assert.equal(inventory.tinderboxSlot, 2);
+  assert.equal(inventory.hasAxe, true);
+  assert.equal(inventory.hasPickaxe, true);
+  assert.deepEqual(inventory.foods, [{ slot: 3, id: 132, heal: 3 }]);
+
+  let modeReads = 0, groundIdReads = 0;
+  const groundIds = new Proxy([20, 999, 10], {
+    get(target, property) {
+      if (/^\d+$/.test(String(property))) groundIdReads += 1;
+      return target[property];
+    }
+  });
+  const nearestGroundLoot = new Function(
+    'inventorySlots', 'mc', 'lootSelect', 'VALUABLE_LOOT_IDS', 'F2P_LOOT_IDS',
+    'playerTile', 'objective', 'ITEM_NAMES',
+    `${functionSource(html, 'nearestGroundLoot')}\nreturn nearestGroundLoot;`
+  )(
+    () => 2,
+    {
+      inventoryMaxItemCount: 30,
+      groundItemCount: 3,
+      groundItemID: groundIds,
+      groundItemX: [4, 1, 2],
+      groundItemY: [0, 0, 0]
+    },
+    { get value() { modeReads += 1; return 'valuable'; } },
+    new Set([10]),
+    new Set([10, 20]),
+    () => ({ x: 0, y: 0 }),
+    { lastTargetTile: { x: 0, y: 0 } },
+    { 10: 'coins' }
+  );
+  assert.equal(nearestGroundLoot().id, 10);
+  assert.equal(modeReads, 1, 'loot mode should be captured once per decision');
+  assert.equal(groundIdReads, 3, 'each loaded ground-item ID should be read once');
+
+  for (const name of ['combatTick', 'miningTick', 'firemakingTick', 'tick']) {
+    assert.match(functionSource(html, name), /inventorySnapshot\(\)/, `${name} must create one reusable inventory view`);
+  }
+  assert.doesNotMatch(functionSource(html, 'miningTick'), /Array\.from\(mc\.inventoryItemId/);
+  assert.doesNotMatch(functionSource(html, 'firemakingGatherTick'), /Array\.from\(mc\.inventoryItemId/);
+});
+
 test('resource depletion supports timed multi-yield gathering', () => {
   assert.match(html, /autoscapeResourceTimer/);
   for (const milliseconds of [18000, 24000, 30000, 36000, 42000, 48000]) {

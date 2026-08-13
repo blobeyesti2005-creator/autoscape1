@@ -979,7 +979,12 @@ ${firstBanker}`;
       return TREE_DEFS.find(def=>def.name===requested) || null;
     }
 
-    function logCount(){
+    function logCount(snapshot=null){
+      if(snapshot){
+        let total=0;
+        for(const id of LOG_IDS)total+=Number(snapshot.counts.get(id)||0);
+        return total;
+      }
       let total=0;
       const used=inventorySlots();
       for(let i=0;i<used;i++){
@@ -989,9 +994,13 @@ ${firstBanker}`;
       return total;
     }
 
-    function inventoryCountForIds(ids){
+    function inventoryCountForIds(ids,snapshot=null){
       let total=0;
       const wanted=ids instanceof Set?ids:new Set(ids||[]);
+      if(snapshot){
+        for(const id of wanted)total+=Number(snapshot.counts.get(Number(id))||0);
+        return total;
+      }
       for(let i=0;i<inventorySlots();i++){
         const id=Number(mc.inventoryItemId?.[i]);
         if(wanted.has(id))total+=Number(mc.inventoryItemStackCount?.[i]||1);
@@ -999,22 +1008,22 @@ ${firstBanker}`;
       return total;
     }
 
-    function gatheredCountForObjective(o=objective){
+    function gatheredCountForObjective(o=objective,snapshot=null){
       if(!o)return 0;
       if(o.type==='woodcutting'){
         const def=o.resource&&o.resource!=='auto'?TREE_DEFS.find(item=>item.name===o.resource):null;
-        return inventoryCountForIds(def?[def.log]:LOG_IDS);
+        return inventoryCountForIds(def?[def.log]:LOG_IDS,snapshot);
       }
       if(o.type==='mining'){
         const def=o.resource&&o.resource!=='auto'?ROCK_DEFS.find(item=>item.name===o.resource):null;
-        return inventoryCountForIds(def?[def.ore]:ORE_IDS);
+        return inventoryCountForIds(def?[def.ore]:ORE_IDS,snapshot);
       }
       return 0;
     }
 
-    function updateGatherProgress(){
+    function updateGatherProgress(snapshot=null){
       if(!objective||!['woodcutting','mining'].includes(objective.type))return 0;
-      const current=gatheredCountForObjective();
+      const current=gatheredCountForObjective(objective,snapshot);
       if(!Number.isFinite(Number(objective.lastCount))){objective.lastCount=current;return 0;}
       const gained=Math.max(0,current-Number(objective.lastCount||0));
       objective.lastCount=current;
@@ -1032,20 +1041,23 @@ ${firstBanker}`;
       return goal>0&&Number(objective?.countProgress||0)>=goal;
     }
 
-    function normalLogSlot(){
+    function normalLogSlot(snapshot=null){
+      if(snapshot)return snapshot.normalLogSlot;
       for(let i=0;i<inventorySlots();i++){
         if(Number(mc.inventoryItemId?.[i])===14&&Number(mc.inventoryEquipped?.[i])!==1)return i;
       }
       return -1;
     }
-    function normalLogCount(){
+    function normalLogCount(snapshot=null){
+      if(snapshot)return Number(snapshot.counts.get(14)||0);
       let total=0;
       for(let i=0;i<inventorySlots();i++){
         if(Number(mc.inventoryItemId?.[i])===14)total+=Number(mc.inventoryItemStackCount?.[i]||1);
       }
       return total;
     }
-    function tinderboxSlot(){
+    function tinderboxSlot(snapshot=null){
+      if(snapshot)return snapshot.tinderboxSlot;
       for(let i=0;i<inventorySlots();i++)if(Number(mc.inventoryItemId?.[i])===166)return i;
       return -1;
     }
@@ -1880,7 +1892,24 @@ ${firstBanker}`;
       runCommand(next);
     }
     const FOOD_HEALS={"18":1,"132":3,"138":4,"179":5,"228":1,"249":2,"257":5,"258":3,"259":4,"261":4,"262":3,"263":5,"319":2,"320":2,"325":10,"326":7,"327":8,"328":7,"329":8,"330":4,"332":5,"333":4,"334":5,"335":4,"336":5,"337":2,"346":9,"350":2,"352":2,"355":4,"357":9,"359":7,"362":5,"364":8,"367":10,"370":14,"373":12,"422":10,"546":20,"551":7,"553":6,"555":13,"590":14,"677":10,"709":19,"749":2,"750":10,"751":10,"765":1,"855":1,"856":1,"857":1,"858":1,"859":1,"860":1,"861":2,"863":1,"864":1,"865":1,"923":19,"924":19,"1061":4,"1102":19,"1103":8,"1191":21,"1193":20,"1245":2,"1269":8};
-    function inventoryFood(){
+    const AXE_IDS=new Set([12,87,88,203,204,405,428]);
+    function inventorySnapshot(){
+      const used=inventorySlots(),counts=new Map(),foods=[];
+      let normalLogSlot=-1,tinderboxSlot=-1,hasAxe=false,hasPickaxe=false;
+      for(let i=0;i<used;i++){
+        const id=Number(mc.inventoryItemId?.[i]),amount=Number(mc.inventoryItemStackCount?.[i]||1);
+        counts.set(id,(counts.get(id)||0)+amount);
+        const heal=Number(FOOD_HEALS[id]||0);
+        if(heal>0)foods.push({slot:i,id,heal});
+        if(id===14&&normalLogSlot<0&&Number(mc.inventoryEquipped?.[i])!==1)normalLogSlot=i;
+        if(id===166&&tinderboxSlot<0)tinderboxSlot=i;
+        if(AXE_IDS.has(id))hasAxe=true;
+        if(PICKAXE_IDS.has(id))hasPickaxe=true;
+      }
+      return {used,counts,foods,normalLogSlot,tinderboxSlot,hasAxe,hasPickaxe};
+    }
+    function inventoryFood(snapshot=null){
+      if(snapshot)return snapshot.foods;
       const out=[],used=inventorySlots();
       for(let i=0;i<used;i++){
         const id=Number(mc.inventoryItemId?.[i]),heal=Number(FOOD_HEALS[id]||0);
@@ -1888,8 +1917,8 @@ ${firstBanker}`;
       }
       return out;
     }
-    function chooseFoodForMissingHits(){
-      const missing=Math.max(0,maxHits()-currentHits()), foods=inventoryFood();
+    function chooseFoodForMissingHits(snapshot=null){
+      const missing=Math.max(0,maxHits()-currentHits()), foods=inventoryFood(snapshot);
       if(!foods.length)return null;
       const enough=foods.filter(f=>f.heal>=missing).sort((a,b)=>a.heal-b.heal);
       return enough[0]||foods.sort((a,b)=>b.heal-a.heal)[0];
@@ -1915,8 +1944,8 @@ ${firstBanker}`;
       return foods[0];
     }
 
-    function inventoryFoodCount(){
-      return inventoryFood().length;
+    function inventoryFoodCount(snapshot=null){
+      return inventoryFood(snapshot).length;
     }
 
     // Canonical free-to-play drops for the supported surface monsters. The
@@ -2110,20 +2139,16 @@ ${firstBanker}`;
       },750);
     }
 
-    function shouldTakeLoot(id){
-      const mode=lootSelect.value||'f2p';
-      if(mode==='none')return false;
-      if(mode==='all')return true;
-      return (mode==='valuable'?VALUABLE_LOOT_IDS:F2P_LOOT_IDS).has(Number(id));
-    }
-
     function nearestGroundLoot(){
       if(inventorySlots()>=Number(mc.inventoryMaxItemCount||30))return null;
+      const mode=lootSelect.value||'f2p';
+      if(mode==='none')return null;
+      const allowed=mode==='all'?null:(mode==='valuable'?VALUABLE_LOOT_IDS:F2P_LOOT_IDS);
       const pp=playerTile(),anchor=objective?.lastTargetTile;
       let best=null,bd=1e9;
       for(let i=0;i<Number(mc.groundItemCount||0);i++){
         const id=Number(mc.groundItemID?.[i]);
-        if(!shouldTakeLoot(id))continue;
+        if(allowed&&!allowed.has(id))continue;
         const x=Number(mc.groundItemX?.[i]),y=Number(mc.groundItemY?.[i]);
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
         if(d>12)continue;
@@ -2404,10 +2429,10 @@ ${firstBanker}`;
       return Number(live.healthCurrent||0)>0;
     }
 
-    function eatFoodIfNeeded(){
+    function eatFoodIfNeeded(snapshot=null){
       const hp=currentHits(),max=maxHits();
       if(max<=0||hp>Math.max(4,Math.floor(max*.45)))return false;
-      const food=chooseFoodForMissingHits();
+      const food=chooseFoodForMissingHits(snapshot);
       if(!food)return false;
       mc.packetStream.newPacket(90);
       mc.packetStream.putShort(food.slot);
@@ -2560,6 +2585,7 @@ ${firstBanker}`;
 
     function combatTick(){
       const hp=currentHits(), max=maxHits();
+      let inventory=null;
 
       if(objective.attackSentAt&&(hp<=0||Number(mc.deathScreenTimeout||0)>0||mc.world?.playerAlive===false)){
         stop(`Combat ended — your character fought until defeated after ${sessionStats.kills} kill${sessionStats.kills===1?'':'s'}.`);
@@ -2591,7 +2617,8 @@ ${firstBanker}`;
       if(fighting)objective.wasInCombat=true;
 
       if(hp>0 && hp<=Math.max(3,Math.floor(max*0.25))){
-        if(eatFoodIfNeeded()) return;
+        inventory=inventorySnapshot();
+        if(eatFoodIfNeeded(inventory)) return;
         if(combatBankingEnabled()&&fighting){
           // Do not issue a new attack while critically low. As soon as combat
           // disengages, the next tick routes to the bank.
@@ -2611,14 +2638,15 @@ ${firstBanker}`;
         return;
       }
 
+      inventory=inventory||inventorySnapshot();
       // Proactive restock: once we are out of food and have taken meaningful
       // damage, bank before beginning another fight instead of waiting for crisis HP.
-      if(combatBankingEnabled()&&!fighting&&inventorySlots()>=Number(mc.inventoryMaxItemCount||30)){
+      if(combatBankingEnabled()&&!fighting&&inventory.used>=Number(mc.inventoryMaxItemCount||30)){
         beginCombatBanking('inventory-full');
         return;
       }
 
-      if(combatBankingEnabled()&&!fighting && inventoryFoodCount()===0 && hp<Math.max(5,Math.floor(max*0.70))){
+      if(combatBankingEnabled()&&!fighting && inventoryFoodCount(inventory)===0 && hp<Math.max(5,Math.floor(max*0.70))){
         beginCombatBanking('proactive-restock');
         return;
       }
@@ -2969,10 +2997,9 @@ ${firstBanker}`;
     }
 
     function miningTick(){
-      const lvl=miningLevel(),max=Number(mc.inventoryMaxItemCount||30),used=inventorySlots();
-      const ids=Array.from(mc.inventoryItemId||[]).slice(0,used);
-      if(!ids.some(id=>PICKAXE_IDS.has(Number(id)))){stop(`No pickaxe detected at Mining ${lvl}.`);return;}
-      updateGatherProgress();
+      const lvl=miningLevel(),max=Number(mc.inventoryMaxItemCount||30),inventory=inventorySnapshot(),used=inventory.used;
+      if(!inventory.hasPickaxe){stop(`No pickaxe detected at Mining ${lvl}.`);return;}
+      updateGatherProgress(inventory);
       if(objectiveGoalReached()){
         finishObjective(`Mining step complete • ${objective.countProgress}/${objective.countGoal} ore gathered.`);
         return;
@@ -3019,12 +3046,11 @@ ${firstBanker}`;
       setBotStatus(`Mining ${lvl} • searching ${hub.label} for ${desiredOreDef().name}`);
     }
 
-    function firemakingGatherTick(){
+    function firemakingGatherTick(inventory=inventorySnapshot()){
       const level=Number(mc.playerStatBase?.[11]||1),wc=wcLevel(),now=Date.now();
-      if(normalLogCount()>0){objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;markProgress('firemaking-log-ready');return;}
-      const ids=Array.from(mc.inventoryItemId||[]).slice(0,inventorySlots());
-      if(!ids.some(id=>[12,87,88,203,204,405,428].includes(Number(id)))){stop(`Continuous Firemaking stopped at level ${level}: no woodcutting axe detected.`);return;}
-      if(inventorySlots()>=Number(mc.inventoryMaxItemCount||30)){stop('Continuous Firemaking stopped: inventory is full and has no regular logs to burn.');return;}
+      if(normalLogCount(inventory)>0){objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;markProgress('firemaking-log-ready');return;}
+      if(!inventory.hasAxe){stop(`Continuous Firemaking stopped at level ${level}: no woodcutting axe detected.`);return;}
+      if(inventory.used>=Number(mc.inventoryMaxItemCount||30)){stop('Continuous Firemaking stopped: inventory is full and has no regular logs to burn.');return;}
       const tree=bestTree();
       if(tree){
         objective.navRoute=[];objective.routeIndex=0;
@@ -3058,10 +3084,11 @@ ${firstBanker}`;
 
     function firemakingTick(){
       const level=Number(mc.playerStatBase?.[11]||1),now=Date.now();
-      if(tinderboxSlot()<0){stop(`Firemaking stopped at level ${level}: no tinderbox detected.`);return;}
+      const inventory=inventorySnapshot();
+      if(tinderboxSlot(inventory)<0){stop(`Firemaking stopped at level ${level}: no tinderbox detected.`);return;}
 
       if(objective.phase==='fm-chop'){
-        firemakingGatherTick();return;
+        firemakingGatherTick(inventory);return;
       }
 
       if(objective.phase==='fm-drop'){
@@ -3069,7 +3096,7 @@ ${firstBanker}`;
           finishObjective(`Firemaking step complete • ${objective.countProgress}/${objective.countGoal} fires lit.`);
           return;
         }
-        if(normalLogCount()<=0){
+        if(normalLogCount(inventory)<=0){
           if(objective.supply==='gather'){
             objective.phase='fm-chop';objective.phaseStarted=now;objective.navRoute=[];objective.routeIndex=0;lastAction=0;
             setBotStatus(`Firemaking ${level} • no regular logs held • chopping another`);
@@ -3175,14 +3202,12 @@ ${firstBanker}`;
 
       const lvl=wcLevel();
       const max=Number(mc.inventoryMaxItemCount||30);
-      const used=inventorySlots();
-      const ids=Array.from(mc.inventoryItemId||[]).slice(0,used);
-      const hasAxe=ids.some(id=>[12,87,88,203,204,405,428].includes(Number(id)));
-      if(!hasAxe){
+      const inventory=inventorySnapshot(),used=inventory.used;
+      if(!inventory.hasAxe){
         stop(`No woodcutting axe detected at Woodcutting ${lvl}.`);
         return;
       }
-      updateGatherProgress();
+      updateGatherProgress(inventory);
       if(objectiveGoalReached()){
         finishObjective(`Woodcutting step complete • ${objective.countProgress}/${objective.countGoal} logs gathered.`);
         return;
