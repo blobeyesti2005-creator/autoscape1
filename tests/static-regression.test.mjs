@@ -458,6 +458,58 @@ test('all routed travel modes rebuild stalled routes from the current position',
   }
 });
 
+test('regional searches skip unreachable tiles and keep recovery directions moving', () => {
+  const recoverySource = section(
+    html,
+    '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
+    '    function nearestLoadedBanker(bank){'
+  );
+  const objective = { searchIndex: 2 };
+  const { advanceRegionalSearchIfStalled, navRetryTarget, setWatch, watch } = new Function(
+    'globalPlayerTile', 'nodeDistance', 'Date', 'objective', 'makeRouteTo',
+    `${recoverySource}\nreturn {
+      advanceRegionalSearchIfStalled,
+      navRetryTarget,
+      setWatch:value=>{navWatch={...navWatch,...value};},
+      watch:()=>({...navWatch})
+    };`
+  )(
+    () => ({ x: 0, y: 0 }),
+    (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    { now: () => 50_000 },
+    objective,
+    () => []
+  );
+
+  setWatch({ retries: 11 });
+  assert.equal(advanceRegionalSearchIfStalled(4), false);
+  assert.equal(objective.searchIndex, 2);
+  setWatch({ retries: 12 });
+  assert.equal(advanceRegionalSearchIfStalled(4), true);
+  assert.equal(objective.searchIndex, 3);
+  assert.equal(objective.searchRecoveries, 1);
+  assert.equal(watch().retries, 0);
+
+  // A ninth stalled retry cycles to the first offset instead of remaining
+  // pinned to the eighth and repeatedly clicking the same blocked direction.
+  setWatch({
+    targetKey: '10:0', bestDistance: 10, lastMove: 46_000,
+    stalls: 8, retries: 8
+  });
+  assert.deepEqual(navRetryTarget({ x: 10, y: 0 }), { x: 12, y: 0 });
+
+  for (const name of [
+    'advanceResourceTravel', 'advanceCombatTravel', 'miningTick',
+    'firemakingGatherTick'
+  ]) {
+    assert.match(
+      functionSource(html, name),
+      /advanceRegionalSearchIfStalled\(/,
+      `${name} must skip a regional target after exhausting recovery`
+    );
+  }
+});
+
 test('banker targeting stays scoped to the selected bank', () => {
   const bankerSource = functionSource(html, 'nearestLoadedBanker');
   const nearestLoadedBanker = new Function(

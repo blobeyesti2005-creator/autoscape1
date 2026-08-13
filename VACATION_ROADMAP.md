@@ -37,6 +37,8 @@ deleting history, or changing GitHub Pages.
   so collision shuffling cannot indefinitely suppress obstacle recovery.
 - [x] Rebuild stalled routes from the character's current location across bank,
   gathering, mining, firemaking, combat, and return travel modes.
+- [x] Rotate past unreachable regional search tiles and continuously cycle local
+  recovery directions for woodcutting, mining, firemaking, and combat.
 - [x] Execute command-job save/reload round trips covering queued steps, partial
   progress, combat style, no-bank intent, legacy defaults, and damaged input.
 - [x] Execute server stat load/save behavior covering boosted, drained, and
@@ -162,3 +164,16 @@ deleting history, or changing GitHub Pages.
   fail-closed compatibility guard.
 - Package metadata advanced to `2.11.7`; the app-shell cache remains `2.11.6`
   because this batch changes tests and documentation only.
+
+### Regional search stall recovery
+
+- `npm test` (18 regression groups)
+- Woodcutting, mining, firemaking, and combat now abandon one unreachable
+  regional search tile after the shared progress-aware retry limit, then move
+  to the next point in their existing search pattern.
+- Local collision-recovery offsets cycle continuously instead of becoming
+  pinned forever to the final diagonal offset.
+- Recovery counters remain runtime-only diagnostics; save keys, account data,
+  stats, inventories, banks, settings, and queued jobs are unchanged.
+- Package and app-shell cache metadata advanced to `2.11.8` for the eventual
+  reviewed release.

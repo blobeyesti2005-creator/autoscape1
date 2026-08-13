@@ -1418,8 +1418,19 @@ ${firstBanker}`;
       }
       if(navWatch.stalls<1) return target;
       const offsets=[[2,0],[0,2],[-2,0],[0,-2],[3,2],[-3,2],[3,-2],[-3,-2]];
-      const off=offsets[Math.min(navWatch.stalls-1,offsets.length-1)];
+      // Keep rotating recovery directions instead of becoming permanently
+      // pinned to the final offset after a long collision stall.
+      const off=offsets[(navWatch.stalls-1)%offsets.length];
       return {x:target.x+off[0],y:target.y+off[1]};
+    }
+
+    function advanceRegionalSearchIfStalled(searchLength){
+      if(Number(navWatch.retries||0)<MAX_NAV_RETRIES)return false;
+      const length=Math.max(1,Number(searchLength)||1);
+      objective.searchIndex=(Number(objective.searchIndex||0)+1)%length;
+      objective.searchRecoveries=Number(objective.searchRecoveries||0)+1;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+      return true;
     }
 
     function rebuildRouteIfStalled(targetNode){
@@ -1661,6 +1672,9 @@ ${firstBanker}`;
       if(nodeDistance(pp,target)<8){
         objective.searchIndex=si+1;
         objective.failures=(objective.failures||0)+1;
+      }else if(advanceRegionalSearchIfStalled(search.length)){
+        objective.failures=(objective.failures||0)+1;
+        setBotStatus(`Woodcutting ${wcLevel()} • blocked search tile skipped near ${type}`);
       }else if(Date.now()-lastAction>ACTION_INTERVALS.walk){
         shortStepToward(target,18);
         lastAction=Date.now();
@@ -2248,6 +2262,8 @@ ${firstBanker}`;
       if(nodeDistance(pp,target)<8){
         objective.searchIndex=si+1;
         markProgress('combat-search-tile');
+      }else if(advanceRegionalSearchIfStalled(search.length)){
+        setBotStatus(`Combat ${playerCombatEstimate()} • blocked search tile skipped near ${type}`);
       }else if(Date.now()-lastAction>ACTION_INTERVALS.walk){
         shortStepToward(target,18);
         lastAction=Date.now();
@@ -2970,6 +2986,7 @@ ${firstBanker}`;
       const search=hub.search,si=Number(objective.searchIndex||0)%search.length,off=search[si];
       const target={x:hub.centre.x+off[0],y:hub.centre.y+off[1]};
       if(nodeDistance(pp,target)<7)objective.searchIndex=si+1;
+      else if(advanceRegionalSearchIfStalled(search.length))setBotStatus(`Mining ${lvl} • blocked search tile skipped near ${hub.label}`);
       else if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(target,16);lastAction=Date.now();}
       setBotStatus(`Mining ${lvl} • searching ${hub.label} for ${desiredOreDef().name}`);
     }
@@ -3006,6 +3023,7 @@ ${firstBanker}`;
       const offsets=[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,8],[-12,8],[12,-8],[-12,-8]];
       const si=Number(objective.searchIndex||0)%offsets.length,off=offsets[si],target={x:122+off[0],y:657+off[1]};
       if(nodeDistance(pp,target)<7){objective.searchIndex=si+1;markProgress('firemaking-tree-search');}
+      else if(advanceRegionalSearchIfStalled(offsets.length))setBotStatus(`Firemaking ${level} • blocked search tile skipped near Lumbridge`);
       else if(now-lastAction>=ACTION_INTERVALS.walk){shortStepToward(target,16);lastAction=now;}
       setBotStatus(`Firemaking ${level} • searching Lumbridge for regular trees (${si+1}/${offsets.length})`);
     }
