@@ -88,8 +88,8 @@ test('account, stat, and job persistence safeguards remain installed', () => {
     'return [skillName, { ...skill }]',
     "localStorage.setItem('autoscape_credentials'",
     "localStorage.setItem('autoscape_job'",
-    'queue:[...commandQueue]',
-    'countProgress:Number(objective.countProgress||0)',
+    'queue:[...queue]',
+    'countProgress:Number(o.countProgress||0)',
     'window.__AUTOSCAPE_STABLE_ORIGIN_V24__=true'
   ];
   required.forEach(marker => assert.ok(html.includes(marker), `missing safeguard: ${marker}`));
@@ -153,6 +153,65 @@ test('natural-language command parser keeps key command chains usable', () => {
   assert.equal(noBank.target, 'chicken');
   assert.equal(noBank.bankMode, 'never');
   assert.deepEqual(parse('stop the bot'), { type: 'stop' });
+});
+
+test('saved command chains round-trip progress, style, and banking intent', () => {
+  const persistenceSource = section(
+    html,
+    '    function serializeObjectiveState(o=objective,queue=commandQueue){',
+    '    function saveObjective(){'
+  );
+  const { serializeObjectiveState, normalizeSavedJob } = new Function(
+    'objective', 'commandQueue', 'lootSelect', 'combatStyleSelect',
+    'combatBankSelect', 'activeCommandText',
+    `${persistenceSource}\nreturn {serializeObjectiveState,normalizeSavedJob};`
+  )(
+    null,
+    [],
+    { value: 'valuable' },
+    { value: 'controlled' },
+    { value: 'safe' },
+    ''
+  );
+  const objective = {
+    type: 'combat', target: 'chicken', combatStyle: 'strength', bankMode: 'never',
+    commandText: 'kill 12 chickens to the death then chop 10 logs',
+    chainAdvance: true, countGoal: 12, countProgress: 5
+  };
+  const queue = ['chop 10 logs', 'firemake the logs'];
+  const stored = JSON.parse(JSON.stringify(serializeObjectiveState(objective, queue)));
+  const restored = normalizeSavedJob(stored);
+
+  assert.equal(restored.type, 'combat');
+  assert.equal(restored.target, 'chicken');
+  assert.equal(restored.combatStyle, 'strength');
+  assert.equal(restored.bankMode, 'never');
+  assert.equal(restored.countGoal, 12);
+  assert.equal(restored.countProgress, 5);
+  assert.equal(restored.chainAdvance, true);
+  assert.deepEqual(restored.queue, queue);
+  assert.equal(restored.lootMode, 'valuable');
+
+  const legacy = normalizeSavedJob({ type: 'woodcutting', active: true, resource: 'willow' });
+  assert.equal(legacy.resource, 'willow');
+  assert.equal(legacy.countGoal, 0);
+  assert.equal(legacy.countProgress, 0);
+  assert.equal(legacy.combatStyle, 'controlled');
+  assert.equal(legacy.bankMode, 'safe');
+  assert.deepEqual(legacy.queue, []);
+
+  const damaged = normalizeSavedJob({
+    type: 'combat', active: true, combatStyle: 'invalid', bankMode: 'invalid',
+    countGoal: 10, countProgress: 99, queue: ['  chop logs  ', null, '']
+  });
+  assert.equal(damaged.combatStyle, 'controlled');
+  assert.equal(damaged.bankMode, 'safe');
+  assert.equal(damaged.countProgress, 10);
+  assert.deepEqual(damaged.queue, ['chop logs']);
+  assert.equal(normalizeSavedJob({ type: 'unknown', active: true }), null);
+
+  assert.match(html, /normalizeSavedJob\(JSON\.parse\(localStorage\.getItem\('autoscape_job'\)/);
+  assert.match(functionSource(html, 'saveObjective'), /serializeObjectiveState\(\)/);
 });
 
 test('navigation graph uses shortest travel distance for bank routes', () => {

@@ -37,6 +37,8 @@ deleting history, or changing GitHub Pages.
   so collision shuffling cannot indefinitely suppress obstacle recovery.
 - [x] Rebuild stalled routes from the character's current location across bank,
   gathering, mining, firemaking, combat, and return travel modes.
+- [x] Execute command-job save/reload round trips covering queued steps, partial
+  progress, combat style, no-bank intent, legacy defaults, and damaged input.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -130,4 +132,17 @@ deleting history, or changing GitHub Pages.
 - Combat banking no longer rebuilds merely because it issued many successful
   walk commands; it now rebuilds only after measured lack of forward progress.
 - App-shell cache advanced to `autoscape-app-v2.11.5` for the eventual reviewed
+  release.
+
+### Command-job persistence round trips
+
+- `npm test` (16 regression groups)
+- The existing `autoscape_job` schema and key are unchanged, but serialization
+  and defensive loading now have named, executable functions.
+- JSON round-trip tests preserve command order, partial target progress,
+  Strength training, fight-to-the-death/no-bank mode, loot choice, and resource
+  choice.
+- Older saves missing newer fields receive backward-compatible defaults;
+  malformed counts, enum values, and queue entries are safely normalized.
+- App-shell cache advanced to `autoscape-app-v2.11.6` for the eventual reviewed
   release.

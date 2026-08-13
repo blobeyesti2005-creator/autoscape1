@@ -1745,24 +1745,56 @@ ${firstBanker}`;
       renderQueue();
     }
 
+    function serializeObjectiveState(o=objective,queue=commandQueue){
+      if(!o)return null;
+      return {
+        type:o.type,
+        resource:o.resource||'auto',
+        supply:o.supply||'held',
+        target:o.target||'auto',
+        lootMode:lootSelect.value||'f2p',
+        combatStyle:o.combatStyle||combatStyleSelect.value||'controlled',
+        bankMode:o.bankMode||combatBankSelect.value||'safe',
+        commandText:o.commandText||activeCommandText||'',
+        chainAdvance:!!o.chainAdvance,
+        countGoal:Number(o.countGoal||0),
+        countProgress:Number(o.countProgress||0),
+        queue:[...queue],
+        active:true
+      };
+    }
+
+    function normalizeSavedJob(raw){
+      if(!raw||typeof raw!=='object'||raw.active!==true)return null;
+      const supported=new Set(['woodcutting','mining','combat','firemaking']);
+      if(!supported.has(raw.type))return null;
+      const styles=new Set(['controlled','strength','attack','defence']);
+      const queue=Array.isArray(raw.queue)
+        ?raw.queue.filter(item=>typeof item==='string'&&item.trim()).map(item=>item.trim())
+        :[];
+      const countGoal=Math.max(0,Number.isFinite(Number(raw.countGoal))?Number(raw.countGoal):0);
+      const countProgress=Math.max(0,Number.isFinite(Number(raw.countProgress))?Number(raw.countProgress):0);
+      return {
+        ...raw,
+        resource:typeof raw.resource==='string'&&raw.resource?raw.resource:'auto',
+        supply:raw.supply==='gather'?'gather':'held',
+        target:typeof raw.target==='string'&&raw.target?raw.target:'auto',
+        lootMode:['none','valuable','f2p','all'].includes(raw.lootMode)?raw.lootMode:'f2p',
+        combatStyle:styles.has(raw.combatStyle)?raw.combatStyle:'controlled',
+        bankMode:raw.bankMode==='never'?'never':'safe',
+        commandText:typeof raw.commandText==='string'?raw.commandText:'',
+        chainAdvance:!!raw.chainAdvance&&queue.length>0,
+        countGoal,
+        countProgress:Math.min(countProgress,countGoal||countProgress),
+        queue,
+        active:true
+      };
+    }
+
     function saveObjective(){
       try{
         if(objective){
-          const saved={
-            type:objective.type,
-            resource:objective.resource||'auto',
-            supply:objective.supply||'held',
-            target:objective.target||'auto',
-            lootMode:lootSelect.value||'f2p',
-            combatStyle:objective.combatStyle||combatStyleSelect.value||'controlled',
-            bankMode:objective.bankMode||combatBankSelect.value||'safe',
-            commandText:objective.commandText||activeCommandText||'',
-            chainAdvance:!!objective.chainAdvance,
-            countGoal:Number(objective.countGoal||0),
-            countProgress:Number(objective.countProgress||0),
-            queue:[...commandQueue],
-            active:true
-          };
+          const saved=serializeObjectiveState();
           localStorage.setItem('autoscape_job',JSON.stringify(saved));
           localStorage.setItem('autoscape_resource',saved.resource);
           if(objective.type==='mining')localStorage.setItem('autoscape_mining_resource',saved.resource);
@@ -3278,9 +3310,9 @@ ${firstBanker}`;
     // Resume the last explicit job after login. "stop" clears this.
     setTimeout(()=>{
       try{
-        const savedJob=JSON.parse(localStorage.getItem('autoscape_job')||'null');
+        const savedJob=normalizeSavedJob(JSON.parse(localStorage.getItem('autoscape_job')||'null'));
         if(savedJob && savedJob.active && !objective){
-          commandQueue=Array.isArray(savedJob.queue)?savedJob.queue.filter(item=>typeof item==='string'&&item.trim()):[];
+          commandQueue=[...savedJob.queue];
           activeCommandText=String(savedJob.commandText||savedJob.type||'');
           const resumeChain={
             commandText:activeCommandText,
