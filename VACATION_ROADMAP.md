@@ -39,6 +39,8 @@ deleting history, or changing GitHub Pages.
   gathering, mining, firemaking, combat, and return travel modes.
 - [x] Rotate past unreachable regional search tiles and continuously cycle local
   recovery directions for woodcutting, mining, firemaking, and combat.
+- [x] Rotate blocked final bank approaches and engage the selected bank's loaded
+  banker through native NPC action walking instead of orbiting one coordinate.
 - [x] Execute command-job save/reload round trips covering queued steps, partial
   progress, combat style, no-bank intent, legacy defaults, and damaged input.
 - [x] Execute server stat load/save behavior covering boosted, drained, and
@@ -176,4 +178,17 @@ deleting history, or changing GitHub Pages.
 - Recovery counters remain runtime-only diagnostics; save keys, account data,
   stats, inventories, banks, settings, and queued jobs are unchanged.
 - Package and app-shell cache metadata advanced to `2.11.8` for the eventual
+  reviewed release.
+
+### Bank-arrival and interaction recovery
+
+- `npm test` (19 regression groups)
+- Gathering and combat banking share five rotating final approach points; an
+  unreachable bank coordinate can no longer trap either loop indefinitely.
+- Once the correctly scoped banker is within 20 tiles, the bot uses the native
+  NPC action walk and talk flow rather than requiring a fragile seven-tile
+  straight-line threshold.
+- Banker scoping, dialogue freshness checks, and retry timeouts remain intact.
+- Arrival counters are runtime-only diagnostics and do not alter save schemas.
+- Package and app-shell cache metadata advanced to `2.11.9` for the eventual
   reviewed release.

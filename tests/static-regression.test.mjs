@@ -540,6 +540,48 @@ test('banker targeting stays scoped to the selected bank', () => {
   }
 });
 
+test('bank arrival rotates blocked approaches and engages scoped bankers nearby', () => {
+  const recoverySource = section(
+    html,
+    '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
+    '    function nearestLoadedBanker(bank){'
+  );
+  const objective = { bankApproachIndex: 0 };
+  const { bankArrivalTarget, advanceBankArrivalIfStalled, setRetries, watch } = new Function(
+    'globalPlayerTile', 'nodeDistance', 'Date', 'objective', 'makeRouteTo',
+    `${recoverySource}\nreturn {
+      bankArrivalTarget,
+      advanceBankArrivalIfStalled,
+      setRetries:value=>{navWatch.retries=value;},
+      watch:()=>({...navWatch})
+    };`
+  )(
+    () => ({ x: 0, y: 0 }),
+    (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    { now: () => 80_000 },
+    objective,
+    () => []
+  );
+  const bank = { x: 124, y: 657 };
+
+  assert.deepEqual(bankArrivalTarget(bank), bank);
+  setRetries(11);
+  assert.equal(advanceBankArrivalIfStalled(), false);
+  setRetries(12);
+  assert.equal(advanceBankArrivalIfStalled(), true);
+  assert.deepEqual(bankArrivalTarget(bank), { x: 129, y: 657 });
+  assert.equal(objective.bankArrivalRecoveries, 1);
+  assert.equal(watch().retries, 0);
+
+  assert.match(html, /const BANKER_TALK_DISTANCE=20/);
+  for (const name of ['advanceBankRoute', 'advanceCombatBanking']) {
+    const source = functionSource(html, name);
+    assert.match(source, /banker\.d<=BANKER_TALK_DISTANCE/, `${name} must use native banker action walking nearby`);
+    assert.match(source, /advanceBankArrivalIfStalled\(\)/, `${name} must rotate blocked final approaches`);
+    assert.match(source, /bankArrivalTarget\(bank\)/, `${name} must use the selected bank approach`);
+  }
+});
+
 test('bank dialogue choices require a recent bot-initiated banker conversation', () => {
   const expectedSource = functionSource(html, 'bankDialogueOptionExpected');
   const makeExpected = objective => new Function(

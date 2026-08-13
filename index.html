@@ -1371,6 +1371,8 @@ ${firstBanker}`;
       objective.bankOptionSentAt=0;
       objective.bankTalkTimeouts=0;
       objective.bankOptionTimeouts=0;
+      objective.bankApproachIndex=0;
+      objective.bankArrivalRecoveries=0;
       // Do not let a menu left open before this bank trip get mistaken for a
       // banker's response on the next bot tick.
       if(mc.showOptionMenu)mc.showOptionMenu=false;
@@ -1392,6 +1394,8 @@ ${firstBanker}`;
 
     let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
     const MAX_NAV_RETRIES=12;
+    const BANKER_TALK_DISTANCE=20;
+    const BANK_APPROACH_OFFSETS=[[0,0],[5,0],[0,5],[-5,0],[0,-5]];
 
     function navRetryTarget(target){
       const pp=globalPlayerTile();
@@ -1440,6 +1444,19 @@ ${firstBanker}`;
       objective.routeRebuilds=Number(objective.routeRebuilds||0)+1;
       navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
       lastAction=Date.now();
+      return true;
+    }
+
+    function bankArrivalTarget(bank){
+      const off=BANK_APPROACH_OFFSETS[Number(objective.bankApproachIndex||0)%BANK_APPROACH_OFFSETS.length];
+      return {x:bank.x+off[0],y:bank.y+off[1]};
+    }
+
+    function advanceBankArrivalIfStalled(){
+      if(Number(navWatch.retries||0)<MAX_NAV_RETRIES)return false;
+      objective.bankApproachIndex=(Number(objective.bankApproachIndex||0)+1)%BANK_APPROACH_OFFSETS.length;
+      objective.bankArrivalRecoveries=Number(objective.bankArrivalRecoveries||0)+1;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
       return true;
     }
 
@@ -1545,7 +1562,10 @@ ${firstBanker}`;
       // is running resets the server walk action and can prevent the menu.
       if(bankInteractionWaiting(false))return false;
 
-      if(banker && banker.d<=7){
+      // NPC interaction already performs its own action walk. Starting it as
+      // soon as the correctly scoped banker is nearby avoids orbiting a fixed
+      // bank coordinate while the banker stands on the other side of a wall.
+      if(banker && banker.d<=BANKER_TALK_DISTANCE){
         if(Date.now()-lastAction>ACTION_INTERVALS.walk && sendTalkToBanker(banker)){
           objective.phase='bank-dialogue';
           objective.bankTalkSentAt=Date.now();
@@ -1582,9 +1602,13 @@ ${firstBanker}`;
         return true;
       }
 
+      if(advanceBankArrivalIfStalled()){
+        setBotStatus(`${gatherSkillLabel()} • blocked bank approach skipped at ${bank.label}`);
+        return true;
+      }
       if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-        const retry=navRetryTarget(bank);
-        walkGlobal(retry.x,retry.y);
+        const target=bankArrivalTarget(bank);
+        shortStepToward(target,14);
         lastAction=Date.now();
         setBotStatus(`${gatherSkillLabel()} • locating ${bank.label} banker`);
       }
@@ -2459,7 +2483,7 @@ ${firstBanker}`;
 
       if(bankInteractionWaiting(true))return;
 
-      if(banker&&banker.d<=7){
+      if(banker&&banker.d<=BANKER_TALK_DISTANCE){
         if(Date.now()-lastAction>ACTION_INTERVALS.walk&&sendTalkToBanker(banker)){
           objective.bankTalkSentAt=Date.now();
           setPhase('combat-bank-dialogue',`Combat • talking to ${bank.label} banker`);
@@ -2490,7 +2514,11 @@ ${firstBanker}`;
         }
         return;
       }
-      if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(bank,14);lastAction=Date.now();}
+      if(advanceBankArrivalIfStalled()){
+        setBotStatus(`Combat • blocked bank approach skipped at ${bank.label}`);
+        return;
+      }
+      if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(bankArrivalTarget(bank),14);lastAction=Date.now();}
     }
 
     // ---------- TASK 4: return to the selected combat training region ----------
