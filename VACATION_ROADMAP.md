@@ -21,8 +21,8 @@ deleting history, or changing GitHub Pages.
   resource depletion, and synthetic click markers.
 - [x] Run the regression suite automatically on the vacation branch and pull
   requests.
-- [ ] Add browser-level smoke coverage for account creation, save/load, and
-  basic UI controls.
+- [ ] Add browser-level smoke coverage for account creation and basic UI
+  controls; remembered login and full save/load now have executable fixtures.
 - [x] Reduce avoidable metrics DOM updates, unchanged camera-storage writes,
   and unchanged Quick Bank style writes without slowing bot decisions.
 - [x] Reuse single-pass inventory summaries in active gathering, firemaking, and
@@ -53,6 +53,8 @@ deleting history, or changing GitHub Pages.
   route chicken training through the accessible Lumbridge farm gate.
 - [x] Deduplicate unchanged command-job and bot preference writes while keeping
   progress checkpoints immediate and preserving every existing storage key.
+- [x] Execute remembered-account login with valid, malformed, incomplete, and
+  already-logged-in browser states without deleting credentials on failure.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -257,4 +259,19 @@ deleting history, or changing GitHub Pages.
 - Instrumented tests count writes/removals and enforce one write per changed
   value plus zero writes for identical values.
 - Package and app-shell cache metadata advanced to `2.12.3` for the eventual
+  reviewed release.
+
+### Remembered-account login smoke fixture
+
+- `npm test` (25 regression groups)
+- Remembered credential parsing now rejects damaged, incomplete, or incorrectly
+  typed local values without throwing during startup.
+- A valid remembered account is passed once to the native client login method,
+  including its existing reconnect flag, and an already logged-in character is
+  never sent a duplicate login request.
+- Transient login failures now give a useful on-screen retry message while
+  deliberately retaining the local account credentials.
+- Registration, account database, character saves, inventory, bank, stats,
+  settings, command jobs, and all persistence keys remain unchanged.
+- Package and app-shell cache metadata advanced to `2.12.4` for the eventual
   reviewed release.

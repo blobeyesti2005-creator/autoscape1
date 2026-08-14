@@ -3434,22 +3434,38 @@ ${firstBanker}`;
     botTimer=setInterval(tick,1000);
     window.AutoScape={start,stop,get objective(){return objective;},get queue(){return [...commandQueue];},mc};
 
-    // Auto-login remembered local account on future launches.
-    try{
-      const saved=JSON.parse(localStorage.getItem('autoscape_credentials')||'null');
-      if(saved && saved.u && saved.p){
-        botStatus.textContent='Remembered local account found — logging in…';
-        setTimeout(async()=>{
-          try{
-            if(!(mc.loggedIn===1)){
-              mc.loginUser=saved.u;
-              mc.loginPass=saved.p;
-              await mc.login(saved.u,saved.p,false);
-            }
-          }catch(e){ console.warn('Auto-login failed:',e); }
-        },700);
+    function readRememberedCredentials(storage=localStorage){
+      try{
+        const saved=JSON.parse(storage.getItem('autoscape_credentials')||'null');
+        if(!saved||typeof saved!=='object')return null;
+        if(typeof saved.u!=='string'||!saved.u||typeof saved.p!=='string'||!saved.p)return null;
+        return {u:saved.u,p:saved.p};
+      }catch(e){
+        return null;
       }
-    }catch(e){}
+    }
+
+    async function loginRememberedCharacter(saved,client=mc){
+      if(!saved||client.loggedIn===1)return false;
+      client.loginUser=saved.u;
+      client.loginPass=saved.p;
+      await client.login(saved.u,saved.p,false);
+      return true;
+    }
+
+    // Auto-login remembered local account on future launches.
+    const rememberedCredentials=readRememberedCredentials();
+    if(rememberedCredentials){
+      botStatus.textContent='Remembered local account found — logging in…';
+      mc.__autoscapeAutoLoginTimer=setTimeout(async()=>{
+        try{
+          await loginRememberedCharacter(rememberedCredentials);
+        }catch(e){
+          console.warn('Auto-login failed:',e);
+          setBotStatus('Remembered login could not complete. Use the normal login screen to retry; your local account was not removed.');
+        }
+      },700);
+    }
 
     // Resume the last explicit job after login. "stop" clears this.
     setTimeout(()=>{

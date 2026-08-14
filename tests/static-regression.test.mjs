@@ -250,6 +250,45 @@ test('browser account storage round-trips complete character state without alias
   assert.deepEqual(stored.cache.flags, [true, false]);
 });
 
+test('remembered browser login validates credentials and reuses the local account', async () => {
+  const readRememberedCredentials = new Function(
+    `${functionSource(html, 'readRememberedCredentials')}\nreturn readRememberedCredentials;`
+  )();
+  const loginSource = functionSource(html, 'loginRememberedCharacter').replace(/^function /,'async function ');
+  const loginRememberedCharacter = new Function(
+    `${loginSource}\nreturn loginRememberedCharacter;`
+  )();
+
+  const storage = value => ({ getItem: key => key === 'autoscape_credentials' ? value : null });
+  assert.deepEqual(
+    readRememberedCredentials(storage(JSON.stringify({ u: 'saved-player', p: 'local-pass' }))),
+    { u: 'saved-player', p: 'local-pass' }
+  );
+  assert.equal(readRememberedCredentials(storage('{damaged')), null);
+  assert.equal(readRememberedCredentials(storage(JSON.stringify({ u: 'saved-player' }))), null);
+  assert.equal(readRememberedCredentials(storage(JSON.stringify({ u: 123, p: true }))), null);
+
+  const calls=[];
+  const client={
+    loggedIn:0,
+    async login(username,password,reconnect){calls.push({username,password,reconnect});}
+  };
+  assert.equal(
+    await loginRememberedCharacter({u:'saved-player',p:'local-pass'},client),
+    true
+  );
+  assert.equal(client.loginUser,'saved-player');
+  assert.equal(client.loginPass,'local-pass');
+  assert.deepEqual(calls,[{username:'saved-player',password:'local-pass',reconnect:false}]);
+
+  client.loggedIn=1;
+  assert.equal(await loginRememberedCharacter({u:'saved-player',p:'local-pass'},client),false);
+  assert.equal(calls.length,1,'an already logged-in character must not receive another login request');
+
+  assert.match(html,/your local account was not removed/);
+  assert.match(html,/__autoscapeAutoLoginTimer=setTimeout/);
+});
+
 test('server gameplay patch preserves live stats through load and save', () => {
   const gameplaySource = section(
     html,
