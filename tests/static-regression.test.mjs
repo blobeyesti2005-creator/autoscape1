@@ -388,6 +388,9 @@ test('natural-language command parser keeps key command chains usable', () => {
   assert.deepEqual(parse('mine 20 iron ore'), { type: 'mining', resource: 'iron', amount: 20 });
   assert.deepEqual(parse('firemake the logs'), { type: 'firemaking', supply: 'held', amount: 0 });
   assert.deepEqual(parse('train firemaking'), { type: 'firemaking', supply: 'gather', amount: 0 });
+  assert.deepEqual(parse('bank inventory'), { type: 'banking', mode: 'carried' });
+  assert.deepEqual(parse('deposit gathered resources'), { type: 'banking', mode: 'gathered' });
+  assert.deepEqual(parse('bank loot'), { type: 'banking', mode: 'loot' });
 
   const strength = parse('train strength on chickens');
   assert.equal(strength.type, 'combat');
@@ -455,8 +458,52 @@ test('saved command chains round-trip progress, style, and banking intent', () =
   assert.deepEqual(damaged.queue, ['chop logs']);
   assert.equal(normalizeSavedJob({ type: 'unknown', active: true }), null);
 
+  const banking = normalizeSavedJob({
+    type: 'banking', resource: 'loot', active: true,
+    queue: ['fight chickens'], chainAdvance: true
+  });
+  assert.equal(banking.type, 'banking');
+  assert.equal(banking.resource, 'loot');
+  assert.deepEqual(banking.queue, ['fight chickens']);
+
   assert.match(html, /normalizeSavedJob\(JSON\.parse\(localStorage\.getItem\('autoscape_job'\)/);
   assert.match(functionSource(html, 'saveObjective'), /serializeObjectiveState\(\)/);
+});
+
+test('explicit banking deposits selected unequipped items and advances chains', () => {
+  const packets=[];
+  let activePacket=null;
+  const mc={
+    showDialogBank:true,
+    packetStream:{
+      newPacket(id){activePacket={id,values:[]};packets.push(activePacket);},
+      putShort(value){activePacket.values.push(value);},
+      putInt(value){activePacket.values.push(value);},
+      sendPacket(){}
+    },
+    inventoryItemId:[87,14,10,132],
+    inventoryItemStackCount:[1,3,100,2],
+    inventoryEquipped:[1,0,0,0]
+  };
+  const sessionStats={actions:0,deposits:0};
+  const depositItemsIfBankOpen = new Function(
+    'mc','inventorySlots','sessionStats','markProgress','renderMetrics','setTimeout',
+    `${functionSource(html,'depositItemsIfBankOpen')}\nreturn depositItemsIfBankOpen;`
+  )(mc,()=>4,sessionStats,()=>{},()=>{},callback=>callback());
+
+  assert.equal(depositItemsIfBankOpen(null),true);
+  const deposits=packets.filter(packet=>packet.id===23);
+  assert.deepEqual(deposits.map(packet=>packet.values.slice(0,2)),[[14,3],[10,100],[132,2]]);
+  assert.equal(deposits.some(packet=>packet.values[0]===87),false,'equipped gear must remain carried');
+  assert.equal(sessionStats.deposits,1);
+
+  const advanceSource=functionSource(html,'advanceBankRoute');
+  assert.match(advanceSource,/objective\.type==='banking'/);
+  assert.match(advanceSource,/finishObjective\(deposited/);
+  assert.match(functionSource(html,'tick'),/objective\.type==='banking'/);
+  assert.match(html,/savedJob\.type==='banking'/);
+  assert.match(html,/GATHERED_BANK_IDS/);
+  assert.match(html,/LOOT_BANK_IDS/);
 });
 
 test('navigation graph uses shortest travel distance for bank routes', () => {

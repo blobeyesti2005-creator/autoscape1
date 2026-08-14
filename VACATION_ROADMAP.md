@@ -55,6 +55,8 @@ deleting history, or changing GitHub Pages.
   progress checkpoints immediate and preserving every existing storage key.
 - [x] Execute remembered-account login with valid, malformed, incomplete, and
   already-logged-in browser states without deleting credentials on failure.
+- [x] Add explicit carried/gathered/loot banking steps to persistent command
+  chains using nearest-bank routing and equipped-item protection.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -274,4 +276,21 @@ deleting history, or changing GitHub Pages.
 - Registration, account database, character saves, inventory, bank, stats,
   settings, command jobs, and all persistence keys remain unchanged.
 - Package and app-shell cache metadata advanced to `2.12.4` for the eventual
+  reviewed release.
+
+### Explicit banking command chains
+
+- `npm test` (26 regression groups)
+- Added `bank inventory`, `deposit gathered resources`, and `bank loot` intents
+  that can run alone or as queued steps after gathering and combat commands.
+- Banking uses the existing weighted nearest-bank route, scoped banker,
+  dialogue freshness, timeout, blocked-approach, and route-rebuild safeguards.
+- Carried banking deposits every unequipped stack; gathered banking deposits
+  logs and ores; loot banking uses the existing F2P loot filter while retaining
+  food, equipped gear, and protected tools.
+- Banking queue state reuses the existing `type`, `resource`, and queue fields;
+  no save key or payload field was added, and older jobs remain compatible.
+- Executable packet tests verify item amounts and prove equipped items are not
+  included in bank-deposit packets.
+- Package and app-shell cache metadata advanced to `2.12.5` for the eventual
   reviewed release.

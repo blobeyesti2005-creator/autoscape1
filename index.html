@@ -189,7 +189,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <section class="guideEntry" data-guide="item items ids reference loot drops equipment runes ores logs food tools">
 <h3>Supported item reference</h3><table><thead><tr><th>Item ID</th><th>Name</th></tr></thead><tbody id="guideItems"></tbody></table></section>
 <section class="guideEntry" data-guide="commands bot natural language jobs queue chain then comma combat strength attack defence bank death">
-<h3>Useful commands</h3><p><code>chop 10 logs</code> · <code>mine 20 iron ore</code> · <code>kill 5 skeletons</code> · <code>train strength on chickens</code> · <code>fight chickens to the death</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>stop</code></p><p>Combat commands can choose Controlled, Strength, Attack, or Defence XP. “To the death” and “never bank” disable combat banking until changed. Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Example: <code>chop 10 logs, then firemake them</code>. Numbered steps complete after real resources, fires, or kills are confirmed. An unnumbered queued gathering step fills the inventory without banking, then the next step starts automatically. The current step, progress, and remaining queue persist locally after login.</p></section>
+<h3>Useful commands</h3><p><code>chop 10 logs</code> · <code>mine 20 iron ore</code> · <code>kill 5 skeletons</code> · <code>train strength on chickens</code> · <code>fight chickens to the death</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>bank inventory</code> · <code>deposit gathered resources</code> · <code>bank loot</code> · <code>stop</code></p><p>Combat commands can choose Controlled, Strength, Attack, or Defence XP. “To the death” and “never bank” disable combat banking until changed. Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Examples: <code>chop 10 logs, then firemake them</code> and <code>mine 20 iron, then bank gathered resources</code>. Banking steps keep equipped gear. Numbered steps complete after real resources, fires, or kills are confirmed. An unnumbered queued gathering step fills the inventory without banking, then the next step starts automatically. The current step, progress, and remaining queue persist locally after login.</p></section>
 </div>
 <script>
 'use strict';
@@ -1164,10 +1164,11 @@ ${firstBanker}`;
 
     function depositItemsIfBankOpen(itemIds){
       if(!mc.showDialogBank||!mc.packetStream)return false;
-      const ids=itemIds instanceof Set?itemIds:new Set(itemIds||[]),counts=new Map(),used=inventorySlots();
+      const ids=itemIds===null?null:(itemIds instanceof Set?itemIds:new Set(itemIds||[])),counts=new Map(),used=inventorySlots();
       for(let i=0;i<used;i++){
+        if(Number(mc.inventoryEquipped?.[i])===1)continue;
         const id=Number(mc.inventoryItemId?.[i]);
-        if(ids.has(id))counts.set(id,(counts.get(id)||0)+Number(mc.inventoryItemStackCount?.[i]||1));
+        if(!ids||ids.has(id))counts.set(id,(counts.get(id)||0)+Number(mc.inventoryItemStackCount?.[i]||1));
       }
       for(const [id,amount] of counts){
         mc.packetStream.newPacket(23);mc.packetStream.putShort(id);mc.packetStream.putShort(Math.min(65535,amount));
@@ -1179,6 +1180,7 @@ ${firstBanker}`;
     }
     function depositAllLogsIfBankOpen(){return depositItemsIfBankOpen(LOG_IDS);}
     function depositGatheredItemsIfBankOpen(){
+      if(objective?.type==='banking')return depositItemsIfBankOpen(bankingDepositFilter(objective.resource));
       return depositItemsIfBankOpen(objective?.type==='mining'?ORE_IDS:LOG_IDS);
     }
 
@@ -1596,7 +1598,10 @@ ${firstBanker}`;
       return false;
     }
 
-    function gatherSkillLabel(){return objective?.type==='mining'?`Mining ${miningLevel()}`:`Woodcutting ${wcLevel()}`;}
+    function gatherSkillLabel(){
+      if(objective?.type==='banking')return 'Banking';
+      return objective?.type==='mining'?`Mining ${miningLevel()}`:`Woodcutting ${wcLevel()}`;
+    }
 
     function advanceBankRoute(){
       const pp=globalPlayerTile();
@@ -1605,6 +1610,13 @@ ${firstBanker}`;
       const banker=nearestLoadedBanker(bank);
 
       if(mc.showDialogBank){
+        if(objective.type==='banking'){
+          const mode=objective.resource||'carried';
+          const deposited=depositGatheredItemsIfBankOpen();
+          sessionStats.bankTrips++;
+          finishObjective(deposited?`Banking complete • deposited ${mode} items at ${bank.label}.`:`Banking complete • no unequipped ${mode} items to deposit at ${bank.label}.`);
+          return true;
+        }
         if(depositGatheredItemsIfBankOpen()){
           objective.phase='return';
           objective.returnNode=objective.home?nearestNavNode(objective.home):null;
@@ -1874,7 +1886,7 @@ ${firstBanker}`;
 
     function normalizeSavedJob(raw){
       if(!raw||typeof raw!=='object'||raw.active!==true)return null;
-      const supported=new Set(['woodcutting','mining','combat','firemaking']);
+      const supported=new Set(['woodcutting','mining','combat','firemaking','banking']);
       if(!supported.has(raw.type))return null;
       const styles=new Set(['controlled','strength','attack','defence']);
       const queue=Array.isArray(raw.queue)
@@ -2036,6 +2048,13 @@ ${firstBanker}`;
       }
     }
     const COMBAT_PRESERVE_IDS=new Set([12,87,88,156,166,203,204,405,428,1258,1259,1260,1261,1262]);
+    const GATHERED_BANK_IDS=new Set([...LOG_IDS,...ORE_IDS]);
+    const LOOT_BANK_IDS=new Set([...F2P_LOOT_IDS].filter(id=>!COMBAT_PRESERVE_IDS.has(id)&&!FOOD_HEALS[id]));
+    function bankingDepositFilter(mode){
+      if(mode==='gathered')return GATHERED_BANK_IDS;
+      if(mode==='loot')return LOOT_BANK_IDS;
+      return null;
+    }
 
     function installSessionAndMobileUX(){
       if(mc.__autoscapeUXInstalled)return;
@@ -2192,10 +2211,8 @@ ${firstBanker}`;
         Object.assign(b.style,{minHeight:'36px',padding:'6px 9px',border:'1px solid #b79b68',background:'#655438',color:'#fff',fontSize:'11px',touchAction:'manipulation'});
         b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();action();});bar.appendChild(b);
       }
-      const gatheredIds=new Set([...LOG_IDS,...ORE_IDS]);
-      const quickLootIds=new Set([...F2P_LOOT_IDS].filter(id=>!COMBAT_PRESERVE_IDS.has(id)&&!FOOD_HEALS[id]));
-      quickButton('Gathered',()=>quickDeposit(gatheredIds,'gathered'));
-      quickButton('Loot',()=>quickDeposit(quickLootIds,'loot'));
+      quickButton('Gathered',()=>quickDeposit(GATHERED_BANK_IDS,'gathered'));
+      quickButton('Loot',()=>quickDeposit(LOOT_BANK_IDS,'loot'));
       quickButton('Carried',()=>quickDeposit(null,'carried'));
       quickButton('×',()=>{dismissed=true;bar.style.display='none';});
       document.body.appendChild(bar);
@@ -2823,6 +2840,16 @@ ${firstBanker}`;
         return {type:'stop'};
       }
 
+      // Explicit banking steps can be chained after gathering or combat. Only
+      // classify commands beginning with a banking verb so phrases such as
+      // “fight chickens and use the bank” remain combat instructions.
+      if(/^(?:bank|deposit)\b/.test(t)){
+        let mode='carried';
+        if(hasAny(t,['gathered','resources','resource','logs','ores','ore']))mode='gathered';
+        else if(hasAny(t,['loot','drops','drop']))mode='loot';
+        return {type:'banking',mode};
+      }
+
       // Firemaking must be recognized before the generic "logs" woodcutting
       // synonym. Classic uses regular logs only: drop one, then use a
       // tinderbox on the ground item.
@@ -2925,6 +2952,17 @@ ${firstBanker}`;
       }
       if(o.type==='stop'){
         stop('Stopped.');
+        return;
+      }
+      if(o.type==='banking'){
+        const mode=['gathered','loot'].includes(o.mode)?o.mode:'carried';
+        objective={type:'banking',resource:mode,phase:'bank',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        resetTaskStats();lastAction=0;
+        resetObjectiveControls();
+        resourceSelect.closest('#resourceRow').style.display='none';
+        prepareBankRoute();
+        saveObjective();
+        setBotStatus(`Banking started • heading to ${objective.bankName||'nearest'} bank • depositing ${mode} items • equipped gear kept`);
         return;
       }
       if(o.type==='firemaking'){
@@ -3030,7 +3068,7 @@ ${firstBanker}`;
         stop('Stopped and cleared the command queue.');
         return true;
       }
-      if(!['woodcutting','mining','combat','firemaking'].includes(intent.type)){
+      if(!['woodcutting','mining','combat','firemaking','banking'].includes(intent.type)){
         stop(`I understand “${activeCommandText}” as ${intent.type}, but that loop is not implemented yet. The command queue was canceled.`);
         return false;
       }
@@ -3260,6 +3298,10 @@ ${firstBanker}`;
       if(!objective){renderMetrics();return;}
       renderMetrics();
       if(!loggedIn()){setBotStatus('Objective waiting: create/login to your LOCAL character.');return;}
+      if(objective.type==='banking'){
+        advanceBankRoute();
+        return;
+      }
       if(objective.type==='combat'){
         combatTick();
         return;
@@ -3534,6 +3576,12 @@ ${firstBanker}`;
                 stop(tinderboxSlot()<0?'Saved Firemaking job needs a tinderbox; its queue was canceled.':'Saved continuous Firemaking job needs a woodcutting axe; its queue was canceled.');
               }
             }
+          }else if(savedJob.type==='banking'){
+            const mode=['gathered','loot'].includes(savedJob.resource)?savedJob.resource:'carried';
+            resetObjectiveControls();resourceSelect.closest('#resourceRow').style.display='none';
+            objective={type:'banking',resource:mode,phase:'bank',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
+            prepareBankRoute();resetTaskStats();
+            setBotStatus(`Resumed Banking • heading to ${objective.bankName||'nearest'} bank • depositing ${mode} items • equipped gear kept`);
           }
         }
       }catch(e){}
