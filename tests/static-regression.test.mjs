@@ -60,6 +60,28 @@ test('required UI controls exist once and labels point to controls', () => {
   }
 });
 
+test('mobile keyboard keeps bot controls visible without rescaling flicker', () => {
+  assert.match(html, /--keyboard-inset,0px/);
+  assert.match(html, /max-height:calc\(100dvh - 70px\)/);
+  assert.match(html, /body\.keyboard-open #fsBtn/);
+
+  const keyboardSource = functionSource(html, 'syncMobileKeyboard');
+  assert.match(keyboardSource, /window\.visualViewport/);
+  assert.match(keyboardSource, /--keyboard-inset/);
+  assert.match(keyboardSource, /classList\.toggle\('keyboard-open'/);
+
+  const fitSource = functionSource(html, 'fitGame');
+  assert.match(fitSource, /textInputFocused\(\)\?stableViewportHeight:liveHeight/);
+  assert.match(html, /visualViewport\?\.addEventListener\('resize',scheduleFitGame\)/);
+  assert.match(html, /document\.addEventListener\('focusin',scheduleFitGame\)/);
+});
+
+test('chicken routing approaches the open Lumbridge farm gate', () => {
+  assert.match(html, /lumbridgeFarm:\{x:112,y:619\}/);
+  assert.match(html, /chicken:\{node:'lumbridgeFarm',centre:\{x:119,y:604\}/);
+  assert.doesNotMatch(html, /lumbridgeFarm:\{x:119,y:605\}/);
+});
+
 test('manifest and offline shell stay internally consistent', () => {
   const manifest = JSON.parse(read('manifest.webmanifest'));
   assert.equal(manifest.start_url, './');

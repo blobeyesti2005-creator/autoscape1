@@ -20,7 +20,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #loader h2{margin:0 0 8px;color:#f2cf72;font-size:20px}
 #loadState{font-size:13px;line-height:1.5;white-space:pre-wrap}
 #retry{margin-top:12px;padding:10px 14px;background:#66563a;color:#fff;border:1px solid #b79b68}
-#bot{position:fixed;z-index:8000;left:6px;right:6px;bottom:max(6px,env(safe-area-inset-bottom));background:rgba(36,31,22,.96);border:2px solid #87724e;padding:6px;font-size:11px}
+#bot{position:fixed;z-index:8000;left:6px;right:6px;bottom:calc(max(6px,env(safe-area-inset-bottom)) + var(--keyboard-inset,0px));max-height:calc(100dvh - 70px);overflow-y:auto;overscroll-behavior:contain;background:rgba(36,31,22,.96);border:2px solid #87724e;padding:6px;font-size:11px}
 #botTitle{color:#ffd875;font-weight:bold;letter-spacing:1px}
 #botStatus{color:#e8dcc0;margin:3px 0;min-height:14px}
 #botForm{display:flex;gap:4px}
@@ -37,6 +37,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #bot button{background:#655438;color:#fff;border:1px solid #9f8657;padding:8px 10px}
 #botNote{font-size:9px;color:#b8aa8e;margin-top:3px}
 .bad{color:#ff9a8f}.good{color:#aee59f}
+body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guideBtn{visibility:hidden}
 
 #botMetrics{font-size:11px;color:#aaa;margin-top:3px;min-height:14px}
 #queuePlan{font-size:10px;color:#d8c18d;margin:3px 0;min-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -773,13 +774,45 @@ ${firstBanker}`;
   }
 
 
+  let stableViewportHeight=window.innerHeight || document.documentElement.clientHeight || 346;
+  let fitFrame=0;
+
+  function textInputFocused(){
+    const el=document.activeElement;
+    return !!(el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable));
+  }
+
+  function syncMobileKeyboard(){
+    const viewport=window.visualViewport;
+    const focused=textInputFocused();
+    const inset=focused&&viewport
+      ?Math.max(0,Math.round(window.innerHeight-viewport.height-viewport.offsetTop))
+      :0;
+    document.documentElement.style.setProperty('--keyboard-inset',`${inset}px`);
+    document.body.classList.toggle('keyboard-open',focused&&inset>80);
+    if(!focused){
+      stableViewportHeight=window.innerHeight || document.documentElement.clientHeight || stableViewportHeight;
+    }
+  }
+
   function fitGame(){
     // Always preserve the native 512x346 Classic coordinate system.
     const nativeW=512, nativeH=346;
     const vw=window.innerWidth || document.documentElement.clientWidth || nativeW;
-    const vh=window.innerHeight || document.documentElement.clientHeight || nativeH;
+    // Android repeatedly changes the layout viewport while its keyboard opens.
+    // Keep the canvas at its pre-keyboard size so it and the fixed overlays do
+    // not flicker between competing scales on every animation frame.
+    const liveHeight=window.innerHeight || document.documentElement.clientHeight || nativeH;
+    const vh=textInputFocused()?stableViewportHeight:liveHeight;
+    if(!textInputFocused())stableViewportHeight=liveHeight;
     const scale=Math.min(vw/nativeW, vh/nativeH);
     gameHost.style.transform=`translate(-50%,-50%) scale(${scale})`;
+  }
+
+  function scheduleFitGame(){
+    syncMobileKeyboard();
+    if(fitFrame)return;
+    fitFrame=requestAnimationFrame(()=>{fitFrame=0;fitGame();});
   }
 
   async function enterFullscreen(){
@@ -800,9 +833,13 @@ ${firstBanker}`;
     }
   }
 
-  window.addEventListener('resize',fitGame);
-  window.addEventListener('orientationchange',()=>setTimeout(fitGame,150));
-  document.addEventListener('fullscreenchange',()=>setTimeout(fitGame,100));
+  window.addEventListener('resize',scheduleFitGame);
+  window.visualViewport?.addEventListener('resize',scheduleFitGame);
+  window.visualViewport?.addEventListener('scroll',syncMobileKeyboard);
+  document.addEventListener('focusin',scheduleFitGame);
+  document.addEventListener('focusout',()=>setTimeout(scheduleFitGame,80));
+  window.addEventListener('orientationchange',()=>setTimeout(scheduleFitGame,150));
+  document.addEventListener('fullscreenchange',()=>setTimeout(scheduleFitGame,100));
 
   function installBot(mc){
     bot.style.display='none';
@@ -1228,7 +1265,10 @@ ${firstBanker}`;
       lumbridgeSwamp:{x:140,y:667},
       lumbridgeNorth:{x:132,y:639},
       lumbridgeCows:{x:105,y:618},
-      lumbridgeFarm:{x:119,y:605},
+      // Approach the chicken enclosure through its southern gate. Routing to
+      // the spawn centre itself can ask the native pathfinder to cross fencing
+      // and leave the character stationary outside the loaded chickens.
+      lumbridgeFarm:{x:112,y:619},
       varrockSouth:{x:124,y:570},
       darkWizards:{x:112,y:552},
       lumbridgeWest:{x:145,y:655},

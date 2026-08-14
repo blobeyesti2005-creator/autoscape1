@@ -49,6 +49,8 @@ deleting history, or changing GitHub Pages.
   missing current levels without mutating live skills, inventory, or bank data.
 - [x] Execute full browser account JSON checkpoints covering item stacks,
   equipped gear, bank quantities, settings, quests, appearance, and deep clones.
+- [x] Keep the bot panel above Android's keyboard without rescaling flicker and
+  route chicken training through the accessible Lumbridge farm gate.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -224,4 +226,18 @@ deleting history, or changing GitHub Pages.
   are proven unable to alter the stored checkpoint.
 - Existing persistence keys and payload fields are unchanged.
 - Package and app-shell cache metadata advanced to `2.12.1` for the eventual
+  reviewed release.
+
+### Mobile keyboard and chicken-route recovery
+
+- `npm test` (23 regression groups)
+- The bot panel follows the visual viewport above Android's keyboard, remains
+  scrollable on short screens, and temporarily hides unrelated top controls.
+- Canvas scaling is frozen at its stable pre-keyboard height while a text field
+  is focused; resize bursts are coalesced into one animation-frame update.
+- The chicken travel waypoint now approaches the southern open gate at
+  `(112, 619)` while the live-NPC search remains centred on the verified spawn
+  area at `(119, 604)`.
+- No account, save, inventory, bank, settings, or command-job schema changed.
+- Package and app-shell cache metadata advanced to `2.12.2` for the eventual
   reviewed release.
