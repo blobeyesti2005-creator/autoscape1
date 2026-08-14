@@ -115,6 +115,11 @@ test('server persistence patch performs durable registration and recurring saves
                     success: true,
                     code: 2
                 };
+    async savePlayer(player) {
+        player.password = this.players.get(player.username).password;
+        this.players.set(player.username, JSON.parse(JSON.stringify(player)));
+        await this.save();
+    }
 const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
         this.boundSaveAllPlayers = this.saveAllPlayers.bind(this);
 
@@ -126,6 +131,7 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
   const patched = patchServerPersistence(fixture);
 
   assert.match(patched, /this\.players\.set\(player\.username, player\);\s*await this\.save\(\);/);
+  assert.match(patched, /this\.players\.set\(player\.username, JSON\.parse\(JSON\.stringify\(player\)\)\)/);
   assert.match(patched, /const PLAYER_SAVE_INTERVAL = 1000 \* 15/);
   assert.match(patched, /this\.ticks = 0;\s*setTimeout\(this\.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL\);/);
   assert.match(patched, /if \(!this\.players\.length\) \{\s*setTimeout\(this\.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL\);\s*return;/);
@@ -133,6 +139,93 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
     () => patchServerPersistence(fixture.replace('this.players.set(player.username, player);', 'this.players.add(player);')),
     /registration block changed/
   );
+  assert.throws(
+    () => patchServerPersistence(fixture.replace('JSON.parse(JSON.stringify(player))', '{ ...player }')),
+    /player clone save changed/
+  );
+});
+
+test('browser account storage round-trips complete character state without aliases', async () => {
+  const players = new Map([['tester', { username: 'tester', password: 'secret', world: 1 }]]);
+  let serialized = '';
+  const client = {
+    players,
+    async save() {
+      serialized = JSON.stringify(Array.from(this.players.entries()));
+    },
+    async savePlayer(player) {
+      player.password = this.players.get(player.username).password;
+      this.players.set(player.username, JSON.parse(JSON.stringify(player)));
+      await this.save();
+    }
+  };
+  const live = {
+    id: 42,
+    username: 'tester',
+    rank: 0,
+    x: 124,
+    y: 657,
+    questPoints: 7,
+    combatStyle: 2,
+    fatigue: 0,
+    cameraAuto: 1,
+    oneMouseButton: 0,
+    soundOn: 1,
+    blockChat: 0,
+    blockPrivateChat: 1,
+    blockTrade: 0,
+    blockDuel: 1,
+    skulled: 250,
+    muteEndDate: 0,
+    world: 1,
+    hairColour: 2,
+    topColour: 8,
+    trouserColour: 14,
+    skinColour: 0,
+    headSprite: 1,
+    bodySprite: 2,
+    friends: ['friend one'],
+    ignores: ['ignored one'],
+    questStages: { cooksAssistant: -1, demonSlayer: 3 },
+    cache: { tutorial: { stage: 4 }, flags: [true, false] },
+    skills: {
+      attack: { current: 12, experience: 1_500 },
+      hits: { current: 8, experience: 4_616 }
+    },
+    inventory: [
+      { id: 87, equipped: true },
+      { id: 132, amount: 7 },
+      { id: 10, amount: 2_147_483_647 }
+    ],
+    bank: [
+      { id: 14, amount: 65_535 },
+      { id: 151, amount: 12_345 },
+      { id: 166 }
+    ]
+  };
+  const expected = structuredClone(live);
+  expected.password = 'secret';
+  await client.savePlayer(live);
+
+  // Changes to the live player after the checkpoint must not leak backward
+  // into the persisted account snapshot.
+  live.inventory[1].amount = 0;
+  live.bank.push({ id: 999, amount: 1 });
+  live.questStages.cooksAssistant = 0;
+  live.cache.flags[0] = false;
+
+  const reloaded = new Map(JSON.parse(serialized));
+  for (const player of reloaded.values())player.world = 0;
+  const stored = reloaded.get('tester');
+  assert.deepEqual(stored, { ...expected, world: 0 });
+  assert.equal(stored.password, 'secret');
+  assert.deepEqual(stored.inventory[0], { id: 87, equipped: true });
+  assert.equal(stored.inventory[2].amount, 2_147_483_647);
+  assert.equal(stored.bank[0].amount, 65_535);
+  assert.equal(stored.skills.attack.current, 12);
+  assert.equal(stored.skills.attack.experience, 1_500);
+  assert.equal(stored.questStages.cooksAssistant, -1);
+  assert.deepEqual(stored.cache.flags, [true, false]);
 });
 
 test('server gameplay patch preserves live stats through load and save', () => {

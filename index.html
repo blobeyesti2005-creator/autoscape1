@@ -600,6 +600,16 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     if(!code.includes(registration))throw new Error('Server persistence patch failed: registration block changed.');
     code=code.replace(registration,durableRegistration);
 
+    // Browser saves must keep deep-cloning complete player payloads before
+    // IndexedDB storage. Fail closed if upstream ever changes this contract so
+    // inventory, bank, equipment, or nested quest data cannot alias live state.
+    const browserPlayerSave=`    async savePlayer(player) {
+        player.password = this.players.get(player.username).password;
+        this.players.set(player.username, JSON.parse(JSON.stringify(player)));
+        await this.save();
+    }`;
+    if(!code.includes(browserPlayerSave))throw new Error('Server persistence patch failed: player clone save changed.');
+
     const saveInterval='const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)';
     if(!code.includes(saveInterval))throw new Error('Server persistence patch failed: save interval changed.');
     code=code.replace(saveInterval,'const PLAYER_SAVE_INTERVAL = 1000 * 15; // AutoScape: 15 seconds');

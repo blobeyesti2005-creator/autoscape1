@@ -47,6 +47,8 @@ deleting history, or changing GitHub Pages.
   progress, combat style, no-bank intent, legacy defaults, and damaged input.
 - [x] Execute server stat load/save behavior covering boosted, drained, and
   missing current levels without mutating live skills, inventory, or bank data.
+- [x] Execute full browser account JSON checkpoints covering item stacks,
+  equipped gear, bank quantities, settings, quests, appearance, and deep clones.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -207,4 +209,19 @@ deleting history, or changing GitHub Pages.
 - Proxy-instrumented tests enforce the one-read-per-item behavior and validate
   the resulting tool, food, log, and loot decisions.
 - Package and app-shell cache metadata advanced to `2.12.0` for the eventual
+  reviewed release.
+
+### Full browser account checkpoint round trip
+
+- `npm test` (21 regression groups)
+- The browser persistence compatibility guard now fails closed if the upstream
+  deep-clone save contract changes unexpectedly.
+- A complete character payload survives save, serialized Map storage, and
+  reload with inventory item amounts/equipped state, large bank stacks, stats,
+  settings, coordinates, friends/ignores, quests, nested cache state, and all
+  appearance fields intact.
+- Post-save mutations to live inventory, bank, quest, and nested cache objects
+  are proven unable to alter the stored checkpoint.
+- Existing persistence keys and payload fields are unchanged.
+- Package and app-shell cache metadata advanced to `2.12.1` for the eventual
   reviewed release.
