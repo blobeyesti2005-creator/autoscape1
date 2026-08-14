@@ -236,7 +236,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
   let decisionSequence=0,decisionFrameSequence=0,lastDecisionText='',activeTaskNode='idle';
-  const decisionHistory=[],actionContracts=new Map();
+  const decisionHistory=[],actionContracts=new Map(),blockedGatherTargets=new Map();
   let currentDecisionFrame=null;
   const METRICS_RENDER_INTERVAL=2000;
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0};
@@ -317,6 +317,11 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
     return selected;
   }
   function clearActionContracts(){actionContracts.clear();}
+  function cancelActionContract(key,detail='',now=Date.now()){
+    if(!actionContracts.delete(key))return false;
+    traceDecision(key,'cancelled',detail,now);
+    return true;
+  }
   function runActionContract(key,frame,config){
     const now=Number(frame?.now||Date.now()),timeout=Math.max(1,Number(config.timeout||4000));
     const maxAttempts=Math.max(1,Number(config.maxAttempts||4)),interval=Math.max(0,Number(config.interval||0));
@@ -1075,6 +1080,7 @@ ${firstBanker}`;
         const id=Number(mc.objectId[i]),def=byId.get(id);
         if(!def)continue;
         const x=mc.objectX[i],y=mc.objectY[i];
+        if(gatherTargetBlocked('woodcutting',{id,x,y}))continue;
         const d=Math.abs(x-p.x)+Math.abs(y-p.y);
         const current=nearest.get(def.name);
         if(!current||d<current.distance){
@@ -1149,6 +1155,40 @@ ${firstBanker}`;
         renderMetrics();
       }
       return gained;
+    }
+
+    function gatherTargetKey(kind,target){
+      return `${kind}:${Number(target?.id)}:${Number(target?.x)}:${Number(target?.y)}`;
+    }
+
+    function gatherTargetBlocked(kind,target,now=Date.now()){
+      const key=gatherTargetKey(kind,target),until=Number(blockedGatherTargets.get(key)||0);
+      if(!until)return false;
+      if(Number(now)>=until){blockedGatherTargets.delete(key);return false;}
+      return true;
+    }
+
+    function blockGatherTarget(kind,target,now=Date.now(),duration=30000){
+      if(!target)return;
+      if(blockedGatherTargets.size>=40)blockedGatherTargets.delete(blockedGatherTargets.keys().next().value);
+      blockedGatherTargets.set(gatherTargetKey(kind,target),Number(now)+Math.max(1000,Number(duration)||30000));
+    }
+
+    function runGatherContract(kind,frame,target,ids,label,execute){
+      const key=`${kind}-gather`,held=inventoryCountForIds(ids,frame.inventory);
+      return runActionContract(key,frame,{
+        timeout:9000,
+        maxAttempts:4,
+        confirmedLabel:`${label} added to inventory`,
+        ready:()=>frame.loggedIn&&frame.inventory.used<frame.inventoryMax&&frame.now-lastAction>=ACTION_INTERVALS.gather,
+        capture:()=>({held,target:{id:target.id,x:target.x,y:target.y}}),
+        confirm:(next,state)=>inventoryCountForIds(ids,next.inventory)>Number(state.before?.held||0),
+        execute:()=>{
+          const sent=execute(target);
+          if(sent)lastAction=frame.now;
+          return sent;
+        }
+      });
     }
 
     function objectiveGoalReached(){
@@ -1259,7 +1299,9 @@ ${firstBanker}`;
       for(let i=0;i<(mc.objectCount||0);i++){
         const id=Number(mc.objectId[i]);
         if(!def.ids.includes(id))continue;
-        const x=mc.objectX[i],y=mc.objectY[i],d=Math.abs(x-p.x)+Math.abs(y-p.y);
+        const x=mc.objectX[i],y=mc.objectY[i];
+        if(gatherTargetBlocked('mining',{id,x,y}))continue;
+        const d=Math.abs(x-p.x)+Math.abs(y-p.y);
         if(d<bd){bd=d;best={id,x,y,dir:mc.objectDirection[i]||0,ore:def.name};}
       }
       return best;
@@ -1273,7 +1315,7 @@ ${firstBanker}`;
       mc.packetStream.putShort(rock.x+(mc.regionX||0));
       mc.packetStream.putShort(rock.y+(mc.regionY||0));
       mc.packetStream.sendPacket();
-      sessionStats.actions++;sessionStats.mines++;markProgress('mine');renderMetrics();
+      sessionStats.actions++;sessionStats.mines++;renderMetrics();
       return true;
     }
 
@@ -1943,7 +1985,7 @@ ${firstBanker}`;
       mc.packetStream.putShort(tree.x+(mc.regionX||0));
       mc.packetStream.putShort(tree.y+(mc.regionY||0));
       mc.packetStream.sendPacket();
-      sessionStats.actions++;sessionStats.chops++;markProgress('chop');renderMetrics();
+      sessionStats.actions++;sessionStats.chops++;renderMetrics();
       return true;
     }
     function setBotStatus(s){
@@ -3263,6 +3305,7 @@ ${firstBanker}`;
         return;
       }
       if(used>=max){
+        cancelActionContract('mining-gather','inventory full',frame.now);
         if(objective.chainAdvance){
           if(Number(objective.countGoal||0)>0){
             stop(`Mining stopped at ${objective.countProgress}/${objective.countGoal} ore: the inventory is full, so the queued step cannot receive the requested amount. Try a smaller amount or run Mining by itself so it can bank.`);
@@ -3276,12 +3319,21 @@ ${firstBanker}`;
       }
       const rock=bestRock();
       if(rock){
-        objective.phase='mine';objective.home=globalPlayerTile();
-        if(Date.now()-lastAction>=ACTION_INTERVALS.gather&&mineRock(rock)){
-          lastAction=Date.now();setBotStatus(`Mining ${lvl} • mining ${rock.ore} • ${used}/${max} slots`);
+        objective.phase='mine';objective.home=decisionTile();
+        const result=runGatherContract('mining',frame,rock,ORE_IDS,rock.ore,mineRock);
+        if(result.status==='sent')setBotStatus(`Mining ${lvl} • mining ${rock.ore} • ${used}/${max} slots`);
+        else if(result.status==='confirmed')setBotStatus(`Mining ${lvl} • ${rock.ore} received • ${gatheredCountForObjective(objective,inventory)} ore held`);
+        else if(result.status==='failed'){
+          blockGatherTarget('mining',result.state.before?.target||rock,frame.now);
+          objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+          if(objective.stallRecoveries>5){stop('Mining stopped: six resources failed to produce confirmed ore.');return;}
+          objective.phase='mining-travel';objective.navRoute=[];
+          objective.searchIndex=Number(objective.searchIndex||0)+1;
+          setBotStatus(`Mining ${lvl} • ${rock.ore} made no progress • trying another rock`);
         }
         return;
       }
+      cancelActionContract('mining-gather','resource unavailable',frame.now);
       objective.phase='mining-travel';
       const pp=decisionTile(),hub=desiredMiningHub();
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo(hub.node);objective.routeIndex=0;}
@@ -3510,6 +3562,7 @@ ${firstBanker}`;
       }
 
       if(used>=max){
+        cancelActionContract('woodcutting-gather','inventory full',frame.now);
         if(objective.chainAdvance){
           if(Number(objective.countGoal||0)>0){
             stop(`Woodcutting stopped at ${objective.countProgress}/${objective.countGoal} logs: the inventory is full, so the queued step cannot receive the requested amount. Try a smaller amount or run Woodcutting by itself so it can bank.`);
@@ -3525,7 +3578,7 @@ ${firstBanker}`;
         advanceBankRoute();
         return;
       }
-      if(objective.phase==='chop' && taskStalled(30000)){
+      if(objective.phase==='chop'&&!actionContracts.has('woodcutting-gather')&&taskStalled(30000)){
         objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
         if(objective.stallRecoveries>5){
           stop(`Woodcutting stopped: unable to make progress after repeated recovery attempts.`);
@@ -3546,9 +3599,9 @@ ${firstBanker}`;
         return;
       }
 
-      if(Date.now()-lastAction<ACTION_INTERVALS.gather) return;
       const tree=bestTree();
       if(!tree){
+        cancelActionContract('woodcutting-gather','resource unavailable',frame.now);
         const def=selectedTreeDefinition();
         if(def && lvl<def.level){
           setBotStatus(`Woodcutting ${lvl} • ${def.name} requires level ${def.level}`);
@@ -3563,9 +3616,17 @@ ${firstBanker}`;
         }
         return;
       }
-      if(chop(tree)){
-        lastAction=Date.now();
-        setBotStatus(`Woodcutting ${lvl} • chopping ${tree.tree} tree • ${used}/${max} slots • ${logCount()} logs`);
+      const result=runGatherContract('woodcutting',frame,tree,LOG_IDS,`${tree.tree} log`,chop);
+      if(result.status==='sent')setBotStatus(`Woodcutting ${lvl} • chopping ${tree.tree} tree • ${used}/${max} slots • ${logCount(inventory)} logs`);
+      else if(result.status==='confirmed')setBotStatus(`Woodcutting ${lvl} • ${tree.tree} log received • ${gatheredCountForObjective(objective,inventory)} logs held`);
+      else if(result.status==='failed'){
+        blockGatherTarget('woodcutting',result.state.before?.target||tree,frame.now);
+        objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+        if(objective.stallRecoveries>5){stop('Woodcutting stopped: six resources failed to produce confirmed logs.');return;}
+        const wanted=desiredTreeType();
+        if(wanted!=='normal'&&TREE_HUBS[wanted])beginResourceTravel();
+        else objective.phase='chop';
+        setBotStatus(`Woodcutting ${lvl} • ${tree.tree} tree made no progress • trying another tree`);
       }
     }
 

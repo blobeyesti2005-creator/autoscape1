@@ -61,6 +61,8 @@ deleting history, or changing GitHub Pages.
   frame and bounded, observable action contracts.
 - [x] Confirm routed walking from measured forward progress and escalate four
   timed-out attempts into the existing route/search recovery system.
+- [x] Confirm woodcutting and mining from inventory gains and temporarily avoid
+  resources that repeatedly fail to produce logs or ore.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -366,4 +368,26 @@ deleting history, or changing GitHub Pages.
 - Account, character, inventory, bank, stats, settings, command-job payloads,
   persistence keys, and the live branch remain unchanged.
 - Package and app-shell cache metadata advanced to `2.12.8` for the eventual
+  reviewed release.
+
+### Confirmed woodcutting and mining actions
+
+- `npm test` (30 regression groups)
+- Woodcutting and mining now share a gathering action contract that captures
+  carried resource counts before the native object action and confirms success
+  only after the next shared inventory snapshot contains another log or ore.
+- Resource packets and animation attempts no longer reset the job's progress
+  timer. Only an actual inventory gain advances the requested amount and clears
+  gathering recovery state.
+- A gather action waits nine seconds before retrying and stops retrying after
+  four unconfirmed attempts. The failed tree or rock is ignored for 30 seconds
+  while the bot selects another loaded resource or resumes regional searching.
+- The temporary resource quarantine is runtime-only, self-expiring, and bounded
+  to 40 entries. It is never written into account, character, or job saves.
+- Vanished targets and full inventories explicitly cancel their pending gather
+  action, preventing a delayed confirmation from leaking into travel or banking.
+- Executable tests cover sent/waiting/confirmed inventory transitions, prevent
+  resends after confirmation, verify quarantine expiry, and enforce use of the
+  contract in both primary gathering loops.
+- Package and app-shell cache metadata advanced to `2.12.9` for the eventual
   reviewed release.

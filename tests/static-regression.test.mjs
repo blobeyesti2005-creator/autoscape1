@@ -633,6 +633,58 @@ test('navigation actions confirm forward progress and escalate bounded timeouts'
   }
 });
 
+test('gathering actions require inventory gains and quarantine failed resources', () => {
+  const traces=[];
+  const {runActionContract}=new Function(
+    'traceDecision',
+    `const actionContracts=new Map();${functionSource(html,'runActionContract')}\nreturn {runActionContract};`
+  )((...entry)=>traces.push(entry));
+  const inventoryCountForIds=(ids,snapshot)=>{
+    let total=0;
+    for(const id of ids)total+=Number(snapshot.counts.get(id)||0);
+    return total;
+  };
+  const gather=new Function(
+    'inventoryCountForIds','runActionContract','ACTION_INTERVALS',
+    `let lastAction=0;${functionSource(html,'runGatherContract')}\nreturn {runGatherContract,last:()=>lastAction};`
+  )(inventoryCountForIds,runActionContract,{gather:2800});
+  const ids=new Set([150]),target={id:100,x:5,y:6};
+  let sends=0;
+  const frame=(now,count)=>({now,loggedIn:true,inventoryMax:30,inventory:{used:1,counts:new Map([[150,count]])}});
+
+  assert.equal(gather.runGatherContract('mining',frame(3000,0),target,ids,'ore',()=>{sends++;return true;}).status,'sent');
+  assert.equal(gather.runGatherContract('mining',frame(6000,0),target,ids,'ore',()=>{sends++;return true;}).status,'waiting');
+  assert.equal(gather.runGatherContract('mining',frame(7000,1),target,ids,'ore',()=>{sends++;return true;}).status,'confirmed');
+  assert.equal(sends,1,'confirmed gathering must not resend the resource action');
+
+  assert.equal(gather.runGatherContract('woodcutting',frame(10000,0),target,ids,'log',()=>{sends++;return true;}).status,'sent');
+  assert.equal(gather.runGatherContract('woodcutting',frame(19001,0),target,ids,'log',()=>{sends++;return true;}).status,'sent');
+  assert.equal(gather.runGatherContract('woodcutting',frame(28002,0),target,ids,'log',()=>{sends++;return true;}).status,'sent');
+  assert.equal(gather.runGatherContract('woodcutting',frame(37003,0),target,ids,'log',()=>{sends++;return true;}).status,'sent');
+  assert.equal(gather.runGatherContract('woodcutting',frame(46004,0),target,ids,'log',()=>{sends++;return true;}).status,'failed');
+  assert.equal(sends,5,'a failed resource must stop after four bounded sends');
+
+  const blockHelpers=new Function(
+    `${functionSource(html,'gatherTargetKey')}
+     ${functionSource(html,'gatherTargetBlocked')}
+     ${functionSource(html,'blockGatherTarget')}
+     const blockedGatherTargets=new Map();
+     return {gatherTargetBlocked,blockGatherTarget};`
+  )();
+  blockHelpers.blockGatherTarget('mining',target,100,30000);
+  assert.equal(blockHelpers.gatherTargetBlocked('mining',target,200),true);
+  assert.equal(blockHelpers.gatherTargetBlocked('mining',target,30100),false);
+
+  for(const name of ['miningTick','woodcuttingTick']){
+    const source=functionSource(html,name);
+    assert.match(source,/runGatherContract\(/,`${name} must use a confirmed gather action`);
+    assert.match(source,/blockGatherTarget\(/,`${name} must quarantine a repeatedly failing resource`);
+    assert.match(source,/cancelActionContract\(/,`${name} must cancel stale gathering actions`);
+  }
+  for(const name of ['mineRock','chop'])assert.doesNotMatch(functionSource(html,name),/markProgress\(/);
+  assert.ok(traces.some(entry=>entry[1]==='confirmed'));
+});
+
 test('navigation graph uses shortest travel distance for bank routes', () => {
   const dataSource = section(html, '    const NAV_NODES={', '    function prepareBankRoute(){');
   const { NAV_NODES, NAV_EDGES, BANKS, graphPath, graphPathDistance, nearestBank } = new Function(
@@ -987,7 +1039,7 @@ test('hot target searches scan each loaded entity list only once', () => {
     }
   });
   const bestTree = new Function(
-    'playerTile', 'wcLevel', 'objective', 'TREE_DEFS', 'mc',
+    'playerTile', 'wcLevel', 'objective', 'TREE_DEFS', 'mc', 'gatherTargetBlocked',
     `${treeSource}\nreturn bestTree;`
   )(
     () => ({ x: 0, y: 0 }),
@@ -998,7 +1050,8 @@ test('hot target searches scan each loaded entity list only once', () => {
       { ids: [309], level: 60, name: 'yew', log: 635 },
       { ids: [0, 1], level: 1, name: 'normal', log: 14 }
     ],
-    { objectCount: 4, objectId: objectIds, objectX: [20, 5, 8, 2], objectY: [0, 0, 0, 0], objectDirection: [] }
+    { objectCount: 4, objectId: objectIds, objectX: [20, 5, 8, 2], objectY: [0, 0, 0, 0], objectDirection: [] },
+    () => false
   );
   const tree = bestTree();
   assert.equal(tree.tree, 'magic', 'must retain highest available tier priority');
