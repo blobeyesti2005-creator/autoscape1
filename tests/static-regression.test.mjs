@@ -685,6 +685,52 @@ test('gathering actions require inventory gains and quarantine failed resources'
   assert.ok(traces.some(entry=>entry[1]==='confirmed'));
 });
 
+test('combat attacks and loot require observable game-state confirmation', () => {
+  const traces=[];
+  const attackHarness=new Function(
+    'traceDecision','ACTION_INTERVALS','attackNpc',
+    `const actionContracts=new Map();let lastAction=0;
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'confirmAttackStarted')}
+     ${functionSource(html,'runAttackContract')}
+     return {runAttackContract,confirmAttackStarted,contracts:actionContracts};`
+  )((...entry)=>traces.push(entry),{combat:2200},()=>true);
+  const target={name:'chicken',npc:{serverIndex:7}};
+  assert.equal(attackHarness.runAttackContract({now:3000,fighting:false},target).status,'sent');
+  assert.equal(attackHarness.confirmAttackStarted({now:3500,fighting:true}),true);
+  assert.equal(attackHarness.contracts.has('combat-attack'),false);
+
+  const objective={collectedLootIds:new Set(),lootUntil:0};
+  const sessionStats={loot:0};
+  let lootSends=0;
+  const lootHarness=new Function(
+    'traceDecision','ACTION_INTERVALS','takeGroundLoot','objective','sessionStats',
+    'markProgress','renderMetrics','blockTimedTarget','blockedLootTargets','cancelActionContract',
+    `const actionContracts=new Map();let lastAction=0;
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'recordConfirmedLoot')}
+     ${functionSource(html,'runLootContract')}
+     return {runLootContract};`
+  )(
+    (...entry)=>traces.push(entry),{loot:1400},()=>{lootSends++;return true;},objective,sessionStats,
+    ()=>{},()=>{},()=>{},new Map(),()=>false
+  );
+  const item={id:10,x:2,y:3,name:'coins'};
+  const lootFrame=(now,count)=>({now,inventoryMax:30,inventory:{used:1,counts:new Map([[10,count]])}});
+  assert.equal(lootHarness.runLootContract(lootFrame(2000,0),item).status,'sent');
+  assert.equal(sessionStats.loot,0,'a pickup packet alone must not count as loot');
+  assert.equal(lootHarness.runLootContract(lootFrame(2500,1),item).status,'confirmed');
+  assert.equal(sessionStats.loot,1);
+  assert.equal(objective.collectedLootIds.has(10),true);
+  assert.equal(lootSends,1);
+
+  assert.doesNotMatch(functionSource(html,'attackNpc'),/markProgress\(/);
+  assert.doesNotMatch(functionSource(html,'takeGroundLoot'),/sessionStats\.loot|markProgress\(/);
+  assert.match(functionSource(html,'combatTick'),/confirmAttackStarted\(frame\)/);
+  assert.match(functionSource(html,'combatTick'),/runAttackContract\(frame,target\)/);
+  assert.match(functionSource(html,'combatTick'),/runLootContract\(frame,item\)/);
+});
+
 test('navigation graph uses shortest travel distance for bank routes', () => {
   const dataSource = section(html, '    const NAV_NODES={', '    function prepareBankRoute(){');
   const { NAV_NODES, NAV_EDGES, BANKS, graphPath, graphPathDistance, nearestBank } = new Function(
@@ -1061,9 +1107,9 @@ test('hot target searches scan each loaded entity list only once', () => {
   const npcSource = functionSource(html, 'nearestCombatNpc');
   let npcReads = 0;
   const npcs = new Proxy([
-    { npcId: 3, currentX: 8 * 128 + 64, currentY: 64 },
-    { npcId: 6, currentX: 3 * 128 + 64, currentY: 64 },
-    { npcId: 999, currentX: 128 + 64, currentY: 64 }
+    { npcId: 3, serverIndex:1, currentX: 8 * 128 + 64, currentY: 64 },
+    { npcId: 6, serverIndex:2, currentX: 3 * 128 + 64, currentY: 64 },
+    { npcId: 999, serverIndex:3, currentX: 128 + 64, currentY: 64 }
   ], {
     get(target, property) {
       if (/^\d+$/.test(String(property))) npcReads += 1;
@@ -1072,7 +1118,7 @@ test('hot target searches scan each loaded entity list only once', () => {
   });
   const nearestCombatNpc = new Function(
     'chooseCombatTargetType', 'SAFE_COMBAT_TARGETS', 'playerTile', 'objective',
-    'combatSelect', 'playerCombatEstimate', 'mc', `${npcSource}\nreturn nearestCombatNpc;`
+    'combatSelect', 'playerCombatEstimate', 'mc', 'timedTargetBlocked', 'blockedCombatTargets', `${npcSource}\nreturn nearestCombatNpc;`
   )(
     () => 'guard',
     {
@@ -1084,7 +1130,9 @@ test('hot target searches scan each loaded entity list only once', () => {
     { target: 'auto' },
     { value: 'auto' },
     () => 10,
-    { npcCount: 3, npcs, magicLoc: 128 }
+    { npcCount: 3, npcs, magicLoc: 128 },
+    () => false,
+    new Map()
   );
   assert.equal(nearestCombatNpc().name, 'cow', 'automatic fallback should remain nearest safe target');
   assert.equal(npcReads, 3, 'combat should read every loaded NPC once');
@@ -1132,7 +1180,7 @@ test('hot inventory and ground-loot decisions use single-pass snapshots', () => 
   });
   const nearestGroundLoot = new Function(
     'inventorySlots', 'mc', 'lootSelect', 'VALUABLE_LOOT_IDS', 'F2P_LOOT_IDS',
-    'playerTile', 'objective', 'ITEM_NAMES',
+    'playerTile', 'objective', 'ITEM_NAMES', 'timedTargetBlocked', 'blockedLootTargets',
     `${functionSource(html, 'nearestGroundLoot')}\nreturn nearestGroundLoot;`
   )(
     () => 2,
@@ -1148,7 +1196,9 @@ test('hot inventory and ground-loot decisions use single-pass snapshots', () => 
     new Set([10, 20]),
     () => ({ x: 0, y: 0 }),
     { lastTargetTile: { x: 0, y: 0 } },
-    { 10: 'coins' }
+    { 10: 'coins' },
+    () => false,
+    new Map()
   );
   assert.equal(nearestGroundLoot().id, 10);
   assert.equal(modeReads, 1, 'loot mode should be captured once per decision');

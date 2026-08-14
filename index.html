@@ -236,7 +236,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
   let decisionSequence=0,decisionFrameSequence=0,lastDecisionText='',activeTaskNode='idle';
-  const decisionHistory=[],actionContracts=new Map(),blockedGatherTargets=new Map();
+  const decisionHistory=[],actionContracts=new Map(),blockedGatherTargets=new Map(),blockedCombatTargets=new Map(),blockedLootTargets=new Map();
   let currentDecisionFrame=null;
   const METRICS_RENDER_INTERVAL=2000;
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0};
@@ -1172,6 +1172,19 @@ ${firstBanker}`;
       if(!target)return;
       if(blockedGatherTargets.size>=40)blockedGatherTargets.delete(blockedGatherTargets.keys().next().value);
       blockedGatherTargets.set(gatherTargetKey(kind,target),Number(now)+Math.max(1000,Number(duration)||30000));
+    }
+
+    function timedTargetBlocked(map,key,now=Date.now()){
+      const until=Number(map.get(String(key))||0);
+      if(!until)return false;
+      if(Number(now)>=until){map.delete(String(key));return false;}
+      return true;
+    }
+
+    function blockTimedTarget(map,key,now=Date.now(),duration=20000,maxEntries=40){
+      if(key===null||key===undefined)return;
+      if(map.size>=maxEntries)map.delete(map.keys().next().value);
+      map.set(String(key),Number(now)+Math.max(1000,Number(duration)||20000));
     }
 
     function runGatherContract(kind,frame,target,ids,label,execute){
@@ -2404,8 +2417,8 @@ ${firstBanker}`;
       },750);
     }
 
-    function nearestGroundLoot(){
-      if(inventorySlots()>=Number(mc.inventoryMaxItemCount||30))return null;
+    function nearestGroundLoot(snapshot=null){
+      if(Number(snapshot?.used??inventorySlots())>=Number(mc.inventoryMaxItemCount||30))return null;
       const mode=lootSelect.value||'f2p';
       if(mode==='none')return null;
       const allowed=mode==='all'?null:(mode==='valuable'?VALUABLE_LOOT_IDS:F2P_LOOT_IDS);
@@ -2415,6 +2428,7 @@ ${firstBanker}`;
         const id=Number(mc.groundItemID?.[i]);
         if(allowed&&!allowed.has(id))continue;
         const x=Number(mc.groundItemX?.[i]),y=Number(mc.groundItemY?.[i]);
+        if(timedTargetBlocked(blockedLootTargets,`${id}:${x}:${y}`))continue;
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
         if(d>12)continue;
         if(anchor&&Math.abs(x-anchor.x)+Math.abs(y-anchor.y)>7)continue;
@@ -2437,10 +2451,7 @@ ${firstBanker}`;
       mc.packetStream.sendPacket();
       objective.lastLootKey=key;
       objective.lastLootAttempt=Date.now();
-      if(!(objective.collectedLootIds instanceof Set))objective.collectedLootIds=new Set();
-      objective.collectedLootIds.add(item.id);
-      sessionStats.actions++;sessionStats.loot++;
-      markProgress('loot');renderMetrics();
+      sessionStats.actions++;renderMetrics();
       return true;
     }
 
@@ -2655,10 +2666,13 @@ ${firstBanker}`;
       for(let i=0;i<(mc.npcCount||0);i++){
         const npc=mc.npcs?.[i],def=npc&&byId.get(Number(npc.npcId));
         if(!def)continue;
+        const serverIndex=Number(npc.serverIndex);
+        if(!Number.isFinite(serverIndex))continue;
         const x=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
         const y=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
         const candidate={npc,x,y,d,name:def.name,level:def.level};
+        if(timedTargetBlocked(blockedCombatTargets,serverIndex))continue;
         if(def===preferred&&(!preferredBest||d<preferredBest.d))preferredBest=candidate;
         if(automatic&&def.level<=maxFallbackLevel&&(!fallbackBest||d<fallbackBest.d))fallbackBest=candidate;
       }
@@ -2679,8 +2693,66 @@ ${firstBanker}`;
       objective.lastTargetTile={x:target.x,y:target.y};
       objective.lastTargetServerIndex=Number(target.npc.serverIndex);
       objective.attackSentAt=Date.now();
-      sessionStats.actions++;sessionStats.attacks++;markProgress('attack');renderMetrics();
+      sessionStats.actions++;sessionStats.attacks++;renderMetrics();
       return true;
+    }
+
+    function confirmAttackStarted(frame){
+      const state=actionContracts.get('combat-attack');
+      if(!state?.pending||!frame.fighting)return false;
+      actionContracts.delete('combat-attack');
+      traceDecision('combat-attack','confirmed','combat animation started',frame.now);
+      return true;
+    }
+
+    function runAttackContract(frame,target){
+      return runActionContract('combat-attack',frame,{
+        timeout:6500,
+        maxAttempts:3,
+        confirmedLabel:'combat animation started',
+        ready:()=>!frame.fighting&&frame.now-lastAction>=ACTION_INTERVALS.combat,
+        capture:()=>({serverIndex:Number(target.npc.serverIndex),name:target.name}),
+        confirm:next=>next.fighting,
+        execute:()=>{
+          const sent=attackNpc(target);
+          if(sent)lastAction=frame.now;
+          return sent;
+        }
+      });
+    }
+
+    function recordConfirmedLoot(frame,state){
+      const id=Number(state?.before?.id);
+      if(!Number.isFinite(id))return false;
+      if(!(objective.collectedLootIds instanceof Set))objective.collectedLootIds=new Set();
+      objective.collectedLootIds.add(id);
+      sessionStats.loot++;
+      markProgress('loot');renderMetrics();
+      objective.lootUntil=frame.now+2600;
+      return true;
+    }
+
+    function runLootContract(frame,item){
+      const result=runActionContract('combat-loot',frame,{
+        timeout:4000,
+        maxAttempts:3,
+        confirmedLabel:'item added to inventory',
+        ready:()=>!!item&&frame.inventory.used<frame.inventoryMax&&frame.now-lastAction>=ACTION_INTERVALS.loot,
+        capture:()=>({id:item.id,held:Number(frame.inventory.counts.get(item.id)||0),target:{id:item.id,x:item.x,y:item.y}}),
+        confirm:(next,state)=>Number(next.inventory.counts.get(Number(state.before?.id))||0)>Number(state.before?.held||0),
+        execute:()=>{
+          const sent=takeGroundLoot(item);
+          if(sent)lastAction=frame.now;
+          return sent;
+        }
+      });
+      if(result.status==='confirmed')recordConfirmedLoot(frame,result.state);
+      if(result.status==='failed'){
+        const target=result.state.before?.target;
+        if(target)blockTimedTarget(blockedLootTargets,`${target.id}:${target.x}:${target.y}`,frame.now,15000,30);
+      }
+      if(!item&&result.status==='blocked')cancelActionContract('combat-loot','drop unavailable',frame.now);
+      return result;
     }
 
     function lastCombatTargetStillAlive(){
@@ -2915,6 +2987,7 @@ ${firstBanker}`;
       }
 
       if(fighting){
+        confirmAttackStarted(frame);
         markProgress('fighting');
         setBotStatus(`Combat ${playerCombatEstimate()} • ${objective.combatStyle||'controlled'} • fighting • hits ${hp}/${max}${combatBankingEnabled()?'':' • no banking'}`);
         return;
@@ -2943,18 +3016,20 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='loot'){
-        const item=nearestGroundLoot();
-        if(item&&Date.now()-lastAction>=ACTION_INTERVALS.loot&&takeGroundLoot(item)){
-          lastAction=Date.now();
-          objective.lootUntil=Date.now()+2600;
+        const item=nearestGroundLoot(inventory);
+        const lootResult=runLootContract(frame,item);
+        if(lootResult.status==='sent'){
+          objective.lootUntil=frame.now+4200;
           setBotStatus(`Combat • taking ${item.name} • ${inventorySlots()}/${Number(mc.inventoryMaxItemCount||30)} slots`);
           return;
         }
-        if(Date.now()<Number(objective.lootUntil||0))return;
+        if(['waiting','confirmed'].includes(lootResult.status))return;
+        if(frame.now<Number(objective.lootUntil||0))return;
         if(objectiveGoalReached()){
           finishObjective(`Combat step complete • ${objective.countProgress}/${objective.countGoal} targets defeated.`);
           return;
         }
+        cancelActionContract('combat-loot','loot window complete',frame.now);
         objective.lastTargetTile=null;
         setPhase('fight',`Combat ${playerCombatEstimate()} • looking for the next ${chooseCombatTargetType()}`);
       }
@@ -2971,16 +3046,24 @@ ${firstBanker}`;
         return;
       }
 
-      if(Date.now()-lastAction<ACTION_INTERVALS.combat) return;
       const target=nearestCombatNpc();
       if(!target){
+        cancelActionContract('combat-attack','target unavailable',frame.now);
         beginCombatTravel();
         return;
       }
 
-      if(attackNpc(target)){
-        lastAction=Date.now();
+      const attackResult=runAttackContract(frame,target);
+      if(attackResult.status==='sent'){
         setPhase('fight',`Combat ${playerCombatEstimate()} • attacking ${target.name} (level ${target.level}) • hits ${hp}/${max}`);
+      }else if(attackResult.status==='failed'){
+        blockTimedTarget(blockedCombatTargets,attackResult.state.before?.serverIndex,frame.now,20000,40);
+        objective.lastTargetTile=null;
+        objective.lastTargetServerIndex=null;
+        objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+        if(objective.stallRecoveries>4){stop(`Combat stopped: five targets failed to begin combat.`);return;}
+        beginCombatTravel();
+        setBotStatus(`Combat • ${target.name} made no confirmed engagement • trying another target`);
       }
     }
 

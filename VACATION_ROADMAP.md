@@ -63,6 +63,8 @@ deleting history, or changing GitHub Pages.
   timed-out attempts into the existing route/search recovery system.
 - [x] Confirm woodcutting and mining from inventory gains and temporarily avoid
   resources that repeatedly fail to produce logs or ore.
+- [x] Confirm combat engagement from combat state and loot pickup from inventory
+  gains, with bounded retries and temporary failed-target avoidance.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -390,4 +392,28 @@ deleting history, or changing GitHub Pages.
   resends after confirmation, verify quarantine expiry, and enforce use of the
   contract in both primary gathering loops.
 - Package and app-shell cache metadata advanced to `2.12.9` for the eventual
+  reviewed release.
+
+### Confirmed combat and loot actions
+
+- `npm test` (31 regression groups)
+- Attack packets no longer count as meaningful progress. An engagement is
+  confirmed only when the shared decision frame reports an active combat
+  animation; combat progress and kill accounting retain their existing later
+  confirmation boundaries.
+- An attack waits 6.5 seconds before retrying and stops after three unconfirmed
+  sends. The failed NPC server index is ignored for 20 seconds while the bot
+  searches for another valid target.
+- Ground-item packets no longer increment loot totals or protect an item for
+  banking. Pickup is confirmed only when the matching item count increases in
+  the next inventory snapshot.
+- Loot retries are limited to three four-second attempts. A failed ground item
+  is ignored for 15 seconds, while a vanished drop cancels its pending action
+  so stale confirmation cannot leak into the next fight.
+- Combat and loot exclusion maps are runtime-only, self-expiring, and bounded;
+  no account, character, inventory, bank, settings, or job-save field changed.
+- Executable tests prove attack sent-to-combat confirmation and pickup
+  sent-to-inventory confirmation, including that packets alone do not advance
+  either metric.
+- Package and app-shell cache metadata advanced to `2.12.10` for the eventual
   reviewed release.
