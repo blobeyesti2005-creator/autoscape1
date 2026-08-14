@@ -237,6 +237,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
   let decisionSequence=0,decisionFrameSequence=0,lastDecisionText='',activeTaskNode='idle';
   const decisionHistory=[],actionContracts=new Map();
+  let currentDecisionFrame=null;
   const METRICS_RENDER_INTERVAL=2000;
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0};
 
@@ -1310,6 +1311,10 @@ ${firstBanker}`;
       return {x:p.x+Number(mc.regionX||0),y:p.y+Number(mc.regionY||0)};
     }
 
+    function decisionTile(){
+      return currentDecisionFrame?.tile||globalPlayerTile();
+    }
+
     function walkGlobal(x,y,action=false){
       if(typeof mc._walkToActionSource_from5!=='function') return false;
       const lx=x-Number(mc.regionX||0);
@@ -1528,9 +1533,9 @@ ${firstBanker}`;
     const BANKER_TALK_DISTANCE=20;
     const BANK_APPROACH_OFFSETS=[[0,0],[5,0],[0,5],[-5,0],[0,-5]];
 
-    function navRetryTarget(target){
-      const pp=globalPlayerTile();
-      const now=Date.now();
+    function navRetryTarget(target,point=null,decisionNow=Date.now()){
+      const pp=point||decisionTile();
+      const now=Number(decisionNow);
       const targetKey=`${target.x}:${target.y}`;
       const distance=nodeDistance(pp,target);
       // Movement only counts as navigation progress when it actually closes
@@ -1592,7 +1597,7 @@ ${firstBanker}`;
     }
 
     function nearestLoadedBanker(bank){
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       let best=null,bd=1e9;
       for(let i=0;i<(mc.npcCount||0);i++){
         const npc=mc.npcs?.[i];
@@ -1663,7 +1668,7 @@ ${firstBanker}`;
     }
 
     function advanceBankRoute(){
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return false;
       const banker=nearestLoadedBanker(bank);
@@ -1735,8 +1740,7 @@ ${firstBanker}`;
         }
 
         if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          const retry=navRetryTarget(wp);
-          walkGlobal(retry.x,retry.y);
+          shortStepToward(wp,14);
           lastAction=Date.now();
           setBotStatus(`${gatherSkillLabel()} • ${bank.label} bank • ${wp.name||'route'} (${idx+1}/${route.length})`);
         }
@@ -1756,17 +1760,42 @@ ${firstBanker}`;
       return true;
     }
 
-    function shortStepToward(target,maxStep=14){
-      const pp=globalPlayerTile();
-      const retry=navRetryTarget(target);
+    function walkProgressConfirmed(frame,state,arrivalDistance=5){
+      const before=state?.before;
+      if(!before?.tile||!before?.target||!frame?.tile)return false;
+      const currentDistance=nodeDistance(frame.tile,before.target);
+      return currentDistance<=arrivalDistance||currentDistance<Number(before.distance);
+    }
+
+    function shortStepToward(target,maxStep=14,arrivalDistance=5){
+      const frame=currentDecisionFrame;
+      const pp=frame?.tile||globalPlayerTile();
+      const retry=navRetryTarget(target,pp,frame?.now||Date.now());
       const dx=retry.x-pp.x, dy=retry.y-pp.y;
       const d=Math.abs(dx)+Math.abs(dy);
-      if(d<=5) return true;
+      if(d<=arrivalDistance){actionContracts.delete('navigation-walk');return true;}
       const mag=Math.max(Math.abs(dx),Math.abs(dy),1);
       const scale=Math.min(1,Math.min(maxStep,14)/mag);
       const tx=Math.round(pp.x+dx*scale);
       const ty=Math.round(pp.y+dy*scale);
-      walkGlobal(tx,ty);
+      if(!frame){walkGlobal(tx,ty);return false;}
+      const result=runActionContract('navigation-walk',frame,{
+        timeout:4000,
+        maxAttempts:4,
+        confirmedLabel:'character advanced toward destination',
+        capture:()=>({tile:{...frame.tile},target:{x:tx,y:ty},distance:nodeDistance(frame.tile,{x:tx,y:ty})}),
+        confirm:(next,state)=>walkProgressConfirmed(next,state,arrivalDistance),
+        execute:()=>{
+          const sent=walkGlobal(tx,ty);
+          if(sent)lastAction=frame.now;
+          return sent;
+        }
+      });
+      if(result.status==='failed'){
+        objective.walkTimeouts=Number(objective.walkTimeouts||0)+1;
+        navWatch.retries=Math.max(Number(navWatch.retries||0),MAX_NAV_RETRIES);
+        traceDecision('navigation-walk','recovery',`no progress after ${result.state.attempts} attempts`,frame.now);
+      }
       return false;
     }
 
@@ -1803,7 +1832,7 @@ ${firstBanker}`;
         return;
       }
 
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       if(!Array.isArray(objective.navRoute) || !objective.navRoute.length){
         objective.navRoute=makeRouteTo(hub.node);
         objective.routeIndex=0;
@@ -1857,7 +1886,7 @@ ${firstBanker}`;
         return;
       }
 
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       const home=objective.home;
       const dx=home.x-pp.x, dy=home.y-pp.y;
       const d=Math.abs(dx)+Math.abs(dy);
@@ -1900,7 +1929,7 @@ ${firstBanker}`;
       const tx=pp.x+Math.max(-step,Math.min(step,dx));
       const ty=pp.y+Math.max(-step,Math.min(step,dy));
       if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-        walkGlobal(tx,ty);
+        shortStepToward({x:tx,y:ty},14);
         lastAction=Date.now();
         setBotStatus(`${gatherSkillLabel()} • returning to training area`);
       }
@@ -2014,6 +2043,7 @@ ${firstBanker}`;
 
     function stop(msg){
       clearActionContracts();
+      currentDecisionFrame=null;
       activeTaskNode='idle';
       objective=null;
       commandQueue=[];
@@ -2025,6 +2055,7 @@ ${firstBanker}`;
 
     function finishObjective(msg){
       clearActionContracts();
+      currentDecisionFrame=null;
       const next=commandQueue.shift();
       objective=null;
       if(!next){
@@ -2468,7 +2499,7 @@ ${firstBanker}`;
         return;
       }
 
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){
         objective.navRoute=makeRouteTo(hub.node);
         objective.routeIndex=0;
@@ -2649,7 +2680,7 @@ ${firstBanker}`;
     }
 
     function advanceCombatBanking(){
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return;
       const banker=nearestLoadedBanker(bank);
@@ -2757,7 +2788,7 @@ ${firstBanker}`;
       const live=nearestCombatNpc();
       if(live){markProgress('combat-return-complete');setPhase('fight',`Combat • back at ${type} training`);return;}
 
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo(hub.node);objective.routeIndex=0;}
       let idx=Number(objective.routeIndex||0);
       if(idx<objective.navRoute.length){
@@ -3252,7 +3283,7 @@ ${firstBanker}`;
         return;
       }
       objective.phase='mining-travel';
-      const pp=globalPlayerTile(),hub=desiredMiningHub();
+      const pp=decisionTile(),hub=desiredMiningHub();
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo(hub.node);objective.routeIndex=0;}
       let idx=Number(objective.routeIndex||0);
       if(idx<objective.navRoute.length){
@@ -3327,7 +3358,7 @@ ${firstBanker}`;
         return;
       }
 
-      const pp=globalPlayerTile();
+      const pp=decisionTile();
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo('lumbridge');objective.routeIndex=0;objective.searchIndex=0;}
       let idx=Number(objective.routeIndex||0);
       if(idx<objective.navRoute.length){
@@ -3551,12 +3582,14 @@ ${firstBanker}`;
 
     function tick(){
       if(!objective){
+        currentDecisionFrame=null;
         activeTaskNode='idle';
         traceDecision('idle','waiting','no active objective');
         renderMetrics();
         return;
       }
       const frame=buildDecisionFrame();
+      currentDecisionFrame=frame;
       renderMetrics();
       const node=selectTaskNode(frame,BOT_TASK_NODES);
       if(!node){

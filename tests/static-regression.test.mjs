@@ -604,6 +604,35 @@ test('task nodes prioritize valid work and action contracts require confirmation
   assert.ok(contractTrace.some(entry=>entry[1]==='failed'));
 });
 
+test('navigation actions confirm forward progress and escalate bounded timeouts', () => {
+  const walkProgressConfirmed = new Function(
+    'nodeDistance',
+    `${functionSource(html,'walkProgressConfirmed')}\nreturn walkProgressConfirmed;`
+  )((a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y));
+  const state={before:{tile:{x:0,y:0},target:{x:10,y:0},distance:10}};
+
+  assert.equal(walkProgressConfirmed({tile:{x:0,y:1}},state),false,'sideways shuffling is not progress');
+  assert.equal(walkProgressConfirmed({tile:{x:2,y:0}},state),true,'moving closer confirms the action');
+  assert.equal(walkProgressConfirmed({tile:{x:9,y:0}},state,1),true,'arrival confirms the action');
+
+  const shortStepSource=functionSource(html,'shortStepToward');
+  assert.match(shortStepSource,/runActionContract\('navigation-walk'/);
+  assert.match(shortStepSource,/timeout:4000/);
+  assert.match(shortStepSource,/maxAttempts:4/);
+  assert.match(shortStepSource,/walkProgressConfirmed\(next,state,arrivalDistance\)/);
+  assert.match(shortStepSource,/navWatch\.retries=Math\.max/);
+
+  for(const name of [
+    'advanceBankRoute','advanceResourceTravel','advanceReturnRoute',
+    'advanceCombatTravel','advanceCombatBanking','advanceCombatReturn',
+    'miningTick','firemakingGatherTick'
+  ]){
+    const source=functionSource(html,name);
+    assert.match(source,/shortStepToward\(/,`${name} must use confirmed navigation actions`);
+    assert.match(source,/decisionTile\(\)/,`${name} must reuse the tick's position snapshot`);
+  }
+});
+
 test('navigation graph uses shortest travel distance for bank routes', () => {
   const dataSource = section(html, '    const NAV_NODES={', '    function prepareBankRoute(){');
   const { NAV_NODES, NAV_EDGES, BANKS, graphPath, graphPathDistance, nearestBank } = new Function(
@@ -680,9 +709,10 @@ test('navigation recovery measures forward progress instead of any movement', ()
   let point = { x: 0, y: 0 };
   let now = 1_000;
   const { navRetryTarget, watch } = new Function(
-    'globalPlayerTile', 'nodeDistance', 'Date',
+    'globalPlayerTile', 'decisionTile', 'nodeDistance', 'Date',
     `${recoverySource}\nreturn {navRetryTarget,watch:()=>({...navWatch})};`
   )(
+    () => point,
     () => point,
     (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
     { now: () => now }
@@ -708,7 +738,7 @@ test('navigation recovery measures forward progress instead of any movement', ()
   assert.equal(watch().retries, 0);
 
   const shortStepSource = functionSource(html, 'shortStepToward');
-  assert.match(shortStepSource, /navRetryTarget\(target\)/);
+  assert.match(shortStepSource, /navRetryTarget\(target,pp,/);
   assert.doesNotMatch(shortStepSource, /navRetryTarget\(\{x:tx,y:ty\}\)/);
 });
 
@@ -765,7 +795,7 @@ test('regional searches skip unreachable tiles and keep recovery directions movi
   );
   const objective = { searchIndex: 2 };
   const { advanceRegionalSearchIfStalled, navRetryTarget, setWatch, watch } = new Function(
-    'globalPlayerTile', 'nodeDistance', 'Date', 'objective', 'makeRouteTo',
+    'globalPlayerTile', 'decisionTile', 'nodeDistance', 'Date', 'objective', 'makeRouteTo',
     `${recoverySource}\nreturn {
       advanceRegionalSearchIfStalled,
       navRetryTarget,
@@ -773,6 +803,7 @@ test('regional searches skip unreachable tiles and keep recovery directions movi
       watch:()=>({...navWatch})
     };`
   )(
+    () => ({ x: 0, y: 0 }),
     () => ({ x: 0, y: 0 }),
     (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
     { now: () => 50_000 },
@@ -812,7 +843,7 @@ test('regional searches skip unreachable tiles and keep recovery directions movi
 test('banker targeting stays scoped to the selected bank', () => {
   const bankerSource = functionSource(html, 'nearestLoadedBanker');
   const nearestLoadedBanker = new Function(
-    'mc', 'BANKER_IDS', 'globalPlayerTile', 'nodeDistance',
+    'mc', 'BANKER_IDS', 'globalPlayerTile', 'decisionTile', 'nodeDistance',
     `${bankerSource}\nreturn nearestLoadedBanker;`
   )(
     {
@@ -826,6 +857,7 @@ test('banker targeting stays scoped to the selected bank', () => {
       ]
     },
     new Set([95]),
+    () => ({ x: 124, y: 657 }),
     () => ({ x: 124, y: 657 }),
     (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
   );

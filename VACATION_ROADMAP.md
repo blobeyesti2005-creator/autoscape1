@@ -57,11 +57,15 @@ deleting history, or changing GitHub Pages.
   already-logged-in browser states without deleting credentials on failure.
 - [x] Add explicit carried/gathered/loot banking steps to persistent command
   chains using nearest-bank routing and equipped-item protection.
+- [x] Dispatch bot jobs through prioritized task nodes using one shared decision
+  frame and bounded, observable action contracts.
+- [x] Confirm routed walking from measured forward progress and escalate four
+  timed-out attempts into the existing route/search recovery system.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
-- [ ] Expand command chaining and intent handling across gathering, processing,
-  banking, combat, and supplies.
+- [ ] Preserve existing command chains while prioritizing dependable individual
+  gathering, processing, banking, combat, and supply jobs.
 - [ ] Expand F2P items, equipment, monsters, NPCs, drops, shops, and skill loops.
 - [ ] Improve mobile controls, accessibility, combat/loot balance, and death
   recovery.
@@ -338,4 +342,28 @@ deleting history, or changing GitHub Pages.
 - Executable tests prove task priority selection, confirmation-before-progress,
   retry exhaustion, action cleanup, and shared-frame inventory reuse.
 - Package and app-shell cache metadata advanced to `2.12.7` for the eventual
+  reviewed release.
+
+### Confirmed navigation actions
+
+- `npm test` (29 regression groups)
+- Routed walking now uses the shared action-contract engine. A walk is confirmed
+  only when the next decision frame is closer to its issued destination or has
+  reached the arrival radius; sideways collision shuffling and packet sends do
+  not count as successful movement.
+- Bank, gathering, return, combat, mining, and firemaking travel reuse the one
+  position snapshot captured in the current decision frame instead of polling
+  the player tile again inside each navigation helper.
+- Walk attempts wait up to four seconds for measurable progress and stop after
+  four unconfirmed attempts. Exhaustion feeds the existing route-rebuild or
+  regional-target rotation guards instead of creating an unbounded click loop.
+- The on-screen decision trace now exposes navigation `sent`, `confirmed`,
+  `retry`, and `recovery` states, making a stuck destination diagnosable during
+  a play test without adding persistent telemetry.
+- Executable tests distinguish forward progress from sideways movement, enforce
+  bounded escalation, and require every major routed travel loop to use both
+  the confirmed walker and shared position snapshot.
+- Account, character, inventory, bank, stats, settings, command-job payloads,
+  persistence keys, and the live branch remain unchanged.
+- Package and app-shell cache metadata advanced to `2.12.8` for the eventual
   reviewed release.
