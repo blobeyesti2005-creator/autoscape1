@@ -41,6 +41,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 
 #botMetrics{font-size:11px;color:#aaa;margin-top:3px;min-height:14px}
 #queuePlan{font-size:10px;color:#d8c18d;margin:3px 0;min-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#botTrace{font-size:9px;color:#8fb7a2;margin:2px 0;min-height:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #guidePanel{position:fixed;z-index:9300;inset:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));overflow:auto;background:rgba(24,21,15,.985);border:2px solid #9f8657;padding:12px;color:#eee;font-size:12px;line-height:1.45}
 #guidePanel h2{margin:0;color:#ffd875;font-size:19px}
 #guidePanel h3{color:#e5c777;margin:14px 0 5px;font-size:14px}
@@ -69,6 +70,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <div id="botStatus">Log in or create a local character, then run one objective.</div>
 <div id="botMetrics">Session idle</div>
 <div id="queuePlan">Queue idle</div>
+<div id="botTrace" aria-live="polite">Decision: idle</div>
 <div id="resourceRow">
 <label for="resourceSelect">Resource</label>
 <select id="resourceSelect">
@@ -215,6 +217,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const botStatus=document.getElementById('botStatus');
   const botMetrics=document.getElementById('botMetrics');
   const queuePlan=document.getElementById('queuePlan');
+  const botTrace=document.getElementById('botTrace');
   const botInput=document.getElementById('botInput');
   const resourceSelect=document.getElementById('resourceSelect');
   const miningRow=document.getElementById('miningRow');
@@ -232,6 +235,8 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   let commandQueue=[],activeCommandText='';
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
+  let decisionSequence=0,decisionFrameSequence=0,lastDecisionText='',activeTaskNode='idle';
+  const decisionHistory=[],actionContracts=new Map();
   const METRICS_RENDER_INTERVAL=2000;
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0};
 
@@ -290,6 +295,58 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
     const current=objective.commandText||activeCommandText||objective.type;
     const text=`Now: ${current}${progress}${commandQueue.length?` → ${commandQueue.join(' → ')}`:''}`;
     if(text!==lastQueueText){queuePlan.textContent=text;lastQueueText=text;}
+  }
+  function traceDecision(node,outcome,detail='',now=Date.now()){
+    const text=`${node} • ${outcome}${detail?` • ${detail}`:''}`;
+    if(text===lastDecisionText)return;
+    lastDecisionText=text;
+    decisionHistory.push({sequence:++decisionSequence,at:now,node,outcome,detail:String(detail||'')});
+    if(decisionHistory.length>40)decisionHistory.shift();
+    if(botTrace)botTrace.textContent=`Decision: ${text}`;
+  }
+  function selectTaskNode(frame,nodes){
+    let selected=null;
+    for(const node of nodes||[]){
+      let accepted=false;
+      try{accepted=!!node.accept(frame);}catch(e){traceDecision(node.id,'accept-error',e?.message||'unknown',frame.now);}
+      if(!accepted)continue;
+      if(!selected||Number(node.priority||0)>Number(selected.priority||0))selected=node;
+    }
+    if(selected&&activeTaskNode!==selected.id){activeTaskNode=selected.id;traceDecision(selected.id,'selected',selected.label||'',frame.now);}
+    return selected;
+  }
+  function clearActionContracts(){actionContracts.clear();}
+  function runActionContract(key,frame,config){
+    const now=Number(frame?.now||Date.now()),timeout=Math.max(1,Number(config.timeout||4000));
+    const maxAttempts=Math.max(1,Number(config.maxAttempts||4)),interval=Math.max(0,Number(config.interval||0));
+    let state=actionContracts.get(key)||{pending:false,attempts:0,lastAttempt:0,before:null,sentAt:0};
+    if(state.pending){
+      let confirmation=false;
+      try{confirmation=config.confirm?config.confirm(frame,state):false;}catch(e){confirmation=false;}
+      if(confirmation){
+        actionContracts.delete(key);
+        traceDecision(key,'confirmed',config.confirmedLabel||'',now);
+        return {status:'confirmed',confirmation,state};
+      }
+      if(now-state.sentAt<timeout)return {status:'waiting',state};
+      state.attempts++;
+      if(state.attempts>=maxAttempts){
+        actionContracts.delete(key);
+        traceDecision(key,'failed',`${state.attempts} timed-out attempts`,now);
+        return {status:'failed',state};
+      }
+      state.pending=false;
+      traceDecision(key,'retry',`attempt ${state.attempts+1}/${maxAttempts}`,now);
+    }
+    if(config.ready&&!config.ready(frame))return {status:'blocked',state};
+    if(now-state.lastAttempt<interval)return {status:'cooldown',state};
+    let before=null,sent=false;
+    try{before=config.capture?config.capture(frame):null;sent=!!config.execute(frame,before);}catch(e){sent=false;}
+    if(!sent){traceDecision(key,'execute-rejected','precondition changed',now);return {status:'blocked',state};}
+    state={...state,pending:true,before,sentAt:now,lastAttempt:now};
+    actionContracts.set(key,state);
+    traceDecision(key,'sent',`attempt ${state.attempts+1}/${maxAttempts}`,now);
+    return {status:'sent',state};
   }
   function markProgress(kind){
     if(!objective)return;
@@ -1956,6 +2013,8 @@ ${firstBanker}`;
     }
 
     function stop(msg){
+      clearActionContracts();
+      activeTaskNode='idle';
       objective=null;
       commandQueue=[];
       activeCommandText='';
@@ -1965,6 +2024,7 @@ ${firstBanker}`;
     }
 
     function finishObjective(msg){
+      clearActionContracts();
       const next=commandQueue.shift();
       objective=null;
       if(!next){
@@ -1995,6 +2055,20 @@ ${firstBanker}`;
         if(PICKAXE_IDS.has(id))hasPickaxe=true;
       }
       return {used,counts,foods,normalLogSlot,tinderboxSlot,hasAxe,hasPickaxe};
+    }
+    function buildDecisionFrame(now=Date.now()){
+      const online=loggedIn();
+      return {
+        sequence:++decisionFrameSequence,
+        now:Number(now),
+        loggedIn:online,
+        tile:online?globalPlayerTile():{x:0,y:0},
+        inventory:inventorySnapshot(),
+        inventoryMax:Number(mc.inventoryMaxItemCount||30),
+        hits:online?currentHits():0,
+        maxHits:online?maxHits():0,
+        fighting:online?inCombat():false
+      };
     }
     function inventoryFood(snapshot=null){
       if(snapshot)return snapshot.foods;
@@ -2701,9 +2775,9 @@ ${firstBanker}`;
       objective.searchIndex=0;
     }
 
-    function combatTick(){
-      const hp=currentHits(), max=maxHits();
-      let inventory=null;
+    function combatTick(frame){
+      const hp=frame.hits, max=frame.maxHits;
+      let inventory=frame.inventory;
 
       if(objective.attackSentAt&&(hp<=0||Number(mc.deathScreenTimeout||0)>0||mc.world?.playerAlive===false)){
         stop(`Combat ended — your character fought until defeated after ${sessionStats.kills} kill${sessionStats.kills===1?'':'s'}.`);
@@ -2731,11 +2805,10 @@ ${firstBanker}`;
         return;
       }
 
-      const fighting=inCombat();
+      const fighting=frame.fighting;
       if(fighting)objective.wasInCombat=true;
 
       if(hp>0 && hp<=Math.max(3,Math.floor(max*0.25))){
-        inventory=inventorySnapshot();
         if(eatFoodIfNeeded(inventory)) return;
         if(combatBankingEnabled()&&fighting){
           // Do not issue a new attack while critically low. As soon as combat
@@ -2756,7 +2829,6 @@ ${firstBanker}`;
         return;
       }
 
-      inventory=inventory||inventorySnapshot();
       // Proactive restock: once we are out of food and have taken meaningful
       // damage, bank before beginning another fight instead of waiting for crisis HP.
       if(combatBankingEnabled()&&!fighting&&inventory.used>=Number(mc.inventoryMaxItemCount||30)){
@@ -3122,6 +3194,8 @@ ${firstBanker}`;
         intent={...intent,resource:'normal'};
       }
 
+      clearActionContracts();
+      activeTaskNode='idle';
       objective=null;
       startSingle(activeCommandText,intent);
       if(!objective){
@@ -3149,8 +3223,8 @@ ${firstBanker}`;
       runCommand(commands[0]);
     }
 
-    function miningTick(){
-      const lvl=miningLevel(),max=Number(mc.inventoryMaxItemCount||30),inventory=inventorySnapshot(),used=inventory.used;
+    function miningTick(frame){
+      const lvl=miningLevel(),max=frame.inventoryMax,inventory=frame.inventory,used=inventory.used;
       if(!inventory.hasPickaxe){stop(`No pickaxe detected at Mining ${lvl}.`);return;}
       updateGatherProgress(inventory);
       if(objectiveGoalReached()){
@@ -3199,15 +3273,36 @@ ${firstBanker}`;
       setBotStatus(`Mining ${lvl} • searching ${hub.label} for ${desiredOreDef().name}`);
     }
 
-    function prayerTick(){
-      const inventory=inventorySnapshot();
-      updatePrayerProgress(inventory);
+    function prayerTick(frame){
+      const inventory=frame.inventory;
       const level=Number(mc.playerStatBase?.[5]||1);
+      const bones=inventoryCountForIds(BONE_IDS,inventory);
+      const result=runActionContract('prayer-bury',frame,{
+        interval:ACTION_INTERVALS.loot,
+        timeout:4200,
+        maxAttempts:5,
+        confirmedLabel:'inventory bone removed',
+        ready:()=>bones>0,
+        capture:()=>({bones}),
+        confirm:(next,state)=>inventoryCountForIds(BONE_IDS,next.inventory)<Number(state.before?.bones||0),
+        execute:()=>{
+          let slot=-1;
+          for(let i=0;i<inventory.used;i++)if(Number(mc.inventoryItemId?.[i])===20&&Number(mc.inventoryEquipped?.[i])!==1){slot=i;break;}
+          if(slot<0)return false;
+          const sent=buryBone(slot);
+          if(sent){lastAction=frame.now;setBotStatus(`Prayer ${level} • burying confirmed bone ${Number(objective.countProgress||0)+1} • ${bones} held`);}
+          return sent;
+        }
+      });
+      if(result.status==='confirmed')updatePrayerProgress(inventory);
+      if(result.status==='failed'){
+        stop('Prayer stopped: five timed-out bury attempts made no confirmed inventory progress.');
+        return;
+      }
       if(objectiveGoalReached()){
         finishObjective(`Prayer step complete • ${objective.countProgress}/${objective.countGoal} bones buried.`);
         return;
       }
-      const bones=inventoryCountForIds(BONE_IDS,inventory);
       if(bones<=0){
         if(Number(objective.countGoal||0)>Number(objective.countProgress||0)){
           stop(`Prayer stopped at ${objective.countProgress||0}/${objective.countGoal} bones: no regular bones remain.`);
@@ -3215,16 +3310,6 @@ ${firstBanker}`;
           finishObjective(`Prayer complete • ${sessionStats.burials} bone${sessionStats.burials===1?'':'s'} buried.`);
         }
         return;
-      }
-      if(Date.now()-lastAction<ACTION_INTERVALS.loot)return;
-      let slot=-1;
-      for(let i=0;i<inventory.used;i++)if(Number(mc.inventoryItemId?.[i])===20&&Number(mc.inventoryEquipped?.[i])!==1){slot=i;break;}
-      if(slot<0){stop('Prayer stopped: regular bones could not be selected from the inventory.');return;}
-      if(buryBone(slot)){
-        objective.actionAttempts=Number(objective.actionAttempts||0)+1;
-        lastAction=Date.now();
-        setBotStatus(`Prayer ${level} • burying bone ${Number(objective.countProgress||0)+1} • ${bones} held`);
-        if(objective.actionAttempts>8)stop('Prayer stopped: repeated bury actions made no confirmed inventory progress.');
       }
     }
 
@@ -3264,9 +3349,9 @@ ${firstBanker}`;
       setBotStatus(`Firemaking ${level} • searching Lumbridge for regular trees (${si+1}/${offsets.length})`);
     }
 
-    function firemakingTick(){
-      const level=Number(mc.playerStatBase?.[11]||1),now=Date.now();
-      const inventory=inventorySnapshot();
+    function firemakingTick(frame){
+      const level=Number(mc.playerStatBase?.[11]||1),now=frame.now;
+      const inventory=frame.inventory;
       if(tinderboxSlot(inventory)<0){stop(`Firemaking stopped at level ${level}: no tinderbox detected.`);return;}
 
       if(objective.phase==='fm-chop'){
@@ -3332,7 +3417,7 @@ ${firstBanker}`;
           objective.countProgress=Number(objective.countProgress||0)+1;
           markProgress('fire-lit');saveObjective();renderMetrics();
           objective.phase='fm-move';objective.phaseStarted=now;objective.moveTarget=null;objective.moveAttempts=0;
-          setBotStatus(`Firemaking ${level} • fire ${sessionStats.fires} lit • ${normalLogCount()} regular logs left`);
+          setBotStatus(`Firemaking ${level} • fire ${sessionStats.fires} lit • ${normalLogCount(inventory)} regular logs left`);
           return;
         }
         if(now-Number(objective.phaseStarted||now)>4200){
@@ -3365,34 +3450,10 @@ ${firstBanker}`;
       objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;
     }
 
-    function tick(){
-      if(!objective){renderMetrics();return;}
-      renderMetrics();
-      if(!loggedIn()){setBotStatus('Objective waiting: create/login to your LOCAL character.');return;}
-      if(objective.type==='banking'){
-        advanceBankRoute();
-        return;
-      }
-      if(objective.type==='prayer'){
-        prayerTick();
-        return;
-      }
-      if(objective.type==='combat'){
-        combatTick();
-        return;
-      }
-      if(objective.type==='mining'){
-        if(objective.phase==='bank'||objective.phase==='bank-dialogue'||objective.phase==='bank-open'){advanceBankRoute();return;}
-        if(objective.phase==='return'){advanceReturnRoute();return;}
-        miningTick();return;
-      }
-      if(objective.type==='firemaking'){
-        firemakingTick();return;
-      }
-
+    function woodcuttingTick(frame){
       const lvl=wcLevel();
-      const max=Number(mc.inventoryMaxItemCount||30);
-      const inventory=inventorySnapshot(),used=inventory.used;
+      const max=frame.inventoryMax;
+      const inventory=frame.inventory,used=inventory.used;
       if(!inventory.hasAxe){
         stop(`No woodcutting axe detected at Woodcutting ${lvl}.`);
         return;
@@ -3474,6 +3535,39 @@ ${firstBanker}`;
       if(chop(tree)){
         lastAction=Date.now();
         setBotStatus(`Woodcutting ${lvl} • chopping ${tree.tree} tree • ${used}/${max} slots • ${logCount()} logs`);
+      }
+    }
+
+    const BOT_TASK_NODES=[
+      {id:'wait-login',label:'wait for local character',priority:1000,accept:frame=>!frame.loggedIn,execute:()=>setBotStatus('Objective waiting: create/login to your LOCAL character.')},
+      {id:'bank-route',label:'navigate and interact with bank',priority:950,accept:()=>objective?.type==='banking'||['bank','bank-dialogue','bank-open'].includes(objective?.phase),execute:()=>advanceBankRoute()},
+      {id:'return-route',label:'return to training area',priority:900,accept:()=>objective?.phase==='return'&&['woodcutting','mining'].includes(objective?.type),execute:()=>advanceReturnRoute()},
+      {id:'prayer',label:'bury held bones',priority:800,accept:()=>objective?.type==='prayer',execute:frame=>prayerTick(frame)},
+      {id:'combat',label:'survive, fight, loot, and recover',priority:800,accept:()=>objective?.type==='combat',execute:frame=>combatTick(frame)},
+      {id:'mining',label:'find and mine selected ore',priority:700,accept:()=>objective?.type==='mining',execute:frame=>miningTick(frame)},
+      {id:'firemaking',label:'prepare and light regular logs',priority:700,accept:()=>objective?.type==='firemaking',execute:frame=>firemakingTick(frame)},
+      {id:'woodcutting',label:'find and chop selected trees',priority:700,accept:()=>objective?.type==='woodcutting',execute:frame=>woodcuttingTick(frame)}
+    ];
+
+    function tick(){
+      if(!objective){
+        activeTaskNode='idle';
+        traceDecision('idle','waiting','no active objective');
+        renderMetrics();
+        return;
+      }
+      const frame=buildDecisionFrame();
+      renderMetrics();
+      const node=selectTaskNode(frame,BOT_TASK_NODES);
+      if(!node){
+        const unsupported=String(objective.type||'unknown');
+        traceDecision('dispatcher','failed',`no node accepted ${unsupported}`,frame.now);
+        stop(`Bot stopped safely: no task node accepted ${unsupported}.`);
+        return;
+      }
+      try{node.execute(frame);}catch(e){
+        traceDecision(node.id,'execute-error',e?.message||'unknown',frame.now);
+        stop(`Bot stopped safely after a ${node.id} task error.`);
       }
     }
     document.getElementById('botForm').addEventListener('submit',e=>{e.preventDefault();start(botInput.value);});

@@ -49,7 +49,7 @@ test('required UI controls exist once and labels point to controls', () => {
   assert.deepEqual([...new Set(duplicates)], []);
 
   const required = [
-    'game-host', 'loader', 'bot', 'botStatus', 'botMetrics', 'queuePlan',
+    'game-host', 'loader', 'bot', 'botStatus', 'botMetrics', 'queuePlan', 'botTrace',
     'botInput', 'resourceSelect', 'miningSelect', 'combatSelect',
     'combatStyleSelect', 'combatBankSelect', 'lootSelect', 'guidePanel'
   ];
@@ -511,7 +511,7 @@ test('explicit banking deposits selected unequipped items and advances chains', 
   const advanceSource=functionSource(html,'advanceBankRoute');
   assert.match(advanceSource,/objective\.type==='banking'/);
   assert.match(advanceSource,/finishObjective\(deposited/);
-  assert.match(functionSource(html,'tick'),/objective\.type==='banking'/);
+  assert.match(html,/id:'bank-route'[\s\S]*objective\?\.type==='banking'/);
   assert.match(html,/savedJob\.type==='banking'/);
   assert.match(html,/GATHERED_BANK_IDS/);
   assert.match(html,/LOOT_BANK_IDS/);
@@ -557,9 +557,51 @@ test('prayer commands bury inventory bones and count only confirmed removals', (
   const prayerSource=functionSource(html,'prayerTick');
   assert.match(prayerSource,/objectiveGoalReached\(\)/);
   assert.match(prayerSource,/no regular bones remain/);
-  assert.match(prayerSource,/actionAttempts>8/);
-  assert.match(functionSource(html,'tick'),/objective\.type==='prayer'/);
+  assert.match(prayerSource,/runActionContract\('prayer-bury'/);
+  assert.match(prayerSource,/maxAttempts:5/);
+  assert.match(html,/id:'prayer'[\s\S]*objective\?\.type==='prayer'/);
   assert.match(html,/savedJob\.type==='prayer'/);
+});
+
+test('task nodes prioritize valid work and action contracts require confirmation', () => {
+  const trace=[];
+  const selectTaskNode = new Function(
+    'traceDecision',
+    `let activeTaskNode='idle';${functionSource(html,'selectTaskNode')}\nreturn selectTaskNode;`
+  )((...entry)=>trace.push(entry));
+  const frame={now:100};
+  const selected=selectTaskNode(frame,[
+    {id:'low',priority:10,accept:()=>true},
+    {id:'blocked',priority:100,accept:()=>false},
+    {id:'high',label:'highest valid',priority:50,accept:()=>true}
+  ]);
+  assert.equal(selected.id,'high');
+  assert.equal(trace.at(-1)[0],'high');
+  assert.equal(trace.at(-1)[1],'selected');
+
+  const contractTrace=[];
+  const {runActionContract,actionContracts}=new Function(
+    'traceDecision',
+    `const actionContracts=new Map();${functionSource(html,'runActionContract')}\nreturn {runActionContract,actionContracts};`
+  )((...entry)=>contractTrace.push(entry));
+  let sends=0;
+  const config={
+    timeout:100,maxAttempts:2,interval:0,
+    capture:current=>({count:current.count}),
+    confirm:(current,state)=>current.count<state.before.count,
+    execute:()=>{sends++;return true;}
+  };
+  assert.equal(runActionContract('confirmed',{now:100,count:3},config).status,'sent');
+  assert.equal(runActionContract('confirmed',{now:150,count:3},config).status,'waiting');
+  assert.equal(runActionContract('confirmed',{now:160,count:2},config).status,'confirmed');
+  assert.equal(actionContracts.has('confirmed'),false);
+
+  assert.equal(runActionContract('timeout',{now:300,count:3},config).status,'sent');
+  assert.equal(runActionContract('timeout',{now:401,count:3},config).status,'sent');
+  assert.equal(runActionContract('timeout',{now:502,count:3},config).status,'failed');
+  assert.equal(sends,3);
+  assert.ok(contractTrace.some(entry=>entry[1]==='confirmed'));
+  assert.ok(contractTrace.some(entry=>entry[1]==='failed'));
 });
 
 test('navigation graph uses shortest travel distance for bank routes', () => {
@@ -1027,8 +1069,11 @@ test('hot inventory and ground-loot decisions use single-pass snapshots', () => 
   assert.equal(modeReads, 1, 'loot mode should be captured once per decision');
   assert.equal(groundIdReads, 3, 'each loaded ground-item ID should be read once');
 
-  for (const name of ['combatTick', 'miningTick', 'firemakingTick', 'tick']) {
-    assert.match(functionSource(html, name), /inventorySnapshot\(\)/, `${name} must create one reusable inventory view`);
+  assert.match(functionSource(html,'buildDecisionFrame'),/inventory:inventorySnapshot\(\)/);
+  assert.match(functionSource(html,'tick'),/const frame=buildDecisionFrame\(\)/);
+  for (const name of ['combatTick','miningTick','prayerTick','firemakingTick','woodcuttingTick']) {
+    assert.doesNotMatch(functionSource(html,name),/inventorySnapshot\(\)/,`${name} must reuse the shared decision-frame inventory`);
+    assert.match(functionSource(html,name),/frame\.inventory/,`${name} must consume the shared decision-frame inventory`);
   }
   assert.doesNotMatch(functionSource(html, 'miningTick'), /Array\.from\(mc\.inventoryItemId/);
   assert.doesNotMatch(functionSource(html, 'firemakingGatherTick'), /Array\.from\(mc\.inventoryItemId/);

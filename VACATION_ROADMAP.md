@@ -313,3 +313,29 @@ deleting history, or changing GitHub Pages.
   accounting, persistence compatibility, queue routing, and recovery limit.
 - Package and app-shell cache metadata advanced to `2.12.6` for the eventual
   reviewed release.
+
+### Task-node controller and confirmed-action foundation
+
+- `npm test` (28 regression groups)
+- Replaced the monolithic top-level objective switch with prioritized task
+  nodes for login waiting, banking, return travel, combat, mining, woodcutting,
+  firemaking, and Prayer. The dispatcher fails closed if no node accepts a job
+  or a selected node throws instead of silently looping.
+- Every active bot cycle now builds one shared decision frame containing time,
+  login state, position, hits, combat state, capacity, and one inventory
+  snapshot. All five active skill loops consume that frame rather than building
+  independent inventory views.
+- Added a reusable action contract with preconditions, captured before-state,
+  explicit confirmation, timeout, bounded retries, and terminal failure. Prayer
+  is the first migrated action and only retries when the carried bone count does
+  not confirm the native inventory action.
+- Added a deduplicated on-screen decision trace plus a bounded 40-entry runtime
+  history. It exposes the selected task and action states (`sent`, `waiting`,
+  `confirmed`, `retry`, and `failed`) without adding storage writes or changing
+  any account, character, or command-job payload.
+- Starting, stopping, finishing, or replacing an objective clears pending action
+  contracts so an old confirmation can never leak into a new job.
+- Executable tests prove task priority selection, confirmation-before-progress,
+  retry exhaustion, action cleanup, and shared-frame inventory reuse.
+- Package and app-shell cache metadata advanced to `2.12.7` for the eventual
+  reviewed release.

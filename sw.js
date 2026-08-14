@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_CACHE_VERSION = 'autoscape-app-v2.12.6';
+const APP_CACHE_VERSION = 'autoscape-app-v2.12.7';
 const RUNTIME_CACHE = 'autoscape-runtime-v1';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
