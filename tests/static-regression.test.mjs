@@ -391,6 +391,8 @@ test('natural-language command parser keeps key command chains usable', () => {
   assert.deepEqual(parse('bank inventory'), { type: 'banking', mode: 'carried' });
   assert.deepEqual(parse('deposit gathered resources'), { type: 'banking', mode: 'gathered' });
   assert.deepEqual(parse('bank loot'), { type: 'banking', mode: 'loot' });
+  assert.deepEqual(parse('bury 10 bones'), { type: 'prayer', resource: 'bones', amount: 10 });
+  assert.deepEqual(parse('train prayer'), { type: 'prayer', resource: 'bones', amount: 0 });
 
   const strength = parse('train strength on chickens');
   assert.equal(strength.type, 'combat');
@@ -466,6 +468,15 @@ test('saved command chains round-trip progress, style, and banking intent', () =
   assert.equal(banking.resource, 'loot');
   assert.deepEqual(banking.queue, ['fight chickens']);
 
+  const prayer = normalizeSavedJob({
+    type: 'prayer', resource: 'bones', active: true, countGoal: 10,
+    countProgress: 4, queue: ['bank loot'], chainAdvance: true
+  });
+  assert.equal(prayer.type, 'prayer');
+  assert.equal(prayer.resource, 'bones');
+  assert.equal(prayer.countProgress, 4);
+  assert.deepEqual(prayer.queue, ['bank loot']);
+
   assert.match(html, /normalizeSavedJob\(JSON\.parse\(localStorage\.getItem\('autoscape_job'\)/);
   assert.match(functionSource(html, 'saveObjective'), /serializeObjectiveState\(\)/);
 });
@@ -504,6 +515,51 @@ test('explicit banking deposits selected unequipped items and advances chains', 
   assert.match(html,/savedJob\.type==='banking'/);
   assert.match(html,/GATHERED_BANK_IDS/);
   assert.match(html,/LOOT_BANK_IDS/);
+});
+
+test('prayer commands bury inventory bones and count only confirmed removals', () => {
+  const packets=[];
+  let activePacket=null;
+  const mc={
+    packetStream:{
+      newPacket(id){activePacket={id,values:[]};packets.push(activePacket);},
+      putShort(value){activePacket.values.push(value);},
+      sendPacket(){}
+    }
+  };
+  const sessionStats={actions:0,burials:0};
+  const buryBone = new Function(
+    'mc','sessionStats','renderMetrics',
+    `${functionSource(html,'buryBone')}\nreturn buryBone;`
+  )(mc,sessionStats,()=>{});
+  assert.equal(buryBone(3),true);
+  assert.deepEqual(packets,[{id:90,values:[3]}]);
+  assert.equal(sessionStats.actions,1);
+
+  const objective={type:'prayer',lastCount:3,countProgress:0,actionAttempts:2};
+  const updatePrayerProgress = new Function(
+    'objective','inventoryCountForIds','BONE_IDS','sessionStats','markProgress',
+    'saveObjective','renderMetrics','inventorySnapshot',
+    `${functionSource(html,'updatePrayerProgress')}\nreturn updatePrayerProgress;`
+  )(
+    objective,
+    (_ids,snapshot)=>snapshot.counts.get(20)||0,
+    new Set([20]),
+    sessionStats,
+    ()=>{},()=>{},()=>{},()=>({counts:new Map([[20,3]])})
+  );
+  assert.equal(updatePrayerProgress({counts:new Map([[20,2]])}),1);
+  assert.equal(objective.countProgress,1);
+  assert.equal(objective.lastCount,2);
+  assert.equal(objective.actionAttempts,0);
+  assert.equal(sessionStats.burials,1);
+
+  const prayerSource=functionSource(html,'prayerTick');
+  assert.match(prayerSource,/objectiveGoalReached\(\)/);
+  assert.match(prayerSource,/no regular bones remain/);
+  assert.match(prayerSource,/actionAttempts>8/);
+  assert.match(functionSource(html,'tick'),/objective\.type==='prayer'/);
+  assert.match(html,/savedJob\.type==='prayer'/);
 });
 
 test('navigation graph uses shortest travel distance for bank routes', () => {

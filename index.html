@@ -189,7 +189,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <section class="guideEntry" data-guide="item items ids reference loot drops equipment runes ores logs food tools">
 <h3>Supported item reference</h3><table><thead><tr><th>Item ID</th><th>Name</th></tr></thead><tbody id="guideItems"></tbody></table></section>
 <section class="guideEntry" data-guide="commands bot natural language jobs queue chain then comma combat strength attack defence bank death">
-<h3>Useful commands</h3><p><code>chop 10 logs</code> · <code>mine 20 iron ore</code> · <code>kill 5 skeletons</code> · <code>train strength on chickens</code> · <code>fight chickens to the death</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>bank inventory</code> · <code>deposit gathered resources</code> · <code>bank loot</code> · <code>stop</code></p><p>Combat commands can choose Controlled, Strength, Attack, or Defence XP. “To the death” and “never bank” disable combat banking until changed. Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Examples: <code>chop 10 logs, then firemake them</code> and <code>mine 20 iron, then bank gathered resources</code>. Banking steps keep equipped gear. Numbered steps complete after real resources, fires, or kills are confirmed. An unnumbered queued gathering step fills the inventory without banking, then the next step starts automatically. The current step, progress, and remaining queue persist locally after login.</p></section>
+<h3>Useful commands</h3><p><code>chop 10 logs</code> · <code>mine 20 iron ore</code> · <code>kill 5 skeletons</code> · <code>train strength on chickens</code> · <code>fight chickens to the death</code> · <code>bury 10 bones</code> · <code>burn logs</code> · <code>train firemaking</code> · <code>bank inventory</code> · <code>deposit gathered resources</code> · <code>bank loot</code> · <code>stop</code></p><p>Combat commands can choose Controlled, Strength, Attack, or Defence XP. “To the death” and “never bank” disable combat banking until changed. Chain supported jobs with commas, semicolons, arrows, or <code>then</code>. Examples: <code>kill 10 chickens, then bury 10 bones</code>, <code>chop 10 logs, then firemake them</code>, and <code>mine 20 iron, then bank gathered resources</code>. Banking steps keep equipped gear. Numbered steps complete only after real resources, fires, burials, or kills are confirmed. An unnumbered queued gathering step fills the inventory without banking, then the next step starts automatically. The current step, progress, and remaining queue persist locally after login.</p></section>
 </div>
 <script>
 'use strict';
@@ -233,7 +233,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
   const METRICS_RENDER_INTERVAL=2000;
-  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,loot:0,bankTrips:0,deposits:0};
+  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0};
 
   function fmtDuration(ms){
     const sec=Math.max(0,Math.floor(ms/1000)), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
@@ -241,7 +241,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   }
   function resetTaskStats(){
     sessionStats.taskStartedAt=Date.now();
-    for(const k of ['actions','attacks','kills','eats','chops','mines','fires','loot','bankTrips','deposits']) sessionStats[k]=0;
+    for(const k of ['actions','attacks','kills','eats','chops','mines','fires','burials','loot','bankTrips','deposits']) sessionStats[k]=0;
     renderMetrics(true);
   }
   function renderMetrics(force=false){
@@ -258,6 +258,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
     if(objective.type==='woodcutting')parts.push(`${sessionStats.chops} chops`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='mining')parts.push(`${sessionStats.mines} swings`,`${sessionStats.bankTrips} bank trips`,`${sessionStats.deposits} deposit batches`);
     if(objective.type==='firemaking')parts.push(`${sessionStats.fires} fires lit`,`${sessionStats.chops} chop attempts`,`${metricNormalLogCount()} logs held`);
+    if(objective.type==='prayer')parts.push(`${sessionStats.burials} bones buried`);
     if(objective.type==='combat')parts.push(`${sessionStats.kills} defeated`,`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`,objective.bankMode==='never'?'no banking':`${objective.bankName||'nearest'} bank`);
     if(Number(objective.countGoal)>0)parts.push(`${Math.min(Number(objective.countProgress||0),Number(objective.countGoal))}/${Number(objective.countGoal)} target`);
     if(commandQueue.length)parts.push(`${commandQueue.length} queued`);
@@ -273,6 +274,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
     if(o.type==='woodcutting')return 'logs';
     if(o.type==='mining')return 'ore';
     if(o.type==='firemaking')return 'fires';
+    if(o.type==='prayer')return 'bones';
     if(o.type==='combat')return 'kills';
     return 'actions';
   }
@@ -1886,7 +1888,7 @@ ${firstBanker}`;
 
     function normalizeSavedJob(raw){
       if(!raw||typeof raw!=='object'||raw.active!==true)return null;
-      const supported=new Set(['woodcutting','mining','combat','firemaking','banking']);
+      const supported=new Set(['woodcutting','mining','combat','firemaking','banking','prayer']);
       if(!supported.has(raw.type))return null;
       const styles=new Set(['controlled','strength','attack','defence']);
       const queue=Array.isArray(raw.queue)
@@ -1978,6 +1980,7 @@ ${firstBanker}`;
     }
     const FOOD_HEALS={"18":1,"132":3,"138":4,"179":5,"228":1,"249":2,"257":5,"258":3,"259":4,"261":4,"262":3,"263":5,"319":2,"320":2,"325":10,"326":7,"327":8,"328":7,"329":8,"330":4,"332":5,"333":4,"334":5,"335":4,"336":5,"337":2,"346":9,"350":2,"352":2,"355":4,"357":9,"359":7,"362":5,"364":8,"367":10,"370":14,"373":12,"422":10,"546":20,"551":7,"553":6,"555":13,"590":14,"677":10,"709":19,"749":2,"750":10,"751":10,"765":1,"855":1,"856":1,"857":1,"858":1,"859":1,"860":1,"861":2,"863":1,"864":1,"865":1,"923":19,"924":19,"1061":4,"1102":19,"1103":8,"1191":21,"1193":20,"1245":2,"1269":8};
     const AXE_IDS=new Set([12,87,88,203,204,405,428]);
+    const BONE_IDS=new Set([20]);
     function inventorySnapshot(){
       const used=inventorySlots(),counts=new Map(),foods=[];
       let normalLogSlot=-1,tinderboxSlot=-1,hasAxe=false,hasPickaxe=false;
@@ -2007,6 +2010,31 @@ ${firstBanker}`;
       if(!foods.length)return null;
       const enough=foods.filter(f=>f.heal>=missing).sort((a,b)=>a.heal-b.heal);
       return enough[0]||foods.sort((a,b)=>b.heal-a.heal)[0];
+    }
+
+    function buryBone(slot){
+      if(slot<0||!mc.packetStream)return false;
+      mc.packetStream.newPacket(90); // INV_COMMAND: bones default to Bury
+      mc.packetStream.putShort(slot);
+      mc.packetStream.sendPacket();
+      sessionStats.actions++;
+      renderMetrics();
+      return true;
+    }
+
+    function updatePrayerProgress(snapshot=inventorySnapshot()){
+      if(!objective||objective.type!=='prayer')return 0;
+      const current=inventoryCountForIds(BONE_IDS,snapshot);
+      if(!Number.isFinite(Number(objective.lastCount))){objective.lastCount=current;return 0;}
+      const buried=Math.max(0,Number(objective.lastCount)-current);
+      objective.lastCount=current;
+      if(buried>0){
+        objective.countProgress=Number(objective.countProgress||0)+buried;
+        objective.actionAttempts=0;
+        sessionStats.burials+=buried;
+        markProgress('bone-buried');saveObjective();renderMetrics();
+      }
+      return buried;
     }
 
     function bankFood(){
@@ -2824,8 +2852,8 @@ ${firstBanker}`;
     }
 
     function requestedAmount(text){
-      const verb=String(text||'').match(/\b(?:chop|cut|mine|kill|fight|attack|burn|light|firemake)\s+(?:the\s+)?(\d{1,4})\b/i);
-      const unit=String(text||'').match(/\b(\d{1,4})\s*(?:logs?|trees?|ores?|rocks?|fires?|kills?|monsters?|rats?|chickens?|cows?|men|goblins?|wizards?|barbarians?|dwarves?|guards?|imps?|muggers?|highwaymen|skeletons?|bears?|pirates?|hobgoblins?)\b/i);
+      const verb=String(text||'').match(/\b(?:chop|cut|mine|kill|fight|attack|burn|light|firemake|bury)\s+(?:the\s+)?(\d{1,4})\b/i);
+      const unit=String(text||'').match(/\b(\d{1,4})\s*(?:logs?|trees?|ores?|rocks?|fires?|bones?|kills?|monsters?|rats?|chickens?|cows?|men|goblins?|wizards?|barbarians?|dwarves?|guards?|imps?|muggers?|highwaymen|skeletons?|bears?|pirates?|hobgoblins?)\b/i);
       const value=Number(verb?.[1]||unit?.[1]||0);
       return value>0?Math.min(value,9999):0;
     }
@@ -2848,6 +2876,10 @@ ${firstBanker}`;
         if(hasAny(t,['gathered','resources','resource','logs','ores','ore']))mode='gathered';
         else if(hasAny(t,['loot','drops','drop']))mode='loot';
         return {type:'banking',mode};
+      }
+
+      if(/\bbury(?:\s+(?:the\s+)?\d+)?\s+bones?\b/.test(t)||hasAny(t,['bury the bones','train prayer','prayer training'])){
+        return {type:'prayer',resource:'bones',amount};
       }
 
       // Firemaking must be recognized before the generic "logs" woodcutting
@@ -2965,6 +2997,16 @@ ${firstBanker}`;
         setBotStatus(`Banking started • heading to ${objective.bankName||'nearest'} bank • depositing ${mode} items • equipped gear kept`);
         return;
       }
+      if(o.type==='prayer'){
+        const inventory=inventorySnapshot(),bones=inventoryCountForIds(BONE_IDS,inventory);
+        if(bones<=0){setBotStatus('Prayer training needs regular bones (item 20) already held. Fight monsters and collect bones first.');return;}
+        objective={type:'prayer',resource:'bones',phase:'bury',lastCount:bones,actionAttempts:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        resetTaskStats();lastAction=0;
+        resetObjectiveControls();resourceSelect.closest('#resourceRow').style.display='none';
+        saveObjective();
+        setBotStatus(`Prayer ${Number(mc.playerStatBase?.[5]||1)} • ${bones} regular bones held • burying confirmed bones`);
+        return;
+      }
       if(o.type==='firemaking'){
         if(tinderboxSlot()<0){setBotStatus('Firemaking needs a tinderbox (item 166). Your existing account and inventory were not changed.');return;}
         if(o.supply==='held'&&normalLogCount()<=0){setBotStatus('“Burn logs” uses regular logs already held. Try “train firemaking” to chop and burn continuously. Classic cannot burn higher-level logs.');return;}
@@ -3068,7 +3110,7 @@ ${firstBanker}`;
         stop('Stopped and cleared the command queue.');
         return true;
       }
-      if(!['woodcutting','mining','combat','firemaking','banking'].includes(intent.type)){
+      if(!['woodcutting','mining','combat','firemaking','banking','prayer'].includes(intent.type)){
         stop(`I understand “${activeCommandText}” as ${intent.type}, but that loop is not implemented yet. The command queue was canceled.`);
         return false;
       }
@@ -3091,7 +3133,7 @@ ${firstBanker}`;
       objective.chainAdvance=commandQueue.length>0;
       objective.countGoal=Number(intent.amount||0);
       objective.countProgress=0;
-      objective.lastCount=['woodcutting','mining'].includes(objective.type)?gatheredCountForObjective(objective):undefined;
+      objective.lastCount=['woodcutting','mining'].includes(objective.type)?gatheredCountForObjective(objective):(objective.type==='prayer'?inventoryCountForIds(BONE_IDS):undefined);
       saveObjective();
       renderMetrics();
       return true;
@@ -3155,6 +3197,35 @@ ${firstBanker}`;
       else if(advanceRegionalSearchIfStalled(search.length))setBotStatus(`Mining ${lvl} • blocked search tile skipped near ${hub.label}`);
       else if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(target,16);lastAction=Date.now();}
       setBotStatus(`Mining ${lvl} • searching ${hub.label} for ${desiredOreDef().name}`);
+    }
+
+    function prayerTick(){
+      const inventory=inventorySnapshot();
+      updatePrayerProgress(inventory);
+      const level=Number(mc.playerStatBase?.[5]||1);
+      if(objectiveGoalReached()){
+        finishObjective(`Prayer step complete • ${objective.countProgress}/${objective.countGoal} bones buried.`);
+        return;
+      }
+      const bones=inventoryCountForIds(BONE_IDS,inventory);
+      if(bones<=0){
+        if(Number(objective.countGoal||0)>Number(objective.countProgress||0)){
+          stop(`Prayer stopped at ${objective.countProgress||0}/${objective.countGoal} bones: no regular bones remain.`);
+        }else{
+          finishObjective(`Prayer complete • ${sessionStats.burials} bone${sessionStats.burials===1?'':'s'} buried.`);
+        }
+        return;
+      }
+      if(Date.now()-lastAction<ACTION_INTERVALS.loot)return;
+      let slot=-1;
+      for(let i=0;i<inventory.used;i++)if(Number(mc.inventoryItemId?.[i])===20&&Number(mc.inventoryEquipped?.[i])!==1){slot=i;break;}
+      if(slot<0){stop('Prayer stopped: regular bones could not be selected from the inventory.');return;}
+      if(buryBone(slot)){
+        objective.actionAttempts=Number(objective.actionAttempts||0)+1;
+        lastAction=Date.now();
+        setBotStatus(`Prayer ${level} • burying bone ${Number(objective.countProgress||0)+1} • ${bones} held`);
+        if(objective.actionAttempts>8)stop('Prayer stopped: repeated bury actions made no confirmed inventory progress.');
+      }
     }
 
     function firemakingGatherTick(inventory=inventorySnapshot()){
@@ -3300,6 +3371,10 @@ ${firstBanker}`;
       if(!loggedIn()){setBotStatus('Objective waiting: create/login to your LOCAL character.');return;}
       if(objective.type==='banking'){
         advanceBankRoute();
+        return;
+      }
+      if(objective.type==='prayer'){
+        prayerTick();
         return;
       }
       if(objective.type==='combat'){
@@ -3582,6 +3657,18 @@ ${firstBanker}`;
             objective={type:'banking',resource:mode,phase:'bank',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
             prepareBankRoute();resetTaskStats();
             setBotStatus(`Resumed Banking • heading to ${objective.bankName||'nearest'} bank • depositing ${mode} items • equipped gear kept`);
+          }else if(savedJob.type==='prayer'){
+            const inventory=inventorySnapshot(),bones=inventoryCountForIds(BONE_IDS,inventory);
+            resetObjectiveControls();resourceSelect.closest('#resourceRow').style.display='none';
+            if(bones>0){
+              objective={type:'prayer',resource:'bones',phase:'bury',lastCount:bones,actionAttempts:0,taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
+              resetTaskStats();
+              setBotStatus(`Resumed Prayer at level ${Number(mc.playerStatBase?.[5]||1)} • ${bones} regular bones held.`);
+            }else if(Number(savedJob.countGoal||0)>Number(savedJob.countProgress||0)){
+              stop(`Saved Prayer job stopped at ${savedJob.countProgress||0}/${savedJob.countGoal}: no regular bones remain.`);
+            }else{
+              finishObjective('Saved Prayer step complete • no regular bones remain.');
+            }
           }
         }
       }catch(e){}

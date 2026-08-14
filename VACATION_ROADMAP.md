@@ -294,3 +294,22 @@ deleting history, or changing GitHub Pages.
   included in bank-deposit packets.
 - Package and app-shell cache metadata advanced to `2.12.5` for the eventual
   reviewed release.
+
+### Confirmed Prayer command chains
+
+- `npm test` (27 regression groups)
+- Added `bury bones`, `bury 10 bones`, and `train prayer` intents that can run
+  alone or as durable queued steps such as `kill 10 chickens, then bury 10 bones`.
+- Prayer uses the native inventory command for regular bones and advances its
+  counter only after the inventory confirms that a bone disappeared; sending a
+  click or packet alone never counts as progress.
+- Numbered jobs stop safely if bones run out, unnumbered jobs finish after all
+  held regular bones are buried, and repeated unconfirmed actions trip a bounded
+  anti-stall guard rather than clicking forever.
+- Prayer state reuses existing job fields and storage keys, resumes after login,
+  and leaves account, stats, inventory, bank, settings, and payload schemas
+  unchanged.
+- Executable tests verify the inventory packet, slot selection, confirmed-count
+  accounting, persistence compatibility, queue routing, and recovery limit.
+- Package and app-shell cache metadata advanced to `2.12.6` for the eventual
+  reviewed release.
