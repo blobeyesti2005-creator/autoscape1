@@ -109,7 +109,7 @@ test('account, stat, and job persistence safeguards remain installed', () => {
     'message.skills = Object.fromEntries(',
     'return [skillName, { ...skill }]',
     "localStorage.setItem('autoscape_credentials'",
-    "localStorage.setItem('autoscape_job'",
+    "persistLocalValue('autoscape_job'",
     'queue:[...queue]',
     'countProgress:Number(o.countProgress||0)',
     'window.__AUTOSCAPE_STABLE_ORIGIN_V24__=true'
@@ -730,6 +730,35 @@ test('performance guards avoid unchanged UI and storage writes', () => {
   assert.match(html, /now-lastMetricsRenderAt<METRICS_RENDER_INTERVAL/);
   assert.match(html, /if\(zoom===savedZoom&&rotation===savedRotation\)return/);
   assert.match(html, /if\(bar\.style\.display!==display\)bar\.style\.display=display/);
+});
+
+test('job preferences skip identical synchronous storage writes', () => {
+  const values = new Map([['autoscape_job', 'same']]);
+  const calls = { set: 0, remove: 0 };
+  const localStorage = {
+    setItem(key, value) { calls.set += 1; values.set(key, String(value)); },
+    removeItem(key) { calls.remove += 1; values.delete(key); }
+  };
+  const persistedLocalValues = new Map([['autoscape_job', 'same']]);
+  const helpers = new Function(
+    'localStorage', 'persistedLocalValues',
+    `${functionSource(html, 'persistLocalValue')}
+     ${functionSource(html, 'removePersistedValue')}
+     return { persistLocalValue, removePersistedValue };`
+  )(localStorage, persistedLocalValues);
+
+  assert.equal(helpers.persistLocalValue('autoscape_job', 'same'), false);
+  assert.equal(calls.set, 0, 'an unchanged job must not block the main thread with a write');
+  assert.equal(helpers.persistLocalValue('autoscape_job', 'progress-1'), true);
+  assert.equal(helpers.persistLocalValue('autoscape_job', 'progress-1'), false);
+  assert.equal(calls.set, 1, 'changed progress should save exactly once');
+  assert.equal(helpers.removePersistedValue('autoscape_job'), true);
+  assert.equal(helpers.removePersistedValue('autoscape_job'), false);
+  assert.equal(calls.remove, 1, 'stopping an already-cleared job must not rewrite storage');
+
+  const saveSource = functionSource(html, 'saveObjective');
+  assert.match(saveSource, /persistLocalValue\('autoscape_job'/);
+  assert.doesNotMatch(saveSource, /localStorage\.setItem/);
 });
 
 test('hot target searches scan each loaded entity list only once', () => {

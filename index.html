@@ -844,6 +844,14 @@ ${firstBanker}`;
   function installBot(mc){
     bot.style.display='none';
     botToggle.style.display='block';
+    const persistedLocalValues=new Map();
+    for(const key of [
+      'autoscape_job','autoscape_resource','autoscape_mining_resource',
+      'autoscape_combat_target','autoscape_loot_mode',
+      'autoscape_combat_style','autoscape_combat_bank_mode'
+    ]){
+      try{persistedLocalValues.set(key,localStorage.getItem(key));}catch(e){}
+    }
     try{
       const savedResource=localStorage.getItem('autoscape_resource');
       if(savedResource && [...resourceSelect.options].some(o=>o.value===savedResource)){
@@ -1891,20 +1899,35 @@ ${firstBanker}`;
       };
     }
 
+    function persistLocalValue(key,value){
+      const serialized=String(value);
+      if(persistedLocalValues.get(key)===serialized)return false;
+      localStorage.setItem(key,serialized);
+      persistedLocalValues.set(key,serialized);
+      return true;
+    }
+
+    function removePersistedValue(key){
+      if(persistedLocalValues.get(key)===null)return false;
+      localStorage.removeItem(key);
+      persistedLocalValues.set(key,null);
+      return true;
+    }
+
     function saveObjective(){
       try{
         if(objective){
           const saved=serializeObjectiveState();
-          localStorage.setItem('autoscape_job',JSON.stringify(saved));
-          localStorage.setItem('autoscape_resource',saved.resource);
-          if(objective.type==='mining')localStorage.setItem('autoscape_mining_resource',saved.resource);
+          persistLocalValue('autoscape_job',JSON.stringify(saved));
+          persistLocalValue('autoscape_resource',saved.resource);
+          if(objective.type==='mining')persistLocalValue('autoscape_mining_resource',saved.resource);
           if(objective.type==='combat'){
-            localStorage.setItem('autoscape_loot_mode',saved.lootMode);
-            localStorage.setItem('autoscape_combat_style',saved.combatStyle);
-            localStorage.setItem('autoscape_combat_bank_mode',saved.bankMode);
+            persistLocalValue('autoscape_loot_mode',saved.lootMode);
+            persistLocalValue('autoscape_combat_style',saved.combatStyle);
+            persistLocalValue('autoscape_combat_bank_mode',saved.bankMode);
           }
         }else{
-          localStorage.removeItem('autoscape_job');
+          removePersistedValue('autoscape_job');
         }
       }catch(e){}
     }
@@ -2396,7 +2419,7 @@ ${firstBanker}`;
         mc.packetStream.sendPacket();
       }
       if(objective?.type==='combat')objective.combatStyle=selected;
-      try{localStorage.setItem('autoscape_combat_style',selected);}catch(e){}
+      try{persistLocalValue('autoscape_combat_style',selected);}catch(e){}
       return selected;
     }
 
@@ -3339,7 +3362,7 @@ ${firstBanker}`;
     document.getElementById('botForm').addEventListener('submit',e=>{e.preventDefault();start(botInput.value);});
     document.getElementById('botStop').addEventListener('click',()=>stop('Objective stopped.'));
     combatSelect.addEventListener('change',()=>{
-      try{localStorage.setItem('autoscape_combat_target',combatSelect.value);}catch(e){}
+      try{persistLocalValue('autoscape_combat_target',combatSelect.value);}catch(e){}
       if(objective && objective.type==='combat'){
         objective.target=combatSelect.value;
         objective.lastTargetTile=null;
@@ -3361,7 +3384,7 @@ ${firstBanker}`;
     });
     combatBankSelect.addEventListener('change',()=>{
       const bankMode=combatBankSelect.value==='never'?'never':'safe';
-      try{localStorage.setItem('autoscape_combat_bank_mode',bankMode);}catch(e){}
+      try{persistLocalValue('autoscape_combat_bank_mode',bankMode);}catch(e){}
       if(objective&&objective.type==='combat'){
         objective.bankMode=bankMode;
         objective.needsFoodBank=false;
@@ -3377,7 +3400,7 @@ ${firstBanker}`;
       }
     });
     lootSelect.addEventListener('change',()=>{
-      try{localStorage.setItem('autoscape_loot_mode',lootSelect.value);}catch(e){}
+      try{persistLocalValue('autoscape_loot_mode',lootSelect.value);}catch(e){}
       if(objective&&objective.type==='combat'){
         saveObjective();
         const label=lootSelect.options[lootSelect.selectedIndex]?.text||lootSelect.value;
@@ -3386,7 +3409,7 @@ ${firstBanker}`;
     });
 
     resourceSelect.addEventListener('change',()=>{
-      try{localStorage.setItem('autoscape_resource',resourceSelect.value);}catch(e){}
+      try{persistLocalValue('autoscape_resource',resourceSelect.value);}catch(e){}
       if(objective && objective.type==='woodcutting'){
         objective.resource=resourceSelect.value;
         objective.phase='chop';
@@ -3399,7 +3422,7 @@ ${firstBanker}`;
       }
     });
     miningSelect.addEventListener('change',()=>{
-      try{localStorage.setItem('autoscape_mining_resource',miningSelect.value);}catch(e){}
+      try{persistLocalValue('autoscape_mining_resource',miningSelect.value);}catch(e){}
       if(objective&&objective.type==='mining'){
         objective.resource=miningSelect.value;objective.phase='mining-travel';objective.navRoute=[];objective.routeIndex=0;objective.searchIndex=0;
         saveObjective();setBotStatus(`Mining updated — targeting ${miningSelect.value==='auto'?'best available ore':miningSelect.value}.`);

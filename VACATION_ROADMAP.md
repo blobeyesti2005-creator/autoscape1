@@ -51,6 +51,8 @@ deleting history, or changing GitHub Pages.
   equipped gear, bank quantities, settings, quests, appearance, and deep clones.
 - [x] Keep the bot panel above Android's keyboard without rescaling flicker and
   route chicken training through the accessible Lumbridge farm gate.
+- [x] Deduplicate unchanged command-job and bot preference writes while keeping
+  progress checkpoints immediate and preserving every existing storage key.
 - [ ] Continue profiling the main loop and reduce avoidable object/inventory
   scans with measured safeguards.
 - [ ] Harden navigation, bank choice, banker interaction, and stall recovery.
@@ -240,4 +242,19 @@ deleting history, or changing GitHub Pages.
   area at `(119, 604)`.
 - No account, save, inventory, bank, settings, or command-job schema changed.
 - Package and app-shell cache metadata advanced to `2.12.2` for the eventual
+  reviewed release.
+
+### Command-state storage write reduction
+
+- `npm test` (24 regression groups)
+- The seven existing command-job and preference keys are read once into a
+  runtime mirror when the bot installs; identical values no longer trigger
+  synchronous browser storage writes on the main thread.
+- Changed queue/progress state still saves immediately, and stopping a job
+  removes its existing key exactly once.
+- The job JSON payload, preference values, account database, inventory, bank,
+  stats, and migration behavior are unchanged.
+- Instrumented tests count writes/removals and enforce one write per changed
+  value plus zero writes for identical values.
+- Package and app-shell cache metadata advanced to `2.12.3` for the eventual
   reviewed release.
