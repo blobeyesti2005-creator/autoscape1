@@ -1877,13 +1877,13 @@ ${firstBanker}`;
       return true;
     }
 
-    function rebuildRouteIfStalled(targetNode){
+    function rebuildRouteIfStalled(targetNode,decisionNow=Date.now()){
       if(navWatch.retries<MAX_NAV_RETRIES)return false;
       objective.navRoute=makeRouteTo(targetNode);
       objective.routeIndex=0;
       objective.routeRebuilds=Number(objective.routeRebuilds||0)+1;
       navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
-      lastAction=Date.now();
+      lastAction=Number(decisionNow);
       return true;
     }
 
@@ -2108,14 +2108,13 @@ ${firstBanker}`;
         const d=Math.abs(pp.x-wp.x)+Math.abs(pp.y-wp.y);
         if(d<8){idx++; objective.routeIndex=idx; continue;}
 
-        if(rebuildRouteIfStalled(bank.node)){
+        if(rebuildRouteIfStalled(bank.node,frame.now)){
           setBotStatus(`${gatherSkillLabel()} • navigation recovery limit reached near ${wp.name||'route node'} • retrying route`);
           return true;
         }
 
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,14);
-          lastAction=Date.now();
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent){
           setBotStatus(`${gatherSkillLabel()} • ${bank.label} bank • ${wp.name||'route'} (${idx+1}/${route.length})`);
         }
         return true;
@@ -2125,10 +2124,9 @@ ${firstBanker}`;
         setBotStatus(`${gatherSkillLabel()} • blocked bank approach skipped at ${bank.label}`);
         return true;
       }
-      if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-        const target=bankArrivalTarget(bank);
-        shortStepToward(target,14);
-        lastAction=Date.now();
+      const target=bankArrivalTarget(bank);
+      const movement=runNavigationStep(target,14,5,frame);
+      if(movement.sent){
         setBotStatus(`${gatherSkillLabel()} • locating ${bank.label} banker`);
       }
       return true;
@@ -2146,8 +2144,7 @@ ${firstBanker}`;
       return !!goal&&(Number(goal.x)!==Number(target?.x)||Number(goal.y)!==Number(target?.y));
     }
 
-    function shortStepToward(target,maxStep=14,arrivalDistance=5){
-      const frame=currentDecisionFrame;
+    function shortStepToward(target,maxStep=14,arrivalDistance=5,frame=currentDecisionFrame){
       const pp=frame?.tile||globalPlayerTile();
       const pendingWalk=actionContracts.get('navigation-walk');
       // A route may advance, rebuild, or rotate its recovery approach while the
@@ -2185,6 +2182,20 @@ ${firstBanker}`;
       return false;
     }
 
+    function runNavigationStep(target,maxStep=14,arrivalDistance=5,frame=currentDecisionFrame){
+      const previous=actionContracts.get('navigation-walk');
+      const previousAttempts=Number(previous?.attempts||0);
+      const previousSentAt=Number(previous?.sentAt||0);
+      const arrived=shortStepToward(target,maxStep,arrivalDistance,frame);
+      const current=actionContracts.get('navigation-walk');
+      const sent=!!current?.pending&&(
+        current!==previous||
+        Number(current.attempts||0)>previousAttempts||
+        Number(current.sentAt||0)!==previousSentAt
+      );
+      return {arrived,sent,pending:!!current?.pending,attempts:Number(current?.attempts||0)};
+    }
+
     function beginResourceTravel(){
       const name=desiredTreeType();
       const hub=TREE_HUBS[name];
@@ -2199,7 +2210,7 @@ ${firstBanker}`;
       return true;
     }
 
-    function advanceResourceTravel(){
+    function advanceResourceTravel(frame=currentDecisionFrame){
       const type=objective.resourceHub || desiredTreeType();
       const hub=TREE_HUBS[type];
       if(!hub){
@@ -2231,13 +2242,12 @@ ${firstBanker}`;
           objective.routeIndex=idx+1;
           return;
         }
-        if(rebuildRouteIfStalled(hub.node)){
+        if(rebuildRouteIfStalled(hub.node,frame.now)){
           setBotStatus(`Woodcutting ${wcLevel()} • rebuilding route to ${type}`);
           return;
         }
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,14);
-          lastAction=Date.now();
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent){
           setBotStatus(`Woodcutting ${wcLevel()} • travelling for ${type} • ${wp.name||hub.node}`);
         }
         return;
@@ -2255,10 +2265,7 @@ ${firstBanker}`;
       }else if(advanceRegionalSearchIfStalled(search.length)){
         objective.failures=(objective.failures||0)+1;
         setBotStatus(`Woodcutting ${wcLevel()} • blocked search tile skipped near ${type}`);
-      }else if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-        shortStepToward(target,18);
-        lastAction=Date.now();
-      }
+      }else runNavigationStep(target,18,5,frame);
 
       if((objective.failures||0)>search.length*3){
         objective.failures=0;
@@ -2266,7 +2273,7 @@ ${firstBanker}`;
       }
     }
 
-    function advanceReturnRoute(){
+    function advanceReturnRoute(frame=currentDecisionFrame){
       if(!objective.home){
         objective.phase='chop';
         return;
@@ -2297,13 +2304,12 @@ ${firstBanker}`;
           markProgress('return-route-node');
           continue;
         }
-        if(rebuildRouteIfStalled(objective.returnNode)){
+        if(rebuildRouteIfStalled(objective.returnNode,frame.now)){
           setBotStatus(`${gatherSkillLabel()} • rebuilding return route`);
           return;
         }
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,14);
-          lastAction=Date.now();
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent){
           setBotStatus(`${gatherSkillLabel()} • returning • ${wp.name||objective.returnNode}`);
         }
         return;
@@ -2314,9 +2320,8 @@ ${firstBanker}`;
       const step=14;
       const tx=pp.x+Math.max(-step,Math.min(step,dx));
       const ty=pp.y+Math.max(-step,Math.min(step,dy));
-      if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-        shortStepToward({x:tx,y:ty},14);
-        lastAction=Date.now();
+      const movement=runNavigationStep({x:tx,y:ty},14,5,frame);
+      if(movement.sent){
         setBotStatus(`${gatherSkillLabel()} • returning to training area`);
       }
     }
@@ -2931,7 +2936,7 @@ ${firstBanker}`;
       return true;
     }
 
-    function advanceCombatTravel(){
+    function advanceCombatTravel(frame=currentDecisionFrame){
       const type=objective.combatHub||chooseCombatTargetType();
       const hub=COMBAT_HUBS[type];
       if(!hub){setPhase('fight');return;}
@@ -2959,14 +2964,13 @@ ${firstBanker}`;
           markProgress('combat-route-node');
           return;
         }
-        if(rebuildRouteIfStalled(hub.node)){
+        if(rebuildRouteIfStalled(hub.node,frame.now)){
           objective.combatNavRetries=0;
           setBotStatus(`Combat ${playerCombatEstimate()} • rebuilding route to ${type}`);
           return;
         }
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,14);
-          lastAction=Date.now();
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent){
           objective.combatNavRetries=Number(objective.combatNavRetries||0)+1;
           setBotStatus(`Combat ${playerCombatEstimate()} • travelling for ${type} • ${wp.name||hub.node}`);
         }
@@ -2981,10 +2985,7 @@ ${firstBanker}`;
         markProgress('combat-search-tile');
       }else if(advanceRegionalSearchIfStalled(search.length)){
         setBotStatus(`Combat ${playerCombatEstimate()} • blocked search tile skipped near ${type}`);
-      }else if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-        shortStepToward(target,18);
-        lastAction=Date.now();
-      }
+      }else runNavigationStep(target,18,5,frame);
       setBotStatus(`Combat ${playerCombatEstimate()} • searching ${type} area (${si+1}/${search.length})`);
     }
 
@@ -3300,14 +3301,13 @@ ${firstBanker}`;
       while(idx<route.length){
         const wp=route[idx];
         if(nodeDistance(pp,wp)<8){objective.routeIndex=++idx;markProgress('combat-bank-node');continue;}
-        if(rebuildRouteIfStalled(bank.node)){
+        if(rebuildRouteIfStalled(bank.node,frame.now)){
           objective.bankRetries=0;
           setBotStatus(`Combat • rebuilding route to ${bank.label} bank`);
           return;
         }
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){
-          shortStepToward(wp,14);
-          lastAction=Date.now();
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent){
           objective.bankRetries=Number(objective.bankRetries||0)+1;
           setBotStatus(`Combat • ${bank.label} bank • ${wp.name||'route'} (${idx+1}/${route.length})`);
         }
@@ -3317,7 +3317,7 @@ ${firstBanker}`;
         setBotStatus(`Combat • blocked bank approach skipped at ${bank.label}`);
         return;
       }
-      if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(bankArrivalTarget(bank),14);lastAction=Date.now();}
+      runNavigationStep(bankArrivalTarget(bank),14,5,frame);
     }
 
     // ---------- TASK 4: return to the selected combat training region ----------
@@ -3333,7 +3333,7 @@ ${firstBanker}`;
       setPhase('combat-return',`Combat • returning to ${type} training`);
     }
 
-    function advanceCombatReturn(){
+    function advanceCombatReturn(frame=currentDecisionFrame){
       const type=objective.combatHub||chooseCombatTargetType();
       const hub=COMBAT_HUBS[type]||combatHub();
       const live=nearestCombatNpc();
@@ -3345,11 +3345,12 @@ ${firstBanker}`;
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<9){objective.routeIndex=idx+1;markProgress('combat-return-node');return;}
-        if(rebuildRouteIfStalled(hub.node)){
+        if(rebuildRouteIfStalled(hub.node,frame.now)){
           setBotStatus(`Combat • rebuilding return route to ${type}`);
           return;
         }
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,14);lastAction=Date.now();setBotStatus(`Combat • returning • ${wp.name||hub.node}`);}
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent)setBotStatus(`Combat • returning • ${wp.name||hub.node}`);
         return;
       }
       // Once inside the hub, reuse the regional live-NPC search logic.
@@ -3369,7 +3370,7 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='combat-travel'){
-        advanceCombatTravel();
+        advanceCombatTravel(frame);
         return;
       }
 
@@ -3378,7 +3379,7 @@ ${firstBanker}`;
         return;
       }
       if(objective.phase==='combat-return'){
-        advanceCombatReturn();
+        advanceCombatReturn(frame);
         return;
       }
 
@@ -3856,18 +3857,19 @@ ${firstBanker}`;
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<10){objective.routeIndex=idx+1;return;}
-        if(rebuildRouteIfStalled(hub.node)){
+        if(rebuildRouteIfStalled(hub.node,frame.now)){
           setBotStatus(`Mining ${lvl} • rebuilding route to ${hub.label}`);
           return;
         }
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(wp,14);lastAction=Date.now();setBotStatus(`Mining ${lvl} • travelling to ${hub.label} • ${wp.name}`);}
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent)setBotStatus(`Mining ${lvl} • travelling to ${hub.label} • ${wp.name}`);
         return;
       }
       const search=hub.search,si=Number(objective.searchIndex||0)%search.length,off=search[si];
       const target={x:hub.centre.x+off[0],y:hub.centre.y+off[1]};
       if(nodeDistance(pp,target)<7)objective.searchIndex=si+1;
       else if(advanceRegionalSearchIfStalled(search.length))setBotStatus(`Mining ${lvl} • blocked search tile skipped near ${hub.label}`);
-      else if(Date.now()-lastAction>ACTION_INTERVALS.walk){shortStepToward(target,16);lastAction=Date.now();}
+      else runNavigationStep(target,16,5,frame);
       setBotStatus(`Mining ${lvl} • searching ${hub.label} for ${desiredOreDef().name}`);
     }
 
@@ -3939,11 +3941,12 @@ ${firstBanker}`;
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
         if(nodeDistance(pp,wp)<10){objective.routeIndex=idx+1;markProgress('firemaking-route-node');return;}
-        if(rebuildRouteIfStalled('lumbridge')){
+        if(rebuildRouteIfStalled('lumbridge',frame.now)){
           setBotStatus(`Firemaking ${level} • rebuilding route to normal trees`);
           return;
         }
-        if(now-lastAction>=ACTION_INTERVALS.walk){shortStepToward(wp,14);lastAction=now;setBotStatus(`Firemaking ${level} • travelling to normal trees • ${wp.name||'Lumbridge route'}`);}
+        const movement=runNavigationStep(wp,14,5,frame);
+        if(movement.sent)setBotStatus(`Firemaking ${level} • travelling to normal trees • ${wp.name||'Lumbridge route'}`);
         return;
       }
 
@@ -3951,7 +3954,7 @@ ${firstBanker}`;
       const si=Number(objective.searchIndex||0)%offsets.length,off=offsets[si],target={x:122+off[0],y:657+off[1]};
       if(nodeDistance(pp,target)<7){objective.searchIndex=si+1;markProgress('firemaking-tree-search');}
       else if(advanceRegionalSearchIfStalled(offsets.length))setBotStatus(`Firemaking ${level} • blocked search tile skipped near Lumbridge`);
-      else if(now-lastAction>=ACTION_INTERVALS.walk){shortStepToward(target,16);lastAction=now;}
+      else runNavigationStep(target,16,5,frame);
       setBotStatus(`Firemaking ${level} • searching Lumbridge for regular trees (${si+1}/${offsets.length})`);
     }
 
@@ -4057,16 +4060,13 @@ ${firstBanker}`;
           objective.phase='fm-drop';objective.phaseStarted=now;objective.moveTarget=null;lastAction=0;markProgress('fire-line-step');
           return;
         }
-        if(now-lastAction<ACTION_INTERVALS.walk)return;
         const offsets=[[2,0],[0,2],[-2,0],[0,-2],[2,2],[-2,2],[2,-2],[-2,-2]];
         if(!objective.moveTarget||now-Number(objective.lastMoveAttempt||0)>6000){
           const idx=Number(objective.moveIndex||0)%offsets.length,off=offsets[idx];
           objective.moveIndex=idx+1;objective.moveTarget={x:from.x+off[0],y:from.y+off[1]};
         }
-        const previousSentAt=Number(actionContracts.get('navigation-walk')?.sentAt||0);
-        shortStepToward(objective.moveTarget,2,0);
-        const sentAt=Number(actionContracts.get('navigation-walk')?.sentAt||0);
-        if(sentAt&&sentAt!==previousSentAt){
+        const movement=runNavigationStep(objective.moveTarget,2,0,frame);
+        if(movement.sent){
           objective.lastMoveAttempt=now;objective.moveAttempts=Number(objective.moveAttempts||0)+1;
           setBotStatus(`Firemaking ${level} • stepping away from fire ${sessionStats.fires}`);
         }
@@ -4091,7 +4091,7 @@ ${firstBanker}`;
         return;
       }
       if(objective.phase==='resource-travel'){
-        advanceResourceTravel();
+        advanceResourceTravel(frame);
         return;
       }
 
@@ -4101,7 +4101,7 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='return'){
-        advanceReturnRoute();
+        advanceReturnRoute(frame);
         return;
       }
 
@@ -4138,8 +4138,7 @@ ${firstBanker}`;
         const h=objective.home||globalPlayerTile();
         const offsets=[[8,0],[0,8],[-8,0],[0,-8],[10,10],[-10,10]];
         const off=offsets[(objective.stallRecoveries-1)%offsets.length];
-        shortStepToward({x:h.x+off[0],y:h.y+off[1]},12);
-        lastAction=Date.now();
+        runNavigationStep({x:h.x+off[0],y:h.y+off[1]},12,5,frame);
         return;
       }
 

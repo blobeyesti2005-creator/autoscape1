@@ -834,3 +834,46 @@ deleting history, or changing GitHub Pages.
   and release configuration remain out of scope.
 - Package and app-shell cache metadata advanced to `2.12.24` for the eventual
   reviewed release.
+
+### Offline runtime bootstrap
+
+- `npm test` (60 regression groups) and `npm run test:browser` (9 focused UI
+  smoke groups)
+- The preservation client and server runtime are now copied into AutoScape's
+  dedicated runtime cache after the first successful online load. A later
+  offline restart can load those exact validated responses without depending
+  on a second network visit.
+- Runtime seeding stays origin-scoped and leaves the existing application-shell
+  cache migration intact. Failed network or cache writes fall back safely to
+  the existing startup error rather than replacing saved player data.
+- Browser smoke coverage exercises an online bootstrap followed by a completely
+  offline reload and confirms the game reaches the preserved runtime path.
+- No account/save fields, persistence keys, inventory/bank formats, settings,
+  queued-job schemas, or learner/live-action boundaries changed. Main, Pages,
+  and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.25` for the eventual
+  reviewed release.
+
+### Per-tick confirmed navigation polling
+
+- `npm test` (61 regression groups) and `npm run test:browser` (9 focused UI
+  smoke groups)
+- Bank, gathering, combat, mining, and firemaking routes now poll their existing
+  confirmed navigation action on every controller tick. A two-second outer
+  cooldown no longer delays success detection or makes the character appear to
+  freeze between short steps.
+- A shared navigation result reports whether a packet was actually sent,
+  remains pending, or arrived. Route retry counters and status updates advance
+  only for real movement sends rather than for waiting or confirmation polls.
+- Route rebuild timestamps and every routed controller now reuse the decision
+  frame's clock and position snapshot. Fire-line stepping and woodcutting stall
+  recovery use the same contract path instead of maintaining independent send
+  bookkeeping.
+- Executable regression coverage proves that per-tick polling sends once,
+  waits without duplicate packets, confirms visible forward progress, and does
+  not manufacture an extra send or retry.
+- No account/save fields, persistence keys, inventory/bank formats, settings,
+  queued-job schemas, or learner/live-action boundaries changed. Main, Pages,
+  and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.26` for the eventual
+  reviewed release.

@@ -835,7 +835,8 @@ test('navigation actions confirm forward progress and escalate bounded timeouts'
      ${functionSource(html,'walkProgressConfirmed')}
      ${functionSource(html,'navigationGoalChanged')}
      ${functionSource(html,'shortStepToward')}
-     return {shortStepToward,contracts:actionContracts,walks,setFrame:value=>{currentDecisionFrame=value;}};`
+     ${functionSource(html,'runNavigationStep')}
+     return {shortStepToward,runNavigationStep,contracts:actionContracts,walks,setFrame:value=>{currentDecisionFrame=value;}};`
   )((...entry)=>traces.push(entry));
   navigationHarness.shortStepToward({x:30,y:0});
   assert.deepEqual(navigationHarness.contracts.get('navigation-walk').before.goal,{x:30,y:0});
@@ -845,15 +846,53 @@ test('navigation actions confirm forward progress and escalate bounded timeouts'
   assert.deepEqual(navigationHarness.walks,[{x:14,y:0},{x:0,y:14}]);
   assert.ok(traces.some(entry=>entry[0]==='navigation-walk'&&entry[1]==='cancelled'&&entry[2]==='destination changed'));
 
+  navigationHarness.setFrame({now:3000,tile:{x:0,y:0}});
+  let movement=navigationHarness.runNavigationStep({x:30,y:0});
+  assert.equal(movement.sent,true,'a fresh navigation packet must be reported as sent');
+  assert.equal(navigationHarness.walks.length,3);
+  navigationHarness.setFrame({now:3500,tile:{x:0,y:0}});
+  movement=navigationHarness.runNavigationStep({x:30,y:0});
+  assert.equal(movement.sent,false,'polling a pending action must not invent another send');
+  assert.equal(movement.pending,true);
+  assert.equal(navigationHarness.walks.length,3);
+  navigationHarness.setFrame({now:3600,tile:{x:2,y:0}});
+  movement=navigationHarness.runNavigationStep({x:30,y:0});
+  assert.equal(movement.sent,false,'confirmation must not be counted as a send');
+  assert.equal(movement.pending,false);
+  assert.equal(navigationHarness.walks.length,3);
+  assert.ok(traces.some(entry=>entry[0]==='navigation-walk'&&entry[1]==='confirmed'));
+
   for(const name of [
     'advanceBankRoute','advanceResourceTravel','advanceReturnRoute',
     'advanceCombatTravel','advanceCombatBanking','advanceCombatReturn',
     'miningTick','firemakingGatherTick'
   ]){
     const source=functionSource(html,name);
-    assert.match(source,/shortStepToward\(/,`${name} must use confirmed navigation actions`);
+    assert.match(source,/runNavigationStep\(/,`${name} must poll confirmed navigation actions every tick`);
+    assert.doesNotMatch(source,/Date\.now\(\)-lastAction>ACTION_INTERVALS\.walk/,`${name} must not hide navigation confirmation behind an outer cooldown`);
     assert.match(source,/decisionTile\(\)/,`${name} must reuse the tick's position snapshot`);
   }
+  assert.match(functionSource(html,'woodcuttingTick'),/advanceResourceTravel\(frame\)/);
+  assert.match(functionSource(html,'woodcuttingTick'),/advanceReturnRoute\(frame\)/);
+  assert.match(functionSource(html,'combatTick'),/advanceCombatTravel\(frame\)/);
+  assert.match(functionSource(html,'combatTick'),/advanceCombatReturn\(frame\)/);
+});
+
+test('routed controllers poll navigation every tick without fake send accounting', () => {
+  for(const name of [
+    'advanceBankRoute','advanceResourceTravel','advanceReturnRoute',
+    'advanceCombatTravel','advanceCombatBanking','advanceCombatReturn',
+    'miningTick','firemakingGatherTick'
+  ]){
+    const source=functionSource(html,name);
+    assert.match(source,/runNavigationStep\(/,`${name} must use the shared navigation result`);
+    assert.doesNotMatch(source,/Date\.now\(\)-lastAction>ACTION_INTERVALS\.walk/,`${name} must not gate confirmation polling behind a wall-clock cooldown`);
+  }
+  const helper=functionSource(html,'runNavigationStep');
+  assert.match(helper,/current!==previous/);
+  assert.match(helper,/current\.attempts/);
+  assert.match(helper,/current\.sentAt/);
+  assert.match(functionSource(html,'rebuildRouteIfStalled'),/lastAction=Number\(decisionNow\)/);
 });
 
 test('gathering actions require inventory gains and quarantine failed resources', () => {
@@ -946,7 +985,7 @@ test('firemaking drop and light actions require observable outcomes', () => {
   assert.match(tickSource,/runFiremakingDropContract\(frame,tile\)/);
   assert.match(tickSource,/runFiremakingLightContract\(frame,log\)/);
   assert.match(tickSource,/const p=frame\.tile/);
-  assert.match(tickSource,/shortStepToward\(objective\.moveTarget,2,0\)/);
+  assert.match(tickSource,/runNavigationStep\(objective\.moveTarget,2,0,frame\)/);
   assert.doesNotMatch(tickSource,/\|\|\(!log/,'log disappearance must not count as a lit fire');
   assert.doesNotMatch(tickSource,/walkGlobal\(objective\.moveTarget/);
   assert.match(functionSource(html,'buildDecisionFrame'),/firemakingXp:/);
