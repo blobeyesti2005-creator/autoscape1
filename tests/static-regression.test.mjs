@@ -481,7 +481,7 @@ test('saved command chains round-trip progress, style, and banking intent', () =
   assert.match(functionSource(html, 'saveObjective'), /serializeObjectiveState\(\)/);
 });
 
-test('explicit banking deposits selected unequipped items and advances chains', () => {
+test('bank deposits require confirmed inventory removal and preserve equipped items', () => {
   const packets=[];
   let activePacket=null;
   const mc={
@@ -497,24 +497,107 @@ test('explicit banking deposits selected unequipped items and advances chains', 
     inventoryEquipped:[1,0,0,0]
   };
   const sessionStats={actions:0,deposits:0};
-  const depositItemsIfBankOpen = new Function(
-    'mc','inventorySlots','sessionStats','markProgress','renderMetrics','setTimeout',
-    `${functionSource(html,'depositItemsIfBankOpen')}\nreturn depositItemsIfBankOpen;`
-  )(mc,()=>4,sessionStats,()=>{},()=>{},callback=>callback());
+  let progress=0;
+  const harness = new Function(
+    'mc','inventorySlots','sessionStats','markProgress','renderMetrics','traceDecision',
+    `const actionContracts=new Map();
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'bankDepositPlan')}
+     ${functionSource(html,'sendBankDepositPlan')}
+     ${functionSource(html,'runBankDepositContract')}
+     ${functionSource(html,'depositItemsIfBankOpen')}
+     return {depositItemsIfBankOpen,contracts:actionContracts};`
+  )(mc,()=>4,sessionStats,()=>{progress+=1;},()=>{},()=>{});
+  const frame=(now,counts)=>({now,inventory:{counts:new Map(counts)}});
 
-  assert.equal(depositItemsIfBankOpen(null),true);
+  let result=harness.depositItemsIfBankOpen(frame(1000,[[87,1],[14,3],[10,100],[132,2]]),null);
+  assert.equal(result.pending,true);
   const deposits=packets.filter(packet=>packet.id===23);
   assert.deepEqual(deposits.map(packet=>packet.values.slice(0,2)),[[14,3],[10,100],[132,2]]);
   assert.equal(deposits.some(packet=>packet.values[0]===87),false,'equipped gear must remain carried');
+  assert.equal(sessionStats.deposits,0,'packet sends must not count as confirmed deposits');
+  assert.equal(progress,0);
+  result=harness.depositItemsIfBankOpen(frame(2000,[[87,1],[14,3],[10,100],[132,2]]),null);
+  assert.equal(result.pending,true);
+  assert.equal(packets.filter(packet=>packet.id===23).length,3,'unchanged inventory must wait without resending');
+  result=harness.depositItemsIfBankOpen(frame(2100,[[87,1]]),null);
+  assert.equal(result.reason,'deposited');
+  assert.equal(result.stacks,3);
+  assert.equal(result.amount,105);
   assert.equal(sessionStats.deposits,1);
+  assert.equal(progress,1);
+  assert.equal(harness.contracts.size,0);
+
+  result=harness.depositItemsIfBankOpen(frame(5000,[[14,3],[10,100],[132,2]]),null);
+  assert.equal(result.pending,true);
+  assert.equal(harness.depositItemsIfBankOpen(frame(9001,[[14,3],[10,100],[132,2]]),null).pending,true);
+  assert.equal(harness.depositItemsIfBankOpen(frame(13002,[[14,3],[10,100],[132,2]]),null).pending,true);
+  result=harness.depositItemsIfBankOpen(frame(17003,[[14,3],[10,100],[132,2]]),null);
+  assert.equal(result.failed,true);
+  assert.equal(sessionStats.deposits,1,'failed deposits must not increment confirmed metrics');
+  assert.equal(progress,1);
+  assert.equal(harness.contracts.size,0);
 
   const advanceSource=functionSource(html,'advanceBankRoute');
   assert.match(advanceSource,/objective\.type==='banking'/);
-  assert.match(advanceSource,/finishObjective\(deposited/);
+  assert.match(advanceSource,/if\(result\.pending\)/);
+  assert.match(advanceSource,/if\(result\.failed\)/);
+  assert.match(advanceSource,/finishObjective\(result\.reason==='deposited'/);
   assert.match(html,/id:'bank-route'[\s\S]*objective\?\.type==='banking'/);
   assert.match(html,/savedJob\.type==='banking'/);
   assert.match(html,/GATHERED_BANK_IDS/);
   assert.match(html,/LOOT_BANK_IDS/);
+});
+
+test('combat loot stays tracked until its bank deposit is confirmed', () => {
+  const packets=[];
+  let activePacket=null;
+  const mc={
+    showDialogBank:true,
+    packetStream:{
+      newPacket(id){activePacket={id,values:[]};packets.push(activePacket);},
+      putShort(value){activePacket.values.push(value);},
+      putInt(value){activePacket.values.push(value);},
+      sendPacket(){}
+    },
+    inventoryItemId:[87,10,132],
+    inventoryItemStackCount:[1,100,2],
+    inventoryEquipped:[1,0,0]
+  };
+  const objective={collectedLootIds:new Set([87,10,132])};
+  const sessionStats={actions:0,deposits:0};
+  const harness=new Function(
+    'mc','inventorySlots','sessionStats','markProgress','renderMetrics','traceDecision',
+    'objective','COMBAT_PRESERVE_IDS','FOOD_HEALS',
+    `const actionContracts=new Map();
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'bankDepositPlan')}
+     ${functionSource(html,'sendBankDepositPlan')}
+     ${functionSource(html,'runBankDepositContract')}
+     ${functionSource(html,'depositCombatLootIfBankOpen')}
+     return {depositCombatLootIfBankOpen,contracts:actionContracts};`
+  )(
+    mc,()=>3,sessionStats,()=>{},()=>{},()=>{},objective,new Set([87]),{132:3}
+  );
+  const frame=(now,lootCount)=>({now,inventory:{counts:new Map([[87,1],[10,lootCount],[132,2]])}});
+
+  let result=harness.depositCombatLootIfBankOpen(frame(1000,100));
+  assert.equal(result.pending,true);
+  assert.deepEqual(packets.filter(packet=>packet.id===23).map(packet=>packet.values.slice(0,2)),[[10,100]]);
+  assert.equal(objective.collectedLootIds.has(10),true,'sent packets must not clear tracked loot');
+  assert.equal(sessionStats.deposits,0);
+  result=harness.depositCombatLootIfBankOpen(frame(1500,0));
+  assert.equal(result.reason,'deposited');
+  assert.equal(objective.collectedLootIds.has(10),false);
+  assert.equal(objective.collectedLootIds.has(87),true,'preserved equipment IDs remain tracked');
+  assert.equal(objective.collectedLootIds.has(132),true,'food IDs remain tracked');
+  assert.equal(sessionStats.deposits,1);
+  assert.equal(harness.contracts.size,0);
+
+  const source=functionSource(html,'advanceCombatBanking');
+  assert.match(source,/if\(deposit\.pending\)/);
+  assert.match(source,/if\(deposit\.failed\)/);
+  assert.match(source,/combatLootDeposited=true/);
 });
 
 test('prayer commands bury inventory bones and count only confirmed removals', () => {

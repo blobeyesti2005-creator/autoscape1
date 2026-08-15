@@ -1307,26 +1307,61 @@ ${firstBanker}`;
       return true;
     }
 
-    function depositItemsIfBankOpen(itemIds){
-      if(!mc.showDialogBank||!mc.packetStream)return false;
+    function bankDepositPlan(itemIds){
       const ids=itemIds===null?null:(itemIds instanceof Set?itemIds:new Set(itemIds||[])),counts=new Map(),used=inventorySlots();
       for(let i=0;i<used;i++){
         if(Number(mc.inventoryEquipped?.[i])===1)continue;
         const id=Number(mc.inventoryItemId?.[i]);
         if(!ids||ids.has(id))counts.set(id,(counts.get(id)||0)+Number(mc.inventoryItemStackCount?.[i]||1));
       }
-      for(const [id,amount] of counts){
+      return Array.from(counts,([id,amount])=>({id,amount}));
+    }
+    function sendBankDepositPlan(entries){
+      if(!mc.showDialogBank||!mc.packetStream||!entries?.length)return false;
+      for(const {id,amount} of entries){
         mc.packetStream.newPacket(23);mc.packetStream.putShort(id);mc.packetStream.putShort(Math.min(65535,amount));
         mc.packetStream.putInt(0x87654321|0);mc.packetStream.sendPacket();sessionStats.actions++;
       }
-      if(counts.size){sessionStats.deposits++;markProgress('deposit');renderMetrics();}
-      setTimeout(()=>{try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}},250);
-      return counts.size>0;
+      renderMetrics();
+      return true;
     }
-    function depositAllLogsIfBankOpen(){return depositItemsIfBankOpen(LOG_IDS);}
-    function depositGatheredItemsIfBankOpen(){
-      if(objective?.type==='banking')return depositItemsIfBankOpen(bankingDepositFilter(objective.resource));
-      return depositItemsIfBankOpen(objective?.type==='mining'?ORE_IDS:LOG_IDS);
+    function runBankDepositContract(key,frame,itemIds){
+      if(!mc.showDialogBank)return {ok:false,reason:'bank-not-open'};
+      const pending=actionContracts.has(key),plan=bankDepositPlan(itemIds);
+      if(!plan.length&&!pending)return {ok:true,reason:'no-items',stacks:0,amount:0};
+      const result=runActionContract(key,frame,{
+        timeout:4000,
+        maxAttempts:3,
+        confirmedLabel:'items removed from inventory',
+        ready:()=>mc.showDialogBank&&plan.length>0,
+        capture:()=>({entries:plan.map(entry=>({
+          ...entry,
+          before:Number(frame.inventory.counts.get(entry.id)||0)
+        }))}),
+        confirm:(next,state)=>(state.before?.entries||[]).every(entry=>
+          Number(next.inventory.counts.get(entry.id)||0)<=Math.max(0,entry.before-entry.amount)
+        ),
+        execute:()=>sendBankDepositPlan(plan)
+      });
+      if(result.status==='confirmed'){
+        const entries=result.state.before?.entries||[];
+        sessionStats.deposits++;markProgress(`${key}-confirmed`);renderMetrics();
+        return {ok:true,reason:'deposited',stacks:entries.length,amount:entries.reduce((sum,item)=>sum+item.amount,0),entries};
+      }
+      if(result.status==='failed')return {ok:false,reason:'deposit-failed',failed:true};
+      return {ok:false,reason:'deposit-pending',pending:true,status:result.status,stacks:plan.length,amount:plan.reduce((sum,item)=>sum+item.amount,0)};
+    }
+    function closeBankDialog(){
+      if(!mc.showDialogBank||!mc.packetStream)return false;
+      try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;return true;}catch(e){return false;}
+    }
+    function depositItemsIfBankOpen(frame,itemIds,key='bank-deposit'){
+      return runBankDepositContract(key,frame,itemIds);
+    }
+    function depositAllLogsIfBankOpen(frame){return depositItemsIfBankOpen(frame,LOG_IDS);}
+    function depositGatheredItemsIfBankOpen(frame){
+      if(objective?.type==='banking')return depositItemsIfBankOpen(frame,bankingDepositFilter(objective.resource));
+      return depositItemsIfBankOpen(frame,objective?.type==='mining'?ORE_IDS:LOG_IDS);
     }
 
     function desiredOreDef(){
@@ -1838,14 +1873,24 @@ ${firstBanker}`;
       if(mc.showDialogBank){
         runBankOpenContract(frame,false);
         cancelActionContract(bankContractKey(false,'talk'),'bank interface open',frame.now);
+        const result=depositGatheredItemsIfBankOpen(frame);
+        if(result.pending){
+          if(result.status==='sent')setBotStatus(`${gatherSkillLabel()} • depositing ${result.stacks||0} item stack${result.stacks===1?'':'s'}`);
+          return false;
+        }
+        if(result.failed){
+          stop(`${gatherSkillLabel()} stopped: three bank-deposit attempts produced no confirmed inventory change.`);
+          return false;
+        }
         if(objective.type==='banking'){
           const mode=objective.resource||'carried';
-          const deposited=depositGatheredItemsIfBankOpen();
           sessionStats.bankTrips++;
-          finishObjective(deposited?`Banking complete • deposited ${mode} items at ${bank.label}.`:`Banking complete • no unequipped ${mode} items to deposit at ${bank.label}.`);
+          closeBankDialog();
+          finishObjective(result.reason==='deposited'?`Banking complete • deposited ${mode} items at ${bank.label}.`:`Banking complete • no unequipped ${mode} items to deposit at ${bank.label}.`);
           return true;
         }
-        if(depositGatheredItemsIfBankOpen()){
+        if(result.reason==='deposited'){
+          closeBankDialog();
           objective.phase='return';
           objective.returnNode=objective.home?nearestNavNode(objective.home):null;
           objective.navRoute=objective.returnNode?makeRouteTo(objective.returnNode):[];
@@ -1854,6 +1899,9 @@ ${firstBanker}`;
           lastAction=Date.now();
           setBotStatus(`${gatherSkillLabel()} • depositing resources`);
           return true;
+        }
+        if(result.reason==='no-items'){
+          stop(`${gatherSkillLabel()} stopped: the bank trip found no matching unequipped resources to deposit.`);
         }
         return false;
       }
@@ -2561,29 +2609,14 @@ ${firstBanker}`;
       return true;
     }
 
-    function depositCombatLootIfBankOpen(){
-      if(!mc.showDialogBank||!mc.packetStream)return 0;
+    function depositCombatLootIfBankOpen(frame){
       const tracked=objective?.collectedLootIds instanceof Set?objective.collectedLootIds:new Set();
-      const counts=new Map(),used=inventorySlots();
-      for(let i=0;i<used;i++){
-        const id=Number(mc.inventoryItemId?.[i]);
-        if(!tracked.has(id)||COMBAT_PRESERVE_IDS.has(id)||FOOD_HEALS[id]||Number(mc.inventoryEquipped?.[i])===1)continue;
-        counts.set(id,(counts.get(id)||0)+Number(mc.inventoryItemStackCount?.[i]||1));
+      const allowed=new Set(Array.from(tracked,id=>Number(id)).filter(id=>!COMBAT_PRESERVE_IDS.has(id)&&!FOOD_HEALS[id]));
+      const result=runBankDepositContract('combat-loot-deposit',frame,allowed);
+      if(result.reason==='deposited'){
+        for(const entry of result.entries||[])tracked.delete(entry.id);
       }
-      for(const [id,amount] of counts){
-        mc.packetStream.newPacket(23);
-        mc.packetStream.putShort(id);
-        mc.packetStream.putShort(Math.min(65535,amount));
-        mc.packetStream.putInt(0x87654321|0);
-        mc.packetStream.sendPacket();
-        sessionStats.actions++;
-      }
-      if(counts.size){
-        sessionStats.deposits++;
-        for(const id of counts.keys())tracked.delete(id);
-        markProgress('combat-loot-deposit');renderMetrics();
-      }
-      return counts.size;
+      return result;
     }
 
     const SAFE_COMBAT_TARGETS={
@@ -2941,15 +2974,20 @@ ${firstBanker}`;
         runBankOpenContract(frame,true);
         cancelActionContract(bankContractKey(true,'talk'),'bank interface open',frame.now);
         if(!objective.combatLootDeposited){
-          const batches=depositCombatLootIfBankOpen();
-          objective.combatLootDeposited=true;
-          objective.combatLootDepositAt=Date.now();
-          if(batches){
-            setBotStatus(`Combat • banked ${batches} loot stack${batches===1?'':'s'} • preparing food`);
+          const deposit=depositCombatLootIfBankOpen(frame);
+          if(deposit.pending){
+            if(deposit.status==='sent')setBotStatus(`Combat • depositing ${deposit.stacks||0} loot stack${deposit.stacks===1?'':'s'}`);
             return;
           }
+          if(deposit.failed){
+            stop('Combat stopped: three loot-deposit attempts produced no confirmed inventory change.');
+            return;
+          }
+          objective.combatLootDeposited=true;
+          objective.combatLootDepositAt=frame.now;
+          if(deposit.reason==='deposited')setBotStatus(`Combat • banked ${deposit.stacks} loot stack${deposit.stacks===1?'':'s'} • preparing food`);
         }
-        if(Date.now()-Number(objective.combatLootDepositAt||0)<700)return;
+        if(frame.now-Number(objective.combatLootDepositAt||0)<700)return;
         if(objective.combatBankFinishing)return;
         const result=restockCombatFood(frame,10);
         if(result.pending){
@@ -2963,11 +3001,11 @@ ${firstBanker}`;
         if(result.reason==='no-bank-food'){
           if(objective.combatBankReason==='inventory-full'&&currentHits()>=Math.max(5,Math.floor(maxHits()*.70))){
             objective.combatBankFinishing=true;
-            try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
+            closeBankDialog();
             beginCombatReturn();
             return;
           }
-          try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
+          closeBankDialog();
           stop('Combat stopped: your bank has no edible food AutoScape can use yet.');
           return;
         }
@@ -2975,7 +3013,7 @@ ${firstBanker}`;
           objective.combatBankFinishing=true;
           setBotStatus(result.reason==='no-need'?'Combat • loot banked • food supply ready':`Combat • withdrew ${result.amount||0} × item ${result.food?.id||''} for food`);
           setTimeout(()=>{
-            try{mc.packetStream.newPacket(212);mc.packetStream.sendPacket();mc.showDialogBank=false;}catch(e){}
+            closeBankDialog();
             beginCombatReturn();
           },700);
         }

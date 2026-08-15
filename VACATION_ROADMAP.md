@@ -490,3 +490,28 @@ deleting history, or changing GitHub Pages.
   and enforce cleanup after retry exhaustion.
 - Package and app-shell cache metadata advanced to `2.12.13` for the eventual
   reviewed release.
+
+### Confirmed bank deposits
+
+- `npm test` (36 regression groups)
+- Gathering, mining, explicit banking commands, and combat loot banking now
+  share one deposit action contract. Deposit packets no longer count as
+  successful banking or advance a job by themselves.
+- A deposit confirms only when the next shared inventory snapshot shows every
+  requested unequipped quantity removed. Equipped copies of the same item ID
+  remain carried and are included in the expected post-deposit floor.
+- Unchanged deposits wait four seconds before retrying and stop safely after
+  three attempts. The bank remains open while confirmation is pending, avoiding
+  the previous race between the 250 ms close timer and server inventory updates.
+- Combat loot IDs remain protected for banking until their removal is confirmed;
+  food and preserved equipment are still excluded from automatic deposits.
+- Explicit banking commands finish only after confirmation or a verified empty
+  deposit plan. Gathering jobs return to their resource area only after the
+  matching resources leave inventory.
+- Executable tests cover equipped-item filtering, multi-stack packet contents,
+  waiting without packet spam, confirmed removal, timeout failure, metric
+  integrity, and combat loot tracking.
+- No persistence keys, account/save fields, inventory formats, bank formats, or
+  queued-job schemas changed.
+- Package and app-shell cache metadata advanced to `2.12.14` for the eventual
+  reviewed release.
