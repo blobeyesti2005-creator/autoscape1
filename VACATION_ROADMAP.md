@@ -544,3 +544,32 @@ deleting history, or changing GitHub Pages.
   queued-job schema changed.
 - Package and app-shell cache metadata advanced to `2.12.15` for the eventual
   reviewed release.
+
+### Shared death and respawn recovery
+
+- `npm test` (39 regression groups)
+- A high-priority death-recovery task node now preempts banking, navigation,
+  gathering, processing, Prayer, and combat whenever the native death screen,
+  player-alive flag, or known hit-points state confirms defeat.
+- Entering recovery clears pending action contracts, combat targets, navigation
+  routes, and retry positions immediately. A death is counted once even while
+  several consecutive ticks report the death screen.
+- Unknown hit points during login are not treated as death. After the character
+  becomes alive, two consecutive healthy decision frames are required before
+  any job can send another gameplay action.
+- Safe-banking combat resumes through a fresh nearest-bank trip for supplies.
+  “Never bank” / “fight to the death” still stops immediately at defeat as the
+  command promises.
+- Mining, Woodcutting, Firemaking, explicit banking, and Prayer resume through
+  fresh phases and routes rather than retaining stale pre-death destinations or
+  interactions. Missing tools or supplies are then handled by their existing
+  safe stop conditions.
+- Recovery waits at most 60 seconds for respawn and otherwise stops with a clear
+  explanation. Death and recovery counters remain runtime diagnostics only.
+- Executable tests cover native death signals, false-death avoidance during
+  login, action/route cleanup, single death accounting, stable-respawn gating,
+  mining route reconstruction, and fight-to-the-death termination.
+- No account/save fields, persistence keys, inventory/bank formats, settings, or
+  queued-job schemas changed.
+- Package and app-shell cache metadata advanced to `2.12.16` for the eventual
+  reviewed release.

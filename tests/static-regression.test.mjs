@@ -687,6 +687,77 @@ test('task nodes prioritize valid work and action contracts require confirmation
   assert.ok(contractTrace.some(entry=>entry[1]==='failed'));
 });
 
+test('death recovery preempts jobs, clears stale actions, and confirms respawn', () => {
+  const characterDead=mc=>new Function(
+    'mc',`${functionSource(html,'characterDead')}\nreturn characterDead;`
+  )(mc);
+  assert.equal(characterDead({playerStatCurrent:[1,1,1,5],deathScreenTimeout:0,world:{playerAlive:true}})(true,5,10),false);
+  assert.equal(characterDead({playerStatCurrent:[1,1,1,0],deathScreenTimeout:0,world:{playerAlive:true}})(true,0,10),true);
+  assert.equal(characterDead({playerStatCurrent:null,deathScreenTimeout:0,world:{playerAlive:true}})(true,0,10),false,'unknown login HP must not create a false death');
+  assert.equal(characterDead({playerStatCurrent:[1,1,1,5],deathScreenTimeout:4,world:{playerAlive:true}})(true,5,10),true);
+  assert.equal(characterDead({playerStatCurrent:[1,1,1,5],deathScreenTimeout:0,world:{playerAlive:false}})(true,5,10),true);
+
+  const makeHarness=new Function(
+    'initialObjective',
+    `let objective=initialObjective,lastAction=99,status='',stopped='',saved=0;
+     const calls={bank:'',travel:0,resource:0,progress:[]};
+     const actionContracts=new Map([['combat-attack',{pending:true}]]);
+     const deathRecovery={active:false,startedAt:0,stableTicks:0,origin:'',deathCount:0};
+     const sessionStats={deaths:0,kills:3};
+     const TREE_HUBS={yew:{}};
+     function clearActionContracts(){actionContracts.clear();}
+     function traceDecision(){}
+     function renderMetrics(){}
+     function setBotStatus(value){status=value;}
+     function combatBankingEnabled(){return (objective?.bankMode||'safe')!=='never';}
+     function beginCombatBanking(reason){calls.bank=reason;objective.phase='combat-bank';return true;}
+     function beginCombatTravel(){calls.travel++;objective.phase='combat-travel';return true;}
+     function desiredTreeType(){return objective?.resource||'normal';}
+     function globalPlayerTile(){return {x:122,y:657};}
+     function beginResourceTravel(){calls.resource++;objective.phase='resource-travel';return true;}
+     function normalLogCount(inventory){return Number(inventory?.logs||0);}
+     function prepareBankRoute(){objective.bankKey='lumbridge';return {key:'lumbridge'};}
+     function markProgress(value){calls.progress.push(value);}
+     function saveObjective(){saved++;}
+     ${functionSource(html,'resetDeathRecovery')}
+     function stop(message){stopped=message;resetDeathRecovery();}
+     ${functionSource(html,'beginDeathRecovery')}
+     ${functionSource(html,'resumeAfterDeath')}
+     ${functionSource(html,'deathRecoveryTick')}
+     return {
+       tick:deathRecoveryTick,recovery:deathRecovery,contracts:actionContracts,stats:sessionStats,calls,
+       get objective(){return objective;},setObjective(value){objective=value;resetDeathRecovery();stopped='';},
+       get status(){return status;},get stopped(){return stopped;},get saved(){return saved;},get lastAction(){return lastAction;}
+     };`
+  );
+  const harness=makeHarness({type:'mining',phase:'mine',resource:'iron',navRoute:[{x:1,y:1}],routeIndex:2});
+  const dead=now=>({now,dead:true,inventory:{logs:0}}),alive=now=>({now,dead:false,inventory:{logs:0}});
+
+  assert.equal(harness.tick(dead(1000)),'waiting');
+  assert.equal(harness.recovery.active,true);
+  assert.equal(harness.contracts.size,0);
+  assert.equal(harness.stats.deaths,1);
+  assert.equal(harness.lastAction,0);
+  assert.deepEqual(harness.objective.navRoute,[]);
+  assert.equal(harness.tick(dead(2000)),'waiting');
+  assert.equal(harness.stats.deaths,1,'one death must be counted once across multiple dead ticks');
+  assert.equal(harness.tick(alive(3000)),'stabilizing');
+  assert.equal(harness.tick(alive(4000)),'resumed');
+  assert.equal(harness.objective.phase,'mining-travel');
+  assert.equal(harness.recovery.active,false);
+  assert.equal(harness.calls.progress.at(-1),'respawn-recovered');
+  assert.equal(harness.saved,1);
+
+  harness.setObjective({type:'combat',phase:'fight',bankMode:'never'});
+  assert.equal(harness.tick(dead(5000)),'stopped');
+  assert.match(harness.stopped,/fought until defeated after 3 kills/);
+  assert.equal(harness.stats.deaths,2);
+
+  assert.match(functionSource(html,'buildDecisionFrame'),/dead:characterDead\(online,hits,max\)/);
+  assert.match(html,/id:'death-recovery'[\s\S]*priority:990[\s\S]*frame\.dead\|\|deathRecovery\.active/);
+  assert.match(functionSource(html,'stop'),/resetDeathRecovery\(\)/);
+});
+
 test('navigation actions confirm forward progress and escalate bounded timeouts', () => {
   const walkProgressConfirmed = new Function(
     'nodeDistance',

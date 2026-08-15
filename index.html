@@ -241,15 +241,17 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const METRICS_RENDER_INTERVAL=2000;
   const SLOW_TICK_MS=50,MAX_PROFILE_NODES=20;
   const botProfile={startedAt:Date.now(),ticks:0,activeTicks:0,idleTicks:0,totalMs:0,maxMs:0,slowTicks:0,errors:0,lastNode:'idle',lastSlowTraceAt:0,byNode:new Map()};
-  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0};
+  const deathRecovery={active:false,startedAt:0,stableTicks:0,origin:'',deathCount:0};
+  const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0,deaths:0};
 
   function fmtDuration(ms){
     const sec=Math.max(0,Math.floor(ms/1000)), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
     return h>0?`${h}h ${m}m ${s}s`:(m>0?`${m}m ${s}s`:`${s}s`);
   }
   function resetTaskStats(){
+    resetDeathRecovery();
     sessionStats.taskStartedAt=Date.now();
-    for(const k of ['actions','attacks','kills','eats','chops','mines','fires','burials','loot','bankTrips','deposits']) sessionStats[k]=0;
+    for(const k of ['actions','attacks','kills','eats','chops','mines','fires','burials','loot','bankTrips','deposits','deaths']) sessionStats[k]=0;
     renderMetrics(true);
   }
   function renderMetrics(force=false){
@@ -270,6 +272,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
     if(objective.type==='combat')parts.push(`${sessionStats.kills} defeated`,`${sessionStats.attacks} attacks`,`${sessionStats.loot} loot attempts`,`${sessionStats.eats} food eaten`,`${metricFoodCount()} food held`,objective.bankMode==='never'?'no banking':`${objective.bankName||'nearest'} bank`);
     if(Number(objective.countGoal)>0)parts.push(`${Math.min(Number(objective.countProgress||0),Number(objective.countGoal))}/${Number(objective.countGoal)} target`);
     if(commandQueue.length)parts.push(`${commandQueue.length} queued`);
+    if(sessionStats.deaths)parts.push(`${sessionStats.deaths} death${sessionStats.deaths===1?'':'s'}`);
     parts.push(`phase ${objective.phase||'idle'}`);
     if(objective.stallRecoveries)parts.push(`${objective.stallRecoveries} recoveries`);
     const text=parts.join(' • ');
@@ -357,6 +360,75 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
     return selected;
   }
   function clearActionContracts(){actionContracts.clear();}
+  function resetDeathRecovery(){
+    deathRecovery.active=false;deathRecovery.startedAt=0;deathRecovery.stableTicks=0;deathRecovery.origin='';
+  }
+  function beginDeathRecovery(frame){
+    if(deathRecovery.active)return false;
+    deathRecovery.active=true;deathRecovery.startedAt=Number(frame.now);deathRecovery.stableTicks=0;
+    deathRecovery.origin=`${objective?.type||'unknown'}:${objective?.phase||'unknown'}`;
+    deathRecovery.deathCount++;sessionStats.deaths++;
+    clearActionContracts();lastAction=0;
+    if(objective){
+      objective.wasInCombat=false;objective.attackSentAt=0;objective.lastTargetTile=null;objective.lastTargetServerIndex=null;
+      objective.navRoute=[];objective.routeIndex=0;objective.searchIndex=0;
+    }
+    traceDecision('death-recovery','detected',deathRecovery.origin,frame.now);
+    renderMetrics(true);
+    return true;
+  }
+  function resumeAfterDeath(frame){
+    if(!objective){resetDeathRecovery();return false;}
+    const type=objective.type;
+    objective.wasInCombat=false;objective.attackSentAt=0;objective.lastTargetTile=null;objective.lastTargetServerIndex=null;
+    objective.navRoute=[];objective.routeIndex=0;objective.searchIndex=0;objective.stallRecoveries=0;
+    resetDeathRecovery();
+    if(type==='combat'){
+      if(combatBankingEnabled())beginCombatBanking('post-death');
+      else beginCombatTravel();
+    }else if(type==='mining'){
+      objective.phase='mining-travel';
+    }else if(type==='woodcutting'){
+      const wanted=desiredTreeType();
+      objective.home=globalPlayerTile();
+      if(wanted!=='normal'&&TREE_HUBS[wanted])beginResourceTravel();
+      else objective.phase='chop';
+    }else if(type==='firemaking'){
+      objective.phase=normalLogCount(frame.inventory)>0?'fm-drop':'fm-chop';
+    }else if(type==='banking'){
+      objective.phase='bank';prepareBankRoute();
+    }else if(type==='prayer'){
+      objective.phase='bury';
+    }
+    markProgress('respawn-recovered');saveObjective();
+    traceDecision('death-recovery','confirmed',`${type} resumed`,frame.now);
+    setBotStatus(`${type[0].toUpperCase()+type.slice(1)} • respawn confirmed • rebuilding safely`);
+    return true;
+  }
+  function deathRecoveryTick(frame){
+    if(frame.dead){
+      beginDeathRecovery(frame);
+      deathRecovery.stableTicks=0;
+      if(objective?.type==='combat'&&!combatBankingEnabled()){
+        stop(`Combat ended — fought until defeated after ${sessionStats.kills} kill${sessionStats.kills===1?'':'s'}.`);
+        return 'stopped';
+      }
+      if(Number(frame.now)-deathRecovery.startedAt>60000){
+        stop('Bot stopped: the character did not respawn within 60 seconds.');
+        return 'timed-out';
+      }
+      setBotStatus(`${objective?.type||'Bot'} • character defeated • waiting for respawn`);
+      return 'waiting';
+    }
+    if(!deathRecovery.active)return 'inactive';
+    deathRecovery.stableTicks++;
+    if(deathRecovery.stableTicks<2){
+      setBotStatus(`${objective?.type||'Bot'} • checking respawn stability`);
+      return 'stabilizing';
+    }
+    resumeAfterDeath(frame);
+    return 'resumed';
+  }
   function cancelActionContract(key,detail='',now=Date.now()){
     if(!actionContracts.delete(key))return false;
     traceDecision(key,'cancelled',detail,now);
@@ -2297,6 +2369,7 @@ ${firstBanker}`;
 
     function stop(msg){
       clearActionContracts();
+      resetDeathRecovery();
       currentDecisionFrame=null;
       activeTaskNode='idle';
       objective=null;
@@ -2341,8 +2414,13 @@ ${firstBanker}`;
       }
       return {used,counts,foods,normalLogSlot,tinderboxSlot,hasAxe,hasPickaxe};
     }
+    function characterDead(online,hits,maximum){
+      const hitpointsKnown=!!mc.playerStatCurrent&&Number.isFinite(Number(mc.playerStatCurrent?.[3]));
+      return !!online&&(Number(mc.deathScreenTimeout||0)>0||mc.world?.playerAlive===false||(hitpointsKnown&&Number(maximum)>0&&Number(hits)<=0));
+    }
     function buildDecisionFrame(now=Date.now()){
       const online=loggedIn();
+      const hits=online?currentHits():0,max=online?maxHits():0;
       return {
         sequence:++decisionFrameSequence,
         now:Number(now),
@@ -2350,8 +2428,9 @@ ${firstBanker}`;
         tile:online?globalPlayerTile():{x:0,y:0},
         inventory:inventorySnapshot(),
         inventoryMax:Number(mc.inventoryMaxItemCount||30),
-        hits:online?currentHits():0,
-        maxHits:online?maxHits():0,
+        hits,
+        maxHits:max,
+        dead:characterDead(online,hits,max),
         fighting:online?inCombat():false,
         firemakingXp:online?Number(mc.playerExperience?.[11]||0):0
       };
@@ -3153,11 +3232,6 @@ ${firstBanker}`;
     function combatTick(frame){
       const hp=frame.hits, max=frame.maxHits;
       let inventory=frame.inventory;
-
-      if(objective.attackSentAt&&(hp<=0||Number(mc.deathScreenTimeout||0)>0||mc.world?.playerAlive===false)){
-        stop(`Combat ended — your character fought until defeated after ${sessionStats.kills} kill${sessionStats.kills===1?'':'s'}.`);
-        return;
-      }
 
       // A reload can occur during the short post-kill loot window. The kill
       // was already persisted, so complete it instead of attacking one extra.
@@ -3974,6 +4048,7 @@ ${firstBanker}`;
 
     const BOT_TASK_NODES=[
       {id:'wait-login',label:'wait for local character',priority:1000,accept:frame=>!frame.loggedIn,execute:()=>setBotStatus('Objective waiting: create/login to your LOCAL character.')},
+      {id:'death-recovery',label:'pause unsafe actions and confirm respawn',priority:990,accept:frame=>frame.dead||deathRecovery.active,execute:frame=>deathRecoveryTick(frame)},
       {id:'bank-route',label:'navigate and interact with bank',priority:950,accept:()=>objective?.type==='banking'||['bank','bank-dialogue','bank-open'].includes(objective?.phase),execute:frame=>advanceBankRoute(frame)},
       {id:'return-route',label:'return to training area',priority:900,accept:()=>objective?.phase==='return'&&['woodcutting','mining'].includes(objective?.type),execute:()=>advanceReturnRoute()},
       {id:'prayer',label:'bury held bones',priority:800,accept:()=>objective?.type==='prayer',execute:frame=>prayerTick(frame)},
