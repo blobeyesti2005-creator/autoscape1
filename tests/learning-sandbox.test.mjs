@@ -36,6 +36,8 @@ test('learning lab is isolated, offline-capable, and discoverable', () => {
   assert.doesNotThrow(() => new vm.Script(withoutImport, { filename: 'learning-lab-inline.js' }));
   assert.match(moduleScript, /escapeHtml\(bot\.name\)/);
   assert.match(moduleScript, /escapeHtml\(bot\.decision\)/);
+  assert.match(moduleScript, /escapeHtml\(episode\.target\)/);
+  assert.match(moduleScript, /report\.diagnosticFlags\.map\(escapeHtml\)/);
 });
 
 test('five independent learners produce deterministic seeded sessions', () => {
@@ -191,7 +193,7 @@ function observation(sequence, elapsedMs, overrides = {}) {
     sequence, elapsedMs, loggedIn: true, tile: { x: 100, y: 600 }, hp: { current: 10, maximum: 10 },
     dead: false, fighting: false, inventory: { used: 2, maximum: 30, logs: 1, ores: 0, bones: 0, food: 1 },
     objective: { type: 'woodcutting', phase: 'gather', resource: 'normal', target: 'none', style: 'none', bankMode: 'safe', progress: 1, goal: 10 },
-    taskNode: 'woodcutting', pendingActions: [], ...overrides
+    taskNode: 'woodcutting', pendingActions: [], navigation: { active: false, routeIndex: 0, routeLength: 0, target: 'none', distance: 0, bestDistance: 0, retries: 0, stalls: 0, rebuilds: 0, recoveries: 0 }, ...overrides
   };
 }
 
@@ -199,7 +201,7 @@ test('read-only game observations round-trip through a strict bounded format', (
   const data = { format: 'autoscape-live-observations-v1', observations: [observation(4, 0), observation(5, 1000)] };
   const parsed = parseLiveObservations(serializeLiveObservations(data));
   assert.equal(parsed.observations.length, 2);
-  assert.deepEqual(Object.keys(parsed.observations[0]).sort(), ['dead', 'elapsedMs', 'fighting', 'hp', 'inventory', 'loggedIn', 'objective', 'pendingActions', 'sequence', 'taskNode', 'tile'].sort());
+  assert.deepEqual(Object.keys(parsed.observations[0]).sort(), ['dead', 'elapsedMs', 'fighting', 'hp', 'inventory', 'loggedIn', 'navigation', 'objective', 'pendingActions', 'sequence', 'taskNode', 'tile'].sort());
   assert.doesNotMatch(JSON.stringify(parsed), /username|password|credential|bank contents|serverindex/i);
   assert.throws(() => parseLiveObservations('{broken'), /valid JSON/);
   assert.throws(() => parseLiveObservations('x'.repeat(1_000_001)), /exceeds 1 MB/);
@@ -209,8 +211,43 @@ test('read-only game observations round-trip through a strict bounded format', (
   assert.throws(() => serializeLiveObservations(dangerous), /task node/);
   dangerous.observations[0].taskNode = '__proto__';
   assert.throws(() => serializeLiveObservations(dangerous), /task node/);
+  const invalidRoute = structuredClone(data); invalidRoute.observations[0].navigation = { routeLength: 2, routeIndex: 3 };
+  assert.throws(() => serializeLiveObservations(invalidRoute), /route index/);
+  const legacy = structuredClone(data); delete legacy.observations[0].navigation;
+  assert.deepEqual(parseLiveObservations(JSON.stringify(legacy)).observations[0].navigation, { active: false, routeIndex: 0, routeLength: 0, target: 'none', distance: 0, bestDistance: 0, retries: 0, stalls: 0, rebuilds: 0, recoveries: 0 });
   const oversized = { ...data, observations: Array.from({ length: 601 }, (_, index) => observation(index + 1, index)) };
   assert.throws(() => serializeLiveObservations(oversized), /600-frame/);
+});
+
+test('observation analysis segments bounded navigation stall episodes', () => {
+  const navigation = (overrides = {}) => ({ active: true, routeIndex: 1, routeLength: 3, target: 'lumbridge', distance: 20, bestDistance: 20, retries: 0, stalls: 0, rebuilds: 0, recoveries: 0, ...overrides });
+  const frames = [
+    observation(1, 0, { navigation: navigation() }),
+    observation(2, 1000, { navigation: navigation() }),
+    observation(3, 2000, { navigation: navigation() }),
+    observation(4, 3000, { navigation: navigation({ retries: 1, stalls: 1 }) }),
+    observation(5, 4000, { tile: { x: 101, y: 600 }, navigation: navigation({ distance: 19, bestDistance: 19 }) }),
+    observation(6, 5000, { tile: { x: 101, y: 600 }, navigation: navigation({ distance: 19, bestDistance: 19 }) }),
+    observation(7, 6000, { tile: { x: 101, y: 600 } })
+  ];
+  const report = analyzeLiveObservations({ format: 'autoscape-live-observations-v1', observations: frames });
+  assert.equal(report.navigationFrames, 6); assert.equal(report.navigationMoves, 1);
+  assert.equal(report.navigationMovementRate, 0.2); assert.equal(report.maxNavigationStationaryRun, 4);
+  assert.equal(report.stallEpisodeCount, 1); assert.equal(report.stallEpisodes.length, 1);
+  assert.equal(report.maxNavigationRetries, 1); assert.equal(report.maxNavigationStalls, 1);
+  assert.deepEqual(report.stallTargets, { lumbridge: 1 });
+  assert.deepEqual(report.diagnosticFlags, ['navigation-stalls-observed']);
+  assert.deepEqual(report.stallEpisodes[0], { startSequence: 1, endSequence: 4, durationMs: 3000, frames: 4, taskNode: 'woodcutting', objective: 'woodcutting', target: 'lumbridge', maxRetries: 1, maxStalls: 1, rebuildDelta: 0, recoveryDelta: 0, resolvedBy: 'movement' });
+
+  const many = [];
+  for (let episode = 0; episode < 60; episode++) {
+    const base = episode * 5, x = 100 + episode * 2;
+    for (let offset = 0; offset < 4; offset++) many.push(observation(base + offset + 1, (base + offset) * 1000, { tile: { x, y: 600 }, navigation: navigation({ retries: offset === 3 ? 1 : 0 }) }));
+    many.push(observation(base + 5, (base + 4) * 1000, { tile: { x: x + 1, y: 600 }, navigation: navigation() }));
+  }
+  const bounded = analyzeLiveObservations({ format: 'autoscape-live-observations-v1', observations: many });
+  assert.equal(bounded.stallEpisodeCount, 60); assert.equal(bounded.stallEpisodes.length, 50);
+  assert.equal(bounded.stallTargets.lumbridge, 60, 'aggregate counts must include episodes beyond the display cap');
 });
 
 test('observation analysis reports stalls and safety states deterministically', () => {

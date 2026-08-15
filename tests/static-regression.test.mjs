@@ -1681,6 +1681,8 @@ test('live observation recording is opt-in, bounded, sanitized, and reuses the d
   assert.doesNotMatch(build, /\bmc\.|inventorySnapshot\(|objectCount|npcCount|groundItemCount/);
   assert.doesNotMatch(`${build}\n${record}`, /username|password|credentials|bank contents|localStorage|sessionStorage|indexedDB/i);
   assert.match(download, /new Blob/);
+  assert.match(build, /navigation:\{active:navigationActive/);
+  assert.match(functionSource(html, 'getLiveObservations'), /navigation:\{\.\.\.item\.navigation\}/);
   assert.match(html, /createdBy:'AutoScape read-only recorder'/);
   assert.match(html, /startObservationRecording:startLiveObservationRecording/);
   assert.doesNotMatch(html, /startObservationRecording:[^,}]*(walk|attack|bank|chop)/);

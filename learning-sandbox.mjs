@@ -78,8 +78,12 @@ function normalizeLiveObservation(value, index, previousSequence, previousElapse
   const maximum = boundedInteger(inventory.maximum, 'inventory maximum', 0, 100);
   const used = boundedInteger(inventory.used, 'inventory used', 0, maximum || 100);
   const objective = value.objective === null ? null : value.objective;
+  const navigation = value.navigation === undefined ? {} : value.navigation;
   if (objective !== null && (!objective || typeof objective !== 'object' || Array.isArray(objective))) throw new TypeError(`Invalid observation objective at ${index}.`);
+  if (!navigation || typeof navigation !== 'object' || Array.isArray(navigation)) throw new TypeError(`Invalid observation navigation at ${index}.`);
   if (value.pendingActions.length > 20) throw new TypeError(`Invalid observation pending actions at ${index}.`);
+  const routeLength = boundedInteger(navigation.routeLength || 0, 'route length', 0, 1_000);
+  const routeIndex = boundedInteger(navigation.routeIndex || 0, 'route index', 0, routeLength || 1_000);
   return {
     sequence, elapsedMs, loggedIn: Boolean(value.loggedIn),
     tile: { x: boundedInteger(tile.x, 'tile x', -10_000, 10_000), y: boundedInteger(tile.y, 'tile y', -10_000, 10_000) },
@@ -99,7 +103,17 @@ function normalizeLiveObservation(value, index, previousSequence, previousElapse
       progress: boundedInteger(objective.progress, 'progress', 0, 1_000_000), goal: boundedInteger(objective.goal, 'goal', 0, 1_000_000)
     } : null,
     taskNode: observationToken(value.taskNode, 'task node', 'idle'),
-    pendingActions: value.pendingActions.map((key, actionIndex) => observationToken(key, `pending action ${actionIndex}`))
+    pendingActions: value.pendingActions.map((key, actionIndex) => observationToken(key, `pending action ${actionIndex}`)),
+    navigation: {
+      active: Boolean(navigation.active), routeIndex, routeLength,
+      target: observationToken(navigation.target, 'navigation target', 'none'),
+      distance: boundedInteger(navigation.distance || 0, 'navigation distance', 0, 100_000),
+      bestDistance: boundedInteger(navigation.bestDistance || 0, 'navigation best distance', 0, 100_000),
+      retries: boundedInteger(navigation.retries || 0, 'navigation retries', 0, 10_000),
+      stalls: boundedInteger(navigation.stalls || 0, 'navigation stalls', 0, 10_000),
+      rebuilds: boundedInteger(navigation.rebuilds || 0, 'navigation rebuilds', 0, 10_000),
+      recoveries: boundedInteger(navigation.recoveries || 0, 'navigation recoveries', 0, 10_000)
+    }
   };
 }
 
@@ -130,8 +144,28 @@ export function serializeLiveObservations(data) {
 
 export function analyzeLiveObservations(data) {
   const normalized = normalizeLiveObservations(data), frames = normalized.observations;
-  const byObjective = {}, byTaskNode = {}, pendingActions = {};
+  const byObjective = {}, byTaskNode = {}, byNavigationTarget = {}, stallTargets = {}, pendingActions = {};
+  const stallEpisodes = [];
   let deaths = 0, fighting = 0, fullInventory = 0, lowHp = 0, moved = 0, maxStationaryRun = frames.length ? 1 : 0, stationaryRun = frames.length ? 1 : 0;
+  let navigationFrames = 0, navigationTransitions = 0, navigationMoves = 0, maxNavigationStationaryRun = 0, navigationRun = null, stallEpisodeCount = 0;
+  let maxNavigationRetries = 0, maxNavigationStalls = 0, maxRouteRebuilds = 0, maxStallRecoveries = 0;
+  function finishNavigationRun(endIndex, resolvedBy) {
+    if (!navigationRun) return;
+    const first = frames[navigationRun.start], last = frames[endIndex];
+    if (navigationRun.frames >= 4 || navigationRun.maxRetries > 0 || navigationRun.maxStalls > 0) {
+      stallEpisodeCount++;
+      stallTargets[first.navigation.target] = (stallTargets[first.navigation.target] || 0) + 1;
+      if (stallEpisodes.length < 50) stallEpisodes.push({
+        startSequence: first.sequence, endSequence: last.sequence,
+        durationMs: Math.max(0, last.elapsedMs - first.elapsedMs), frames: navigationRun.frames,
+        taskNode: first.taskNode, objective: first.objective?.type || 'idle', target: first.navigation.target,
+        maxRetries: navigationRun.maxRetries, maxStalls: navigationRun.maxStalls,
+        rebuildDelta: Math.max(0, last.navigation.rebuilds - first.navigation.rebuilds),
+        recoveryDelta: Math.max(0, last.navigation.recoveries - first.navigation.recoveries), resolvedBy
+      });
+    }
+    navigationRun = null;
+  }
   frames.forEach((frame, index) => {
     const objective = frame.objective?.type || 'idle'; byObjective[objective] = (byObjective[objective] || 0) + 1;
     byTaskNode[frame.taskNode] = (byTaskNode[frame.taskNode] || 0) + 1;
@@ -139,15 +173,43 @@ export function analyzeLiveObservations(data) {
     if (frame.dead) deaths++; if (frame.fighting) fighting++;
     if (frame.inventory.maximum > 0 && frame.inventory.used >= frame.inventory.maximum) fullInventory++;
     if (frame.hp.maximum > 0 && frame.hp.current / frame.hp.maximum <= 0.3) lowHp++;
+    if (frame.navigation.active) {
+      navigationFrames++;
+      byNavigationTarget[frame.navigation.target] = (byNavigationTarget[frame.navigation.target] || 0) + 1;
+      maxNavigationRetries = Math.max(maxNavigationRetries, frame.navigation.retries);
+      maxNavigationStalls = Math.max(maxNavigationStalls, frame.navigation.stalls);
+      maxRouteRebuilds = Math.max(maxRouteRebuilds, frame.navigation.rebuilds);
+      maxStallRecoveries = Math.max(maxStallRecoveries, frame.navigation.recoveries);
+    }
     if (index > 0) {
       const prior = frames[index - 1], changed = frame.tile.x !== prior.tile.x || frame.tile.y !== prior.tile.y;
       if (changed) { moved++; stationaryRun = 1; } else { stationaryRun++; maxStationaryRun = Math.max(maxStationaryRun, stationaryRun); }
+      const navigationPair = prior.navigation.active && frame.navigation.active;
+      if (navigationPair) navigationTransitions++;
+      if (navigationPair && changed) { navigationMoves++; finishNavigationRun(index - 1, 'movement'); }
+      else if (navigationPair) {
+        if (!navigationRun) navigationRun = { start: index - 1, frames: 1, maxRetries: 0, maxStalls: 0 };
+        navigationRun.frames++;
+        navigationRun.maxRetries = Math.max(navigationRun.maxRetries, frame.navigation.retries);
+        navigationRun.maxStalls = Math.max(navigationRun.maxStalls, frame.navigation.stalls);
+        maxNavigationStationaryRun = Math.max(maxNavigationStationaryRun, navigationRun.frames);
+      } else if (navigationRun) finishNavigationRun(index - 1, 'navigation-ended');
     }
   });
+  if (navigationRun) finishNavigationRun(frames.length - 1, 'recording-ended');
+  const diagnosticFlags = [];
+  if (navigationTransitions >= 5 && navigationMoves / navigationTransitions < 0.2) diagnosticFlags.push('low-navigation-progress');
+  if (stallEpisodeCount > 0) diagnosticFlags.push('navigation-stalls-observed');
+  if (maxRouteRebuilds > 0) diagnosticFlags.push('route-rebuilds-observed');
+  if (maxStallRecoveries > 0) diagnosticFlags.push('local-recoveries-observed');
   return {
     frames: frames.length, durationMs: frames.at(-1)?.elapsedMs || 0, deaths, fighting, fullInventory, lowHp,
     movementTransitions: moved, movementRate: frames.length > 1 ? Number((moved / (frames.length - 1)).toFixed(3)) : 0,
-    maxStationaryRun, byObjective, byTaskNode, pendingActions
+    maxStationaryRun, navigationFrames, navigationMoves,
+    navigationMovementRate: navigationTransitions ? Number((navigationMoves / navigationTransitions).toFixed(3)) : 0,
+    maxNavigationStationaryRun, maxNavigationRetries, maxNavigationStalls, maxRouteRebuilds, maxStallRecoveries,
+    stallEpisodeCount, stallEpisodes, stallTargets, diagnosticFlags,
+    byObjective, byTaskNode, byNavigationTarget, pendingActions
   };
 }
 

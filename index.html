@@ -2462,6 +2462,9 @@ ${firstBanker}`;
       let food=0;
       for(const [id,amount] of counts)if(Number(FOOD_HEALS[id]||0)>0)food+=Math.max(0,Number(amount)||0);
       const selected=objective&&typeof objective==='object'?objective:null;
+      const route=Array.isArray(selected?.navRoute)?selected.navRoute:[],routeIndex=Math.max(0,Math.trunc(Number(selected?.routeIndex)||0));
+      const waypoint=route[routeIndex]||null,pendingKeys=[...actionContracts.keys()].slice(0,20).map(key=>observationToken(key));
+      const navigationActive=Boolean(waypoint||navWatch.targetKey||pendingKeys.some(key=>/(walk|route|travel|navigate)/.test(key)));
       return {
         sequence:Math.max(0,Math.trunc(Number(frame?.sequence)||0)),
         elapsedMs:Math.max(0,Math.trunc(Number(frame?.now||0)-Number(liveObservationRecorder.startedAt||frame?.now||0))),
@@ -2472,7 +2475,8 @@ ${firstBanker}`;
         inventory:{used:Math.max(0,Math.trunc(Number(inventory.used)||0)),maximum:Math.max(0,Math.trunc(Number(frame?.inventoryMax)||0)),logs:inventoryCountForIds(LOG_IDS,inventory),ores:inventoryCountForIds(ORE_IDS,inventory),bones:inventoryCountForIds(BONE_IDS,inventory),food},
         objective:selected?{type:observationToken(selected.type),phase:observationToken(selected.phase),resource:observationToken(selected.resource),target:observationToken(selected.target),style:observationToken(selected.combatStyle),bankMode:observationToken(selected.bankMode),progress:Math.max(0,Number(selected.countProgress)||0),goal:Math.max(0,Number(selected.countGoal)||0)}:null,
         taskNode:observationToken(node,'idle'),
-        pendingActions:[...actionContracts.keys()].slice(0,20).map(key=>observationToken(key))
+        pendingActions:pendingKeys,
+        navigation:{active:navigationActive,routeIndex,routeLength:route.length,target:observationToken(waypoint?.name||selected?.phase,'none'),distance:waypoint?Math.max(0,Math.trunc(nodeDistance(frame.tile,waypoint))):0,bestDistance:Math.max(0,Math.trunc(Number(navWatch.bestDistance)||0)),retries:Math.max(0,Math.trunc(Number(navWatch.retries)||0)),stalls:Math.max(0,Math.trunc(Number(navWatch.stalls)||0)),rebuilds:Math.max(0,Math.trunc(Number(selected?.routeRebuilds)||0)),recoveries:Math.max(0,Math.trunc(Number(selected?.stallRecoveries)||0))}
       };
     }
     function updateObservationControls(){
@@ -2495,7 +2499,7 @@ ${firstBanker}`;
       updateObservationControls();return observation;
     }
     function getLiveObservations(){
-      return {format:'autoscape-live-observations-v1',createdBy:'AutoScape read-only recorder',observations:liveObservationRecorder.observations.map(item=>({...item,tile:{...item.tile},hp:{...item.hp},inventory:{...item.inventory},objective:item.objective?{...item.objective}:null,pendingActions:[...item.pendingActions]}))};
+      return {format:'autoscape-live-observations-v1',createdBy:'AutoScape read-only recorder',observations:liveObservationRecorder.observations.map(item=>({...item,tile:{...item.tile},hp:{...item.hp},inventory:{...item.inventory},objective:item.objective?{...item.objective}:null,pendingActions:[...item.pendingActions],navigation:{...item.navigation}}))};
     }
     function downloadLiveObservations(){
       const data=getLiveObservations();if(!data.observations.length)return false;

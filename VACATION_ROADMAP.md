@@ -679,3 +679,38 @@ deleting history, or changing GitHub Pages.
   character and still has no authority to control it.
 - Package and app-shell cache metadata advanced to `2.12.19` for the eventual
   reviewed release.
+
+### Route-aware observation diagnostics
+
+- `npm test` (51 regression groups)
+- Extended each opt-in observation frame with a copied, aggregate navigation
+  summary sourced from state the controller already calculated: route position
+  and length, sanitized waypoint/phase label, current and best distance,
+  retries, stalls, route rebuilds, and local recovery count. The recorder still
+  performs no additional object, NPC, ground-item, inventory, or path scans.
+- Observation parsing remains backward-compatible with the first v1 files;
+  missing navigation summaries receive inert defaults. Present summaries are
+  strictly bounded, route indices must fit the declared route, and every label
+  passes the existing safe-token and prototype-key rejection boundary.
+- Offline analysis now separates active navigation from ordinary stationary
+  gameplay, calculates navigation-only movement rate, and segments consecutive
+  non-moving route frames into diagnostic stall episodes. Four stationary
+  frames, or an observed retry/stall counter, qualifies an episode.
+- Each episode records only its sequence/time range, task/objective/target keys,
+  peak retry/stall counts, rebuild/recovery deltas, and whether movement,
+  navigation completion, or recording end closed it. Detailed episodes are
+  capped at 50 while total and per-target counts remain accurate across the full
+  600-frame recording.
+- The lab report now highlights repeated stall targets, peak recovery counters,
+  navigation progress rate, and transparent flags for low movement, stalls,
+  route rebuilds, and local recovery. Imported labels and flags remain escaped;
+  analysis still cannot train policies or send game actions.
+- Tests cover moving versus idle/stalled classification, exact episode
+  boundaries, resolution cause, aggregate counter accuracy beyond the 50-row
+  display cap, backward compatibility, malformed route bounds, copied state,
+  single-frame reuse, and the existing account/save isolation guarantees.
+- No account/save fields, persistence keys, inventory/bank formats, settings, or
+  queued-job schemas changed. Main, Pages, and release configuration remain out
+  of scope.
+- Package and app-shell cache metadata advanced to `2.12.20` for the eventual
+  reviewed release.
