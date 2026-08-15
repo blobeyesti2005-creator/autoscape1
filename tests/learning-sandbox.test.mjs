@@ -5,8 +5,9 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import {
-  createLearningSession, createTelemetryReplay, evaluateLearningPolicies,
-  parseLearningReplay, serializeLearningReplay, LEARNING_ACTIONS, LEARNING_GOALS
+  analyzeLiveObservations, createLearningSession, createTelemetryReplay, evaluateLearningPolicies,
+  parseLearningReplay, parseLiveObservations, serializeLearningReplay, serializeLiveObservations,
+  LEARNING_ACTIONS, LEARNING_GOALS
 } from '../learning-sandbox.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -183,4 +184,46 @@ test('multi-seed evaluation is deterministic, bounded, and productive', () => {
   const capped = evaluateLearningPolicies({ seeds: Array.from({ length: 30 }, (_, index) => index + 1), ticks: 1 });
   assert.equal(capped.seeds.length, 12);
   assert.equal(capped.ticks, 20);
+});
+
+function observation(sequence, elapsedMs, overrides = {}) {
+  return {
+    sequence, elapsedMs, loggedIn: true, tile: { x: 100, y: 600 }, hp: { current: 10, maximum: 10 },
+    dead: false, fighting: false, inventory: { used: 2, maximum: 30, logs: 1, ores: 0, bones: 0, food: 1 },
+    objective: { type: 'woodcutting', phase: 'gather', resource: 'normal', target: 'none', style: 'none', bankMode: 'safe', progress: 1, goal: 10 },
+    taskNode: 'woodcutting', pendingActions: [], ...overrides
+  };
+}
+
+test('read-only game observations round-trip through a strict bounded format', () => {
+  const data = { format: 'autoscape-live-observations-v1', observations: [observation(4, 0), observation(5, 1000)] };
+  const parsed = parseLiveObservations(serializeLiveObservations(data));
+  assert.equal(parsed.observations.length, 2);
+  assert.deepEqual(Object.keys(parsed.observations[0]).sort(), ['dead', 'elapsedMs', 'fighting', 'hp', 'inventory', 'loggedIn', 'objective', 'pendingActions', 'sequence', 'taskNode', 'tile'].sort());
+  assert.doesNotMatch(JSON.stringify(parsed), /username|password|credential|bank contents|serverindex/i);
+  assert.throws(() => parseLiveObservations('{broken'), /valid JSON/);
+  assert.throws(() => parseLiveObservations('x'.repeat(1_000_001)), /exceeds 1 MB/);
+  const outOfOrder = structuredClone(data); outOfOrder.observations[1].sequence = 4;
+  assert.throws(() => serializeLiveObservations(outOfOrder), /ordering/);
+  const dangerous = structuredClone(data); dangerous.observations[0].taskNode = '<script>';
+  assert.throws(() => serializeLiveObservations(dangerous), /task node/);
+  dangerous.observations[0].taskNode = '__proto__';
+  assert.throws(() => serializeLiveObservations(dangerous), /task node/);
+  const oversized = { ...data, observations: Array.from({ length: 601 }, (_, index) => observation(index + 1, index)) };
+  assert.throws(() => serializeLiveObservations(oversized), /600-frame/);
+});
+
+test('observation analysis reports stalls and safety states deterministically', () => {
+  const frames = [
+    observation(1, 0),
+    observation(2, 1000, { fighting: true, hp: { current: 3, maximum: 10 }, pendingActions: ['combat-attack'] }),
+    observation(3, 2000, { dead: true, hp: { current: 0, maximum: 10 }, inventory: { used: 30, maximum: 30, logs: 28, ores: 0, bones: 1, food: 1 } }),
+    observation(4, 3000, { tile: { x: 101, y: 600 }, taskNode: 'death-recovery', objective: null })
+  ];
+  const report = analyzeLiveObservations({ format: 'autoscape-live-observations-v1', observations: frames });
+  assert.deepEqual(report, analyzeLiveObservations({ format: 'autoscape-live-observations-v1', observations: frames }));
+  assert.equal(report.frames, 4); assert.equal(report.deaths, 1); assert.equal(report.fighting, 1);
+  assert.equal(report.lowHp, 2); assert.equal(report.fullInventory, 1); assert.equal(report.movementTransitions, 1);
+  assert.equal(report.maxStationaryRun, 3); assert.equal(report.pendingActions['combat-attack'], 1);
+  assert.equal(report.byTaskNode.woodcutting, 3); assert.equal(report.byTaskNode['death-recovery'], 1);
 });

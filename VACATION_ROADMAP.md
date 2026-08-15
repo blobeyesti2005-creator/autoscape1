@@ -644,3 +644,38 @@ deleting history, or changing GitHub Pages.
   format, setting, or queued-job schema changed.
 - Package and app-shell cache metadata advanced to `2.12.18` for the eventual
   reviewed release.
+
+### Opt-in live observation recorder and offline analysis
+
+- `npm test` (50 regression groups)
+- Added a manual, runtime-only recorder to the normal bot panel. Recording is
+  off by default, starts a fresh session only when requested, stops explicitly,
+  holds at most 600 one-second frames, and downloads only after a separate user
+  action. It never writes observations to local storage, session storage, or an
+  account/save record.
+- Recording reuses the controller's existing decision frame rather than
+  rescanning inventory, objects, NPCs, or ground items. Each frame contains only
+  an allowlisted gameplay summary: sequence/elapsed time, world tile, HP and
+  safety flags, aggregate inventory categories, sanitized objective fields,
+  active task-node key, and sanitized pending-action keys.
+- Usernames, passwords, credentials, raw client/action handles, native server
+  indices, item-ID inventories, bank contents, and full character/save state
+  are excluded from the export format. Returned snapshots are copied so callers
+  cannot mutate the recorder's retained history.
+- The isolated five-bot lab can load these observation files for read-only
+  analysis. It reports movement rate, longest stationary run, fighting/death/
+  low-HP/full-inventory frames, and task-node frequency without training a
+  learner, changing a policy, or sending any live-game action.
+- Observation imports accept only the versioned format, are limited to 1 MB and
+  600 frames, and validate monotonic sequence/time, bounded numbers, safe token
+  fields, objective shape, inventory ranges, and pending-action counts. Imported
+  task labels are HTML-escaped before display.
+- Tests cover opt-in behavior, the bounded queue, single-snapshot reuse,
+  sensitive-field exclusion, copy/format boundaries, malformed and oversized
+  input, ordering/token rejection, deterministic stall/safety analysis, UI
+  controls, and the absence of an action bridge.
+- No account/save fields, persistence keys, inventory/bank formats, settings, or
+  queued-job schemas changed. The learner remains isolated from the live
+  character and still has no authority to control it.
+- Package and app-shell cache metadata advanced to `2.12.19` for the eventual
+  reviewed release.

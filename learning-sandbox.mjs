@@ -5,6 +5,8 @@ const INVENTORY_LIMIT = 8;
 const MAX_HISTORY = 120;
 const MAX_TELEMETRY = 1200;
 const MAX_REPLAY_TEXT = 2_000_000;
+const MAX_OBSERVATION_TEXT = 1_000_000;
+const MAX_OBSERVATIONS = 600;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, Number(value) || 0));
@@ -49,6 +51,104 @@ function finiteNumber(value, label) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new TypeError(`Invalid replay ${label}.`);
   return number;
+}
+
+function observationToken(value, label, fallback = 'none') {
+  const token = String(value ?? '').toLowerCase();
+  if (!/^[a-z0-9_-]{1,40}$/.test(token) || ['__proto__', 'constructor', 'prototype'].includes(token)) {
+    if (value === undefined || value === null || value === '') return fallback;
+    throw new TypeError(`Invalid observation ${label}.`);
+  }
+  return token;
+}
+
+function boundedInteger(value, label, minimum, maximum) {
+  const number = Math.trunc(finiteNumber(value, `observation ${label}`));
+  if (number < minimum || number > maximum) throw new TypeError(`Invalid observation ${label}.`);
+  return number;
+}
+
+function normalizeLiveObservation(value, index, previousSequence, previousElapsed) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`Invalid observation frame ${index}.`);
+  const sequence = boundedInteger(value.sequence, 'sequence', 0, Number.MAX_SAFE_INTEGER);
+  const elapsedMs = boundedInteger(value.elapsedMs, 'elapsed time', 0, 86_400_000);
+  if (sequence <= previousSequence || elapsedMs < previousElapsed) throw new TypeError(`Invalid observation ordering at ${index}.`);
+  const inventory = value.inventory, hp = value.hp, tile = value.tile;
+  if (!inventory || !hp || !tile || Array.isArray(value.pendingActions) === false) throw new TypeError(`Invalid observation state at ${index}.`);
+  const maximum = boundedInteger(inventory.maximum, 'inventory maximum', 0, 100);
+  const used = boundedInteger(inventory.used, 'inventory used', 0, maximum || 100);
+  const objective = value.objective === null ? null : value.objective;
+  if (objective !== null && (!objective || typeof objective !== 'object' || Array.isArray(objective))) throw new TypeError(`Invalid observation objective at ${index}.`);
+  if (value.pendingActions.length > 20) throw new TypeError(`Invalid observation pending actions at ${index}.`);
+  return {
+    sequence, elapsedMs, loggedIn: Boolean(value.loggedIn),
+    tile: { x: boundedInteger(tile.x, 'tile x', -10_000, 10_000), y: boundedInteger(tile.y, 'tile y', -10_000, 10_000) },
+    hp: { current: boundedInteger(hp.current, 'current HP', 0, 10_000), maximum: boundedInteger(hp.maximum, 'maximum HP', 0, 10_000) },
+    dead: Boolean(value.dead), fighting: Boolean(value.fighting),
+    inventory: {
+      used, maximum,
+      logs: boundedInteger(inventory.logs, 'logs', 0, 1_000_000),
+      ores: boundedInteger(inventory.ores, 'ores', 0, 1_000_000),
+      bones: boundedInteger(inventory.bones, 'bones', 0, 1_000_000),
+      food: boundedInteger(inventory.food, 'food', 0, 1_000_000)
+    },
+    objective: objective ? {
+      type: observationToken(objective.type, 'objective type'), phase: observationToken(objective.phase, 'objective phase'),
+      resource: observationToken(objective.resource, 'resource'), target: observationToken(objective.target, 'target'),
+      style: observationToken(objective.style, 'style'), bankMode: observationToken(objective.bankMode, 'bank mode'),
+      progress: boundedInteger(objective.progress, 'progress', 0, 1_000_000), goal: boundedInteger(objective.goal, 'goal', 0, 1_000_000)
+    } : null,
+    taskNode: observationToken(value.taskNode, 'task node', 'idle'),
+    pendingActions: value.pendingActions.map((key, actionIndex) => observationToken(key, `pending action ${actionIndex}`))
+  };
+}
+
+function normalizeLiveObservations(data) {
+  if (!data || data.format !== 'autoscape-live-observations-v1' || !Array.isArray(data.observations)) {
+    throw new TypeError('Invalid AutoScape observation file.');
+  }
+  if (data.observations.length > MAX_OBSERVATIONS) throw new TypeError('Observation file exceeds the 600-frame limit.');
+  let previousSequence = -1, previousElapsed = -1;
+  const observations = data.observations.map((value, index) => {
+    const frame = normalizeLiveObservation(value, index, previousSequence, previousElapsed);
+    previousSequence = frame.sequence; previousElapsed = frame.elapsedMs; return frame;
+  });
+  return { format: 'autoscape-live-observations-v1', createdBy: 'AutoScape read-only recorder', observations };
+}
+
+export function parseLiveObservations(text) {
+  if (typeof text !== 'string' || text.length > MAX_OBSERVATION_TEXT) throw new TypeError('Observation file exceeds 1 MB.');
+  try { return normalizeLiveObservations(JSON.parse(text)); }
+  catch (error) { if (error instanceof SyntaxError) throw new TypeError('Observation file is not valid JSON.'); throw error; }
+}
+
+export function serializeLiveObservations(data) {
+  const text = JSON.stringify(normalizeLiveObservations(data), null, 2);
+  if (text.length > MAX_OBSERVATION_TEXT) throw new TypeError('Observation file exceeds 1 MB.');
+  return text;
+}
+
+export function analyzeLiveObservations(data) {
+  const normalized = normalizeLiveObservations(data), frames = normalized.observations;
+  const byObjective = {}, byTaskNode = {}, pendingActions = {};
+  let deaths = 0, fighting = 0, fullInventory = 0, lowHp = 0, moved = 0, maxStationaryRun = frames.length ? 1 : 0, stationaryRun = frames.length ? 1 : 0;
+  frames.forEach((frame, index) => {
+    const objective = frame.objective?.type || 'idle'; byObjective[objective] = (byObjective[objective] || 0) + 1;
+    byTaskNode[frame.taskNode] = (byTaskNode[frame.taskNode] || 0) + 1;
+    for (const action of frame.pendingActions) pendingActions[action] = (pendingActions[action] || 0) + 1;
+    if (frame.dead) deaths++; if (frame.fighting) fighting++;
+    if (frame.inventory.maximum > 0 && frame.inventory.used >= frame.inventory.maximum) fullInventory++;
+    if (frame.hp.maximum > 0 && frame.hp.current / frame.hp.maximum <= 0.3) lowHp++;
+    if (index > 0) {
+      const prior = frames[index - 1], changed = frame.tile.x !== prior.tile.x || frame.tile.y !== prior.tile.y;
+      if (changed) { moved++; stationaryRun = 1; } else { stationaryRun++; maxStationaryRun = Math.max(maxStationaryRun, stationaryRun); }
+    }
+  });
+  return {
+    frames: frames.length, durationMs: frames.at(-1)?.elapsedMs || 0, deaths, fighting, fullInventory, lowHp,
+    movementTransitions: moved, movementRate: frames.length > 1 ? Number((moved / (frames.length - 1)).toFixed(3)) : 0,
+    maxStationaryRun, byObjective, byTaskNode, pendingActions
+  };
 }
 
 function normalizeReplayEvent(value, index, previousSequence) {

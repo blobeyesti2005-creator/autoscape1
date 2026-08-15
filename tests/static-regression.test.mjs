@@ -51,7 +51,8 @@ test('required UI controls exist once and labels point to controls', () => {
   const required = [
     'game-host', 'loader', 'bot', 'botStatus', 'botMetrics', 'queuePlan', 'botTrace',
     'botInput', 'resourceSelect', 'miningSelect', 'combatSelect',
-    'combatStyleSelect', 'combatBankSelect', 'lootSelect', 'guidePanel'
+    'combatStyleSelect', 'combatBankSelect', 'lootSelect', 'guidePanel',
+    'observationToggle', 'observationDownload', 'observationStatus'
   ];
   required.forEach(id => assert.ok(ids.includes(id), `missing #${id}`));
 
@@ -1661,4 +1662,26 @@ test('bot-generated actions suppress stale pointer click markers', () => {
     const source = functionSource(html, name);
     assert.match(source, /suppressBotClickMarker\(\)/, `${name} must hide synthetic click markers`);
   }
+});
+
+test('live observation recording is opt-in, bounded, sanitized, and reuses the decision frame', () => {
+  const build = functionSource(html, 'buildLiveObservation');
+  const record = functionSource(html, 'recordLiveObservation');
+  const start = functionSource(html, 'startLiveObservationRecording');
+  const tick = functionSource(html, 'tick');
+  const download = functionSource(html, 'downloadLiveObservations');
+
+  assert.match(html, /LIVE_OBSERVATION_LIMIT=600/);
+  assert.match(record, /if\(!liveObservationRecorder\.enabled\|\|!frame\)return null/);
+  assert.match(record, /observations\.shift\(\)/);
+  assert.match(start, /observations=\[\]/);
+  assert.match(tick, /observationFrame=frame/);
+  assert.match(tick, /recordLiveObservation\(observationFrame,profiledNode\)/);
+  assert.equal((tick.match(/buildDecisionFrame\(\)/g)||[]).length, 1, 'the recorder must not build a second world snapshot');
+  assert.doesNotMatch(build, /\bmc\.|inventorySnapshot\(|objectCount|npcCount|groundItemCount/);
+  assert.doesNotMatch(`${build}\n${record}`, /username|password|credentials|bank contents|localStorage|sessionStorage|indexedDB/i);
+  assert.match(download, /new Blob/);
+  assert.match(html, /createdBy:'AutoScape read-only recorder'/);
+  assert.match(html, /startObservationRecording:startLiveObservationRecording/);
+  assert.doesNotMatch(html, /startObservationRecording:[^,}]*(walk|attack|bank|chop)/);
 });

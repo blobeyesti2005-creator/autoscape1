@@ -37,6 +37,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #combatSelect,#combatStyleSelect,#combatBankSelect,#lootSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
 #bot button{background:#655438;color:#fff;border:1px solid #9f8657;padding:8px 10px}
 #botNote{font-size:9px;color:#b8aa8e;margin-top:3px}
+#observationRow{display:flex;gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap}
+#observationStatus{color:#9ed0b2;font-size:9px;flex:1;min-width:120px}
 .bad{color:#ff9a8f}.good{color:#aee59f}
 body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guideBtn,body.keyboard-open #labBtn{visibility:hidden}
 
@@ -149,6 +151,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <button type="submit">Run</button><button type="button" id="botStop">Stop</button>
 </form>
 <div id="botNote">Try “chop 10 logs, then firemake them”. Numbered steps count confirmed results; Stop cancels the queue.</div>
+<div id="observationRow"><button type="button" id="observationToggle">Record observations</button><button type="button" id="observationDownload" disabled>Download</button><span id="observationStatus">Recorder off · no account data is captured</span></div>
 </div>
 <div id="guidePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
 <button id="guideClose" type="button">Close</button>
@@ -233,6 +236,9 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const combatBankSelect=document.getElementById('combatBankSelect');
   const lootRow=document.getElementById('lootRow');
   const lootSelect=document.getElementById('lootSelect');
+  const observationToggle=document.getElementById('observationToggle');
+  const observationDownload=document.getElementById('observationDownload');
+  const observationStatus=document.getElementById('observationStatus');
 
   let worker=null, objective=null, botTimer=null, lastAction=0;
   let commandQueue=[],activeCommandText='';
@@ -245,6 +251,8 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const SLOW_TICK_MS=50,MAX_PROFILE_NODES=20;
   const botProfile={startedAt:Date.now(),ticks:0,activeTicks:0,idleTicks:0,totalMs:0,maxMs:0,slowTicks:0,errors:0,lastNode:'idle',lastSlowTraceAt:0,byNode:new Map()};
   const deathRecovery={active:false,startedAt:0,stableTicks:0,origin:'',deathCount:0};
+  const LIVE_OBSERVATION_LIMIT=600;
+  const liveObservationRecorder={enabled:false,startedAt:0,observations:[]};
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0,deaths:0};
 
   function fmtDuration(ms){
@@ -2445,6 +2453,55 @@ ${firstBanker}`;
         firemakingXp:online?Number(mc.playerExperience?.[11]||0):0
       };
     }
+    function observationToken(value,fallback='none'){
+      const token=String(value??'').toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,40);
+      return token||fallback;
+    }
+    function buildLiveObservation(frame,node=activeTaskNode){
+      const inventory=frame?.inventory||{counts:new Map(),foods:[]},counts=inventory.counts instanceof Map?inventory.counts:new Map();
+      let food=0;
+      for(const [id,amount] of counts)if(Number(FOOD_HEALS[id]||0)>0)food+=Math.max(0,Number(amount)||0);
+      const selected=objective&&typeof objective==='object'?objective:null;
+      return {
+        sequence:Math.max(0,Math.trunc(Number(frame?.sequence)||0)),
+        elapsedMs:Math.max(0,Math.trunc(Number(frame?.now||0)-Number(liveObservationRecorder.startedAt||frame?.now||0))),
+        loggedIn:Boolean(frame?.loggedIn),
+        tile:{x:Math.trunc(Number(frame?.tile?.x)||0),y:Math.trunc(Number(frame?.tile?.y)||0)},
+        hp:{current:Math.max(0,Number(frame?.hits)||0),maximum:Math.max(0,Number(frame?.maxHits)||0)},
+        dead:Boolean(frame?.dead),fighting:Boolean(frame?.fighting),
+        inventory:{used:Math.max(0,Math.trunc(Number(inventory.used)||0)),maximum:Math.max(0,Math.trunc(Number(frame?.inventoryMax)||0)),logs:inventoryCountForIds(LOG_IDS,inventory),ores:inventoryCountForIds(ORE_IDS,inventory),bones:inventoryCountForIds(BONE_IDS,inventory),food},
+        objective:selected?{type:observationToken(selected.type),phase:observationToken(selected.phase),resource:observationToken(selected.resource),target:observationToken(selected.target),style:observationToken(selected.combatStyle),bankMode:observationToken(selected.bankMode),progress:Math.max(0,Number(selected.countProgress)||0),goal:Math.max(0,Number(selected.countGoal)||0)}:null,
+        taskNode:observationToken(node,'idle'),
+        pendingActions:[...actionContracts.keys()].slice(0,20).map(key=>observationToken(key))
+      };
+    }
+    function updateObservationControls(){
+      if(!observationStatus)return;
+      const count=liveObservationRecorder.observations.length;
+      observationToggle.textContent=liveObservationRecorder.enabled?'Stop recording':'Record observations';
+      observationDownload.disabled=count===0;
+      observationStatus.textContent=liveObservationRecorder.enabled?`Recording ${count}/${LIVE_OBSERVATION_LIMIT} read-only frames`:`Recorder off · ${count?`${count} frames ready`:'no account data is captured'}`;
+    }
+    function startLiveObservationRecording(){
+      liveObservationRecorder.enabled=true;liveObservationRecorder.startedAt=Date.now();liveObservationRecorder.observations=[];updateObservationControls();
+      return getLiveObservations();
+    }
+    function stopLiveObservationRecording(){liveObservationRecorder.enabled=false;updateObservationControls();return getLiveObservations();}
+    function recordLiveObservation(frame,node=activeTaskNode){
+      if(!liveObservationRecorder.enabled||!frame)return null;
+      const observation=buildLiveObservation(frame,node);
+      liveObservationRecorder.observations.push(observation);
+      if(liveObservationRecorder.observations.length>LIVE_OBSERVATION_LIMIT)liveObservationRecorder.observations.shift();
+      updateObservationControls();return observation;
+    }
+    function getLiveObservations(){
+      return {format:'autoscape-live-observations-v1',createdBy:'AutoScape read-only recorder',observations:liveObservationRecorder.observations.map(item=>({...item,tile:{...item.tile},hp:{...item.hp},inventory:{...item.inventory},objective:item.objective?{...item.objective}:null,pendingActions:[...item.pendingActions]}))};
+    }
+    function downloadLiveObservations(){
+      const data=getLiveObservations();if(!data.observations.length)return false;
+      const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=url;link.download=`autoscape-observations-${data.observations.length}-frames.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);return true;
+    }
     function inventoryFood(snapshot=null){
       if(snapshot)return snapshot.foods;
       const out=[],used=inventorySlots();
@@ -4071,6 +4128,7 @@ ${firstBanker}`;
     function tick(){
       const started=monotonicNow();
       let profiledNode='idle',profileOutcome='completed';
+      let observationFrame=null;
       try{
         if(!objective){
           currentDecisionFrame=null;
@@ -4080,6 +4138,7 @@ ${firstBanker}`;
           return;
         }
         const frame=buildDecisionFrame();
+        observationFrame=frame;
         currentDecisionFrame=frame;
         renderMetrics();
         const node=selectTaskNode(frame,BOT_TASK_NODES);
@@ -4101,11 +4160,14 @@ ${firstBanker}`;
         traceDecision(profiledNode,'tick-error',e?.message||'unknown');
         stop(`Bot stopped safely after an unexpected ${profiledNode} tick error.`);
       }finally{
+        recordLiveObservation(observationFrame,profiledNode);
         recordTickProfile(profiledNode,monotonicNow()-started,Date.now(),profileOutcome);
       }
     }
     document.getElementById('botForm').addEventListener('submit',e=>{e.preventDefault();start(botInput.value);});
     document.getElementById('botStop').addEventListener('click',()=>stop('Objective stopped.'));
+    observationToggle.addEventListener('click',()=>liveObservationRecorder.enabled?stopLiveObservationRecording():startLiveObservationRecording());
+    observationDownload.addEventListener('click',downloadLiveObservations);
     combatSelect.addEventListener('change',()=>{
       try{persistLocalValue('autoscape_combat_target',combatSelect.value);}catch(e){}
       if(objective && objective.type==='combat'){
@@ -4176,8 +4238,9 @@ ${firstBanker}`;
     metricFoodCount=inventoryFoodCount;
     metricNormalLogCount=normalLogCount;
     installSessionAndMobileUX();
+    updateObservationControls();
     botTimer=setInterval(tick,1000);
-    window.AutoScape={start,stop,getDiagnostics:diagnosticsSnapshot,resetDiagnostics,get objective(){return objective;},get queue(){return [...commandQueue];},mc};
+    window.AutoScape={start,stop,getDiagnostics:diagnosticsSnapshot,resetDiagnostics,startObservationRecording:startLiveObservationRecording,stopObservationRecording:stopLiveObservationRecording,getObservations:getLiveObservations,downloadObservations:downloadLiveObservations,get objective(){return objective;},get queue(){return [...commandQueue];},mc};
 
     function readRememberedCredentials(storage=localStorage){
       try{
