@@ -2111,13 +2111,25 @@ ${firstBanker}`;
       return currentDistance<=arrivalDistance||currentDistance<Number(before.distance);
     }
 
+    function navigationGoalChanged(state,target){
+      const goal=state?.before?.goal;
+      return !!goal&&(Number(goal.x)!==Number(target?.x)||Number(goal.y)!==Number(target?.y));
+    }
+
     function shortStepToward(target,maxStep=14,arrivalDistance=5){
       const frame=currentDecisionFrame;
       const pp=frame?.tile||globalPlayerTile();
+      const pendingWalk=actionContracts.get('navigation-walk');
+      // A route may advance, rebuild, or rotate its recovery approach while the
+      // preceding short step is still awaiting confirmation. Do not let that
+      // stale contract keep steering toward the former waypoint.
+      if(pendingWalk?.pending&&navigationGoalChanged(pendingWalk,target)){
+        cancelActionContract('navigation-walk','destination changed',frame?.now||Date.now());
+      }
       const retry=navRetryTarget(target,pp,frame?.now||Date.now());
       const dx=retry.x-pp.x, dy=retry.y-pp.y;
       const d=Math.abs(dx)+Math.abs(dy);
-      if(d<=arrivalDistance){actionContracts.delete('navigation-walk');return true;}
+      if(d<=arrivalDistance){cancelActionContract('navigation-walk','destination reached',frame?.now||Date.now());return true;}
       const mag=Math.max(Math.abs(dx),Math.abs(dy),1);
       const scale=Math.min(1,Math.min(maxStep,14)/mag);
       const tx=Math.round(pp.x+dx*scale);
@@ -2127,7 +2139,7 @@ ${firstBanker}`;
         timeout:4000,
         maxAttempts:4,
         confirmedLabel:'character advanced toward destination',
-        capture:()=>({tile:{...frame.tile},target:{x:tx,y:ty},distance:nodeDistance(frame.tile,{x:tx,y:ty})}),
+        capture:()=>({tile:{...frame.tile},target:{x:tx,y:ty},goal:{x:Number(target.x),y:Number(target.y)},distance:nodeDistance(frame.tile,{x:tx,y:ty})}),
         confirm:(next,state)=>walkProgressConfirmed(next,state,arrivalDistance),
         execute:()=>{
           const sent=walkGlobal(tx,ty);
@@ -2588,6 +2600,20 @@ ${firstBanker}`;
     const COMBAT_PRESERVE_IDS=new Set([12,87,88,156,166,203,204,405,428,1258,1259,1260,1261,1262]);
     const GATHERED_BANK_IDS=new Set([...LOG_IDS,...ORE_IDS]);
     const LOOT_BANK_IDS=new Set([...F2P_LOOT_IDS].filter(id=>!COMBAT_PRESERVE_IDS.has(id)&&!FOOD_HEALS[id]));
+    function queuedSupplyReservations(queue=commandQueue){
+      const reserved=new Set(COMBAT_PRESERVE_IDS);
+      for(const command of Array.isArray(queue)?queue.slice(0,8):[]){
+        const intent=parse(String(command||''));
+        if(intent?.type==='prayer')for(const id of BONE_IDS)reserved.add(id);
+        if(intent?.type==='firemaking'){
+          reserved.add(14);reserved.add(166);
+          for(const id of AXE_IDS)reserved.add(id);
+        }
+        if(intent?.type==='woodcutting')for(const id of AXE_IDS)reserved.add(id);
+        if(intent?.type==='mining')for(const id of PICKAXE_IDS)reserved.add(id);
+      }
+      return reserved;
+    }
     function bankingDepositFilter(mode){
       if(mode==='gathered')return GATHERED_BANK_IDS;
       if(mode==='loot')return LOOT_BANK_IDS;
@@ -2807,7 +2833,8 @@ ${firstBanker}`;
 
     function depositCombatLootIfBankOpen(frame){
       const tracked=objective?.collectedLootIds instanceof Set?objective.collectedLootIds:new Set();
-      const allowed=new Set(Array.from(tracked,id=>Number(id)).filter(id=>!COMBAT_PRESERVE_IDS.has(id)&&!FOOD_HEALS[id]));
+      const reserved=queuedSupplyReservations();
+      const allowed=new Set(Array.from(tracked,id=>Number(id)).filter(id=>!reserved.has(id)&&!FOOD_HEALS[id]));
       const result=runBankDepositContract('combat-loot-deposit',frame,allowed);
       if(result.reason==='deposited'){
         for(const entry of result.entries||[])tracked.delete(entry.id);

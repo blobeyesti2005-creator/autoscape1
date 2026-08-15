@@ -21,8 +21,9 @@ deleting history, or changing GitHub Pages.
   resource depletion, and synthetic click markers.
 - [x] Run the regression suite automatically on the vacation branch and pull
   requests.
-- [ ] Add browser-level smoke coverage for account creation and basic UI
-  controls; remembered login and full save/load now have executable fixtures.
+- [x] Add browser-level smoke coverage for account creation, remembered login,
+  keyboard behavior, death recovery, observation controls, and the learning lab;
+  full save/load also has executable fixtures.
 - [x] Reduce avoidable metrics DOM updates, unchanged camera-storage writes,
   and unchanged Quick Bank style writes without slowing bot decisions.
 - [x] Reuse single-pass inventory summaries in active gathering, firemaking, and
@@ -771,4 +772,37 @@ deleting history, or changing GitHub Pages.
   formats, settings, queued-job schemas, or learner/live-action boundaries
   changed. Main, Pages, and release configuration remain out of scope.
 - Package and app-shell cache metadata advanced to `2.12.22` for the eventual
+  reviewed release.
+
+### Destination-safe navigation and queued-supply reservations
+
+- `npm test` (57 regression groups) and `npm run test:browser` (6 focused UI
+  smoke groups)
+- Every confirmed short navigation step now records both its immediate step and
+  the higher-level destination that requested it. If a route advances,
+  rebuilds, or rotates to a different recovery approach while that step is
+  pending, the old contract is cancelled before any new movement is sent.
+- Arrival now cancels the pending walk through the normal diagnostic boundary
+  instead of silently deleting it. Decision traces therefore distinguish
+  destination changes and completed arrivals from timeouts and collision
+  recovery.
+- Added an executable two-destination simulation proving a pending eastbound
+  step is cancelled and replaced immediately when the controller switches to a
+  northbound goal. The new contract contains only the new destination and the
+  packet target moves in the correct direction.
+- Automatic combat banking now calculates explicit supply reservations from up
+  to eight queued jobs. Existing equipment, axes, pickaxes, and tinderboxes
+  remain reserved; queued Prayer additionally reserves bones, while queued
+  Firemaking reserves regular logs, a tinderbox, and an axe.
+- Reservation filtering applies only to automatic combat-loot deposits. An
+  explicit player-requested carried/gathered/loot bank command retains its
+  documented meaning and is not silently weakened.
+- Tests prove combat coins are deposited only after confirmation while food,
+  equipment, and bones needed by queued Prayer remain carried and tracked. A
+  Firemaking reservation fixture covers logs, tinderbox, axe, and pickaxe
+  preservation.
+- No account/save fields, persistence keys, inventory/bank formats, settings,
+  queued-job schemas, or learner/live-action boundaries changed. Main, Pages,
+  and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.23` for the eventual
   reviewed release.

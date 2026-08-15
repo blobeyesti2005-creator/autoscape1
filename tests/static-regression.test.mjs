@@ -554,7 +554,7 @@ test('bank deposits require confirmed inventory removal and preserve equipped it
   assert.match(html,/LOOT_BANK_IDS/);
 });
 
-test('combat loot stays tracked until its bank deposit is confirmed', () => {
+test('combat loot stays tracked until its bank deposit is confirmed and reserves queued supplies', () => {
   const packets=[];
   let activePacket=null;
   const mc={
@@ -565,26 +565,29 @@ test('combat loot stays tracked until its bank deposit is confirmed', () => {
       putInt(value){activePacket.values.push(value);},
       sendPacket(){}
     },
-    inventoryItemId:[87,10,132],
-    inventoryItemStackCount:[1,100,2],
-    inventoryEquipped:[1,0,0]
+    inventoryItemId:[87,10,132,20],
+    inventoryItemStackCount:[1,100,2,4],
+    inventoryEquipped:[1,0,0,0]
   };
-  const objective={collectedLootIds:new Set([87,10,132])};
+  const objective={collectedLootIds:new Set([87,10,132,20])};
   const sessionStats={actions:0,deposits:0};
   const harness=new Function(
     'mc','inventorySlots','sessionStats','markProgress','renderMetrics','traceDecision',
-    'objective','COMBAT_PRESERVE_IDS','FOOD_HEALS',
+    'objective','COMBAT_PRESERVE_IDS','FOOD_HEALS','commandQueue','parse','BONE_IDS','AXE_IDS','PICKAXE_IDS',
     `const actionContracts=new Map();
      ${functionSource(html,'runActionContract')}
      ${functionSource(html,'bankDepositPlan')}
      ${functionSource(html,'sendBankDepositPlan')}
      ${functionSource(html,'runBankDepositContract')}
+     ${functionSource(html,'queuedSupplyReservations')}
      ${functionSource(html,'depositCombatLootIfBankOpen')}
-     return {depositCombatLootIfBankOpen,contracts:actionContracts};`
+     return {depositCombatLootIfBankOpen,queuedSupplyReservations,contracts:actionContracts};`
   )(
-    mc,()=>3,sessionStats,()=>{},()=>{},()=>{},objective,new Set([87]),{132:3}
+    mc,()=>4,sessionStats,()=>{},()=>{},()=>{},objective,new Set([87]),{132:3},
+    ['bury bones'],command=>command.includes('bones')?{type:'prayer'}:null,
+    new Set([20]),new Set([87]),new Set([156])
   );
-  const frame=(now,lootCount)=>({now,inventory:{counts:new Map([[87,1],[10,lootCount],[132,2]])}});
+  const frame=(now,lootCount)=>({now,inventory:{counts:new Map([[87,1],[10,lootCount],[132,2],[20,4]])}});
 
   let result=harness.depositCombatLootIfBankOpen(frame(1000,100));
   assert.equal(result.pending,true);
@@ -596,8 +599,18 @@ test('combat loot stays tracked until its bank deposit is confirmed', () => {
   assert.equal(objective.collectedLootIds.has(10),false);
   assert.equal(objective.collectedLootIds.has(87),true,'preserved equipment IDs remain tracked');
   assert.equal(objective.collectedLootIds.has(132),true,'food IDs remain tracked');
+  assert.equal(objective.collectedLootIds.has(20),true,'bones reserved for the queued Prayer job remain tracked and carried');
   assert.equal(sessionStats.deposits,1);
   assert.equal(harness.contracts.size,0);
+
+  const firemakingReservations=new Function(
+    'COMBAT_PRESERVE_IDS','BONE_IDS','AXE_IDS','PICKAXE_IDS','parse','commandQueue',
+    `${functionSource(html,'queuedSupplyReservations')}\nreturn queuedSupplyReservations;`
+  )(
+    new Set([87,156,166]),new Set([20]),new Set([87]),new Set([156]),
+    command=>command.includes('firemake')?{type:'firemaking'}:null,['firemake logs']
+  )();
+  assert.deepEqual([...firemakingReservations].sort((a,b)=>a-b),[14,87,156,166]);
 
   const source=functionSource(html,'advanceCombatBanking');
   assert.match(source,/if\(deposit\.pending\)/);
@@ -780,6 +793,34 @@ test('navigation actions confirm forward progress and escalate bounded timeouts'
   assert.match(shortStepSource,/maxAttempts:4/);
   assert.match(shortStepSource,/walkProgressConfirmed\(next,state,arrivalDistance\)/);
   assert.match(shortStepSource,/navWatch\.retries=Math\.max/);
+  assert.match(shortStepSource,/navigationGoalChanged\(pendingWalk,target\)/);
+  assert.match(shortStepSource,/goal:\{x:Number\(target\.x\),y:Number\(target\.y\)\}/);
+
+  const traces=[],walks=[];
+  const navigationHarness=new Function(
+    'traceDecision',
+    `const actionContracts=new Map();
+     let currentDecisionFrame={now:1000,tile:{x:0,y:0}},lastAction=0;
+     const objective={},navWatch={retries:0};const MAX_NAV_RETRIES=12;
+     function globalPlayerTile(){return {...currentDecisionFrame.tile};}
+     function navRetryTarget(target){return target;}
+     function nodeDistance(a,b){return Math.abs(a.x-b.x)+Math.abs(a.y-b.y);}
+     function walkGlobal(x,y){walks.push({x,y});return true;}
+     const walks=[];
+     ${functionSource(html,'cancelActionContract')}
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'walkProgressConfirmed')}
+     ${functionSource(html,'navigationGoalChanged')}
+     ${functionSource(html,'shortStepToward')}
+     return {shortStepToward,contracts:actionContracts,walks,setFrame:value=>{currentDecisionFrame=value;}};`
+  )((...entry)=>traces.push(entry));
+  navigationHarness.shortStepToward({x:30,y:0});
+  assert.deepEqual(navigationHarness.contracts.get('navigation-walk').before.goal,{x:30,y:0});
+  navigationHarness.setFrame({now:1500,tile:{x:0,y:0}});
+  navigationHarness.shortStepToward({x:0,y:30});
+  assert.deepEqual(navigationHarness.contracts.get('navigation-walk').before.goal,{x:0,y:30});
+  assert.deepEqual(navigationHarness.walks,[{x:14,y:0},{x:0,y:14}]);
+  assert.ok(traces.some(entry=>entry[0]==='navigation-walk'&&entry[1]==='cancelled'&&entry[2]==='destination changed'));
 
   for(const name of [
     'advanceBankRoute','advanceResourceTravel','advanceReturnRoute',
