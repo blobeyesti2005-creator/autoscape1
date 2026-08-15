@@ -928,3 +928,30 @@ deleting history, or changing GitHub Pages.
   unchanged. Main, Pages, and release configuration remain out of scope.
 - Package and app-shell cache metadata advanced to `2.12.28` for the eventual
   reviewed release.
+
+### Fail-closed browser account loading
+
+- `npm test` (64 regression groups) and `npm run test:browser` (9 focused UI
+  smoke groups)
+- Browser startup now validates both legacy IndexedDB records completely before
+  exposing either to the live world. Malformed JSON, non-array player lists,
+  duplicate usernames, key/record username mismatches, unsafe record IDs, and
+  a next-player ID that precedes an existing account all stop startup with a
+  specific non-destructive error.
+- A persistence-ready write guard remains closed until validation succeeds.
+  Even if a caller catches a failed load and attempts a checkpoint, the client
+  refuses it instead of replacing damaged but potentially recoverable account
+  bytes with an empty or partial player map.
+- IndexedDB read failures receive the same fail-closed treatment. No repair,
+  deletion, normalization, or fallback account creation occurs automatically;
+  the existing client instance can retry after storage becomes readable.
+- Executable recovery coverage preserves malformed bytes exactly, proves every
+  invalid structure and simulated blocked-database read performs zero writes,
+  retries a repaired full character containing stats, inventory, bank, and
+  settings, and only permits checkpoints after successful validation.
+- The existing `playerID` and `players` keys, serialized map, account/save
+  schema, inventory, bank, settings, credentials, bot jobs, and learning
+  isolation are unchanged. Main, Pages, and release configuration remain out
+  of scope.
+- Package and app-shell cache metadata advanced to `2.12.29` for the eventual
+  reviewed release.

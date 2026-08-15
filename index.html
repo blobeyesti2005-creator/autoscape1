@@ -818,9 +818,79 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         this.playerUsernames = new Map();`;
     const queuedBrowserConstructor=`        // { playerID: username }
         this.playerUsernames = new Map();
-        this.saveQueue = Promise.resolve();`;
+        this.saveQueue = Promise.resolve();
+        this.persistenceReady = false;`;
     if(!code.includes(browserConstructor))throw new Error('Server persistence patch failed: browser data constructor changed.');
     code=code.replace(browserConstructor,queuedBrowserConstructor);
+
+    // Validate both legacy records before publishing either into the live
+    // client. Damaged or torn storage remains byte-for-byte untouched and the
+    // write guard stays closed, preventing an empty fallback world from
+    // replacing accounts that may still be recoverable.
+    const browserLoad=`    async load() {
+        const playerID = await idbKeyval.get('playerID');
+        this.playerID = playerID ? Number(playerID) : 0;
+
+        const players = await idbKeyval.get('players');
+        this.players = players ? new Map(JSON.parse(players)) : new Map();
+
+        for (const player of this.players.values()) {
+            player.world = 0;
+        }
+
+        log.info(\`loaded \${this.players.size} players from local storage\`);
+    }`;
+    const guardedBrowserLoad=`    async load() {
+        this.persistenceReady = false;
+        let storedPlayerID;
+        let storedPlayers;
+        try {
+            storedPlayerID = await idbKeyval.get('playerID');
+            storedPlayers = await idbKeyval.get('players');
+        } catch (error) {
+            throw new Error(\`Local character storage could not be read; no records were changed (\${error.message}).\`);
+        }
+        let playerID;
+        let entries;
+        try {
+            playerID = storedPlayerID === undefined || storedPlayerID === null
+                ? 0
+                : Number(storedPlayerID);
+            if (!Number.isSafeInteger(playerID) || playerID < 0) {
+                throw new Error('invalid next player ID');
+            }
+            entries = storedPlayers === undefined || storedPlayers === null
+                ? []
+                : JSON.parse(storedPlayers);
+            if (!Array.isArray(entries)) throw new Error('player list is not an array');
+            const usernames = new Set();
+            let maximumPlayerID = -1;
+            for (const entry of entries) {
+                if (!Array.isArray(entry) || entry.length !== 2 ||
+                    typeof entry[0] !== 'string' || !entry[0] ||
+                    !entry[1] || typeof entry[1] !== 'object' || Array.isArray(entry[1])) {
+                    throw new Error('invalid player entry');
+                }
+                if (usernames.has(entry[0])) throw new Error('duplicate player username');
+                usernames.add(entry[0]);
+                if (entry[1].username !== entry[0]) throw new Error('player username mismatch');
+                if (!Number.isSafeInteger(entry[1].id) || entry[1].id < 0) {
+                    throw new Error('invalid player record ID');
+                }
+                maximumPlayerID = Math.max(maximumPlayerID, entry[1].id);
+            }
+            if (maximumPlayerID >= playerID) throw new Error('next player ID precedes stored records');
+        } catch (error) {
+            throw new Error(\`Local character storage is damaged; no records were changed (\${error.message}).\`);
+        }
+        this.playerID = playerID;
+        this.players = new Map(entries);
+        for (const player of this.players.values()) player.world = 0;
+        this.persistenceReady = true;
+        log.info(\`loaded \${this.players.size} players from local storage\`);
+    }`;
+    if(!code.includes(browserLoad))throw new Error('Server persistence patch failed: browser load transaction changed.');
+    code=code.replace(browserLoad,guardedBrowserLoad);
 
     const browserSave=`    async save() {
         await idbKeyval.set('playerID', this.playerID);
@@ -830,6 +900,9 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         );
     }`;
     const queuedBrowserSave=`    async save() {
+        if (!this.persistenceReady) {
+            throw new Error('Local character storage is not ready; checkpoint refused.');
+        }
         const playerID = this.playerID;
         const players = JSON.stringify(Array.from(this.players.entries()));
         const commit = async () => {

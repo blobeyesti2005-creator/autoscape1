@@ -138,6 +138,19 @@ test('server persistence patch performs durable registration and recurring saves
   const fixture = `
         // { playerID: username }
         this.playerUsernames = new Map();
+    async load() {
+        const playerID = await idbKeyval.get('playerID');
+        this.playerID = playerID ? Number(playerID) : 0;
+
+        const players = await idbKeyval.get('players');
+        this.players = players ? new Map(JSON.parse(players)) : new Map();
+
+        for (const player of this.players.values()) {
+            player.world = 0;
+        }
+
+        log.info(\`loaded \${this.players.size} players from local storage\`);
+    }
     async save() {
         await idbKeyval.set('playerID', this.playerID);
         await idbKeyval.set(
@@ -167,6 +180,9 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
   const patched = patchServerPersistence(fixture);
 
   assert.match(patched, /this\.saveQueue = Promise\.resolve\(\)/);
+  assert.match(patched, /this\.persistenceReady = false/);
+  assert.match(patched, /Local character storage is damaged; no records were changed/);
+  assert.match(patched, /Local character storage is not ready; checkpoint refused/);
   assert.match(patched, /const pending = this\.saveQueue\.then\(commit, commit\)/);
   assert.match(patched, /this\.saveQueue = pending\.catch\(\(\) => undefined\)/);
   assert.match(patched, /this\.players\.set\(player\.username, player\);\s*await this\.save\(\);/);
@@ -204,6 +220,19 @@ class BrowserDataClient {
         this.playerUsernames = new Map();
         this.playerID = 1;
         this.players = new Map();
+    }
+    async load() {
+        const playerID = await idbKeyval.get('playerID');
+        this.playerID = playerID ? Number(playerID) : 0;
+
+        const players = await idbKeyval.get('players');
+        this.players = players ? new Map(JSON.parse(players)) : new Map();
+
+        for (const player of this.players.values()) {
+            player.world = 0;
+        }
+
+        log.info(\`loaded \${this.players.size} players from local storage\`);
     }
     async save() {
         await idbKeyval.set('playerID', this.playerID);
@@ -254,8 +283,9 @@ return BrowserDataClient;`;
       }
     }
   };
-  const Client = new Function('idbKeyval', patchServerPersistence(fixture))(idbKeyval);
+  const Client = new Function('idbKeyval', 'log', patchServerPersistence(fixture))(idbKeyval, { info() {} });
   const client = new Client();
+  client.persistenceReady = true;
   client.players.set('tester', { username: 'tester', password: 'secret', coins: 1 });
   const first = client.save();
   await Promise.resolve();
@@ -278,6 +308,136 @@ return BrowserDataClient;`;
   const playerWrites = writes.filter(write => write.key === 'players');
   assert.equal(new Map(JSON.parse(playerWrites.at(-1).value)).get('tester').coins, 4);
   assert.ok(client.saveQueue instanceof Promise, 'queue remains usable after a rejected transaction');
+});
+
+test('browser load fails closed on damaged records and can retry without rewriting storage', async () => {
+  const persistenceSource = section(
+    html,
+    '  function patchServerPersistence(code){',
+    '  // RuneScape Classic predates the Lumbridge bank'
+  );
+  const patchServerPersistence = new Function(
+    `${persistenceSource}\nreturn patchServerPersistence;`
+  )();
+  const fixture = `
+class BrowserDataClient {
+    constructor() {
+        // { playerID: username }
+        this.playerUsernames = new Map();
+    }
+    async load() {
+        const playerID = await idbKeyval.get('playerID');
+        this.playerID = playerID ? Number(playerID) : 0;
+
+        const players = await idbKeyval.get('players');
+        this.players = players ? new Map(JSON.parse(players)) : new Map();
+
+        for (const player of this.players.values()) {
+            player.world = 0;
+        }
+
+        log.info(\`loaded \${this.players.size} players from local storage\`);
+    }
+    async save() {
+        await idbKeyval.set('playerID', this.playerID);
+        await idbKeyval.set(
+            'players',
+            JSON.stringify(Array.from(this.players.entries()))
+        );
+    }
+    async savePlayer(player) {
+        player.password = this.players.get(player.username).password;
+        this.players.set(player.username, JSON.parse(JSON.stringify(player)));
+        await this.save();
+    }
+    async register(player) {
+                this.players.set(player.username, player);
+
+                return {
+                    success: true,
+                    code: 2
+                };
+    }
+}
+const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
+class World {
+    constructor() {
+        this.boundSaveAllPlayers = this.saveAllPlayers.bind(this);
+
+        this.ticks = 0;
+    }
+    async saveAllPlayers() {
+        if (!this.players.length) {
+            return;
+        }
+    }
+}
+return BrowserDataClient;`;
+  const raw = {
+    playerID: '2',
+    players: '{damaged character data'
+  };
+  const writes = [];
+  let readFailure = null;
+  const idbKeyval = {
+    async get(key) {
+      if (readFailure) throw readFailure;
+      return raw[key];
+    },
+    async set(key, value) { writes.push({ key, value }); }
+  };
+  const Client = new Function('idbKeyval', 'log', patchServerPersistence(fixture))(idbKeyval, { info() {} });
+  const client = new Client();
+  await assert.rejects(client.load(), /Local character storage is damaged; no records were changed/);
+  assert.equal(client.persistenceReady, false);
+  await assert.rejects(client.save(), /checkpoint refused/);
+  assert.deepEqual(writes, [], 'a failed load and refused save must not mutate either legacy key');
+  assert.equal(raw.players, '{damaged character data', 'damaged bytes remain available for recovery');
+
+  const complete = [[
+    'tester',
+    {
+      id: 1,
+      username: 'tester',
+      password: 'secret',
+      world: 1,
+      skills: { attack: { current: 12, experience: 1_500 } },
+      inventory: [{ id: 132, amount: 7 }],
+      bank: [{ id: 14, amount: 65_535 }],
+      settings: { cameraAuto: 1, soundOn: 1 }
+    }
+  ]];
+  raw.players = JSON.stringify(complete);
+  await client.load();
+  assert.equal(client.persistenceReady, true);
+  assert.equal(client.playerID, 2);
+  assert.deepEqual(client.players.get('tester'), { ...complete[0][1], world: 0 });
+  assert.deepEqual(writes, [], 'successful validation must not rewrite compatible records');
+  await client.save();
+  assert.deepEqual(writes.map(write => write.key), ['playerID', 'players']);
+
+  const invalidCases = [
+    ['not an array', JSON.stringify({ tester: complete[0][1] }), '2'],
+    ['duplicate username', JSON.stringify([complete[0], complete[0]]), '2'],
+    ['username mismatch', JSON.stringify([['tester', { ...complete[0][1], username: 'other' }]]), '2'],
+    ['invalid record id', JSON.stringify([['tester', { ...complete[0][1], id: -1 }]]), '2'],
+    ['next id behind records', JSON.stringify(complete), '1'],
+    ['invalid next id', JSON.stringify(complete), 'not-a-number']
+  ];
+  for (const [label, players, playerID] of invalidCases) {
+    raw.players = players;
+    raw.playerID = playerID;
+    await assert.rejects(client.load(), /Local character storage is damaged/, label);
+    assert.equal(client.persistenceReady, false, `${label} must close the write guard`);
+  }
+
+  raw.players = JSON.stringify(complete);
+  raw.playerID = '2';
+  readFailure = new Error('simulated blocked database');
+  const writeCount = writes.length;
+  await assert.rejects(client.load(), /storage could not be read; no records were changed/);
+  assert.equal(client.persistenceReady, false);
+  assert.equal(writes.length, writeCount, 'a read failure must never trigger storage repair writes');
 });
 
 test('browser account storage round-trips complete character state without aliases', async () => {
