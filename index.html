@@ -236,7 +236,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
   let decisionSequence=0,decisionFrameSequence=0,lastDecisionText='',activeTaskNode='idle';
-  const decisionHistory=[],actionContracts=new Map(),blockedGatherTargets=new Map(),blockedCombatTargets=new Map(),blockedLootTargets=new Map();
+  const decisionHistory=[],actionContracts=new Map(),blockedGatherTargets=new Map(),blockedCombatTargets=new Map(),blockedLootTargets=new Map(),blockedBankers=new Map();
   let currentDecisionFrame=null;
   const METRICS_RENDER_INTERVAL=2000;
   const sessionStats={startedAt:Date.now(),taskStartedAt:0,actions:0,attacks:0,kills:0,eats:0,chops:0,mines:0,fires:0,burials:0,loot:0,bankTrips:0,deposits:0};
@@ -1062,7 +1062,7 @@ ${firstBanker}`;
       return TREE_DEFS.find(d=>d.name===name) || TREE_DEFS[TREE_DEFS.length-1];
     }
 
-    function bestTree(){
+    function bestTree(blockKind='woodcutting'){
       const p=playerTile();
       const lvl=wcLevel();
       const requested=(objective && objective.resource) || 'auto';
@@ -1080,7 +1080,7 @@ ${firstBanker}`;
         const id=Number(mc.objectId[i]),def=byId.get(id);
         if(!def)continue;
         const x=mc.objectX[i],y=mc.objectY[i];
-        if(gatherTargetBlocked('woodcutting',{id,x,y}))continue;
+        if(gatherTargetBlocked(blockKind,{id,x,y}))continue;
         const d=Math.abs(x-p.x)+Math.abs(y-p.y);
         const current=nearest.get(def.name);
         if(!current||d<current.distance){
@@ -1657,6 +1657,7 @@ ${firstBanker}`;
       for(let i=0;i<(mc.npcCount||0);i++){
         const npc=mc.npcs?.[i];
         if(!npc || !BANKER_IDS.has(Number(npc.npcId))) continue;
+        if(timedTargetBlocked(blockedBankers,Number(npc.serverIndex)))continue;
         const lx=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
         const ly=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
         const x=lx+Number(mc.regionX||0);
@@ -1698,23 +1699,81 @@ ${firstBanker}`;
       return objective?.phase===phase&&sentAt>0&&now-sentAt<15000;
     }
 
-    function bankInteractionWaiting(combat=false,now=Date.now()){
+    function bankContractKey(combat=false,step='talk'){
+      return `${combat?'combat-':''}bank-${step}`;
+    }
+
+    function resetBankInteraction(combat=false,reason='interaction timed out',now=Date.now()){
+      const basePhase=combat?'combat-bank':'bank';
+      cancelActionContract(bankContractKey(combat,'talk'),reason,now);
+      cancelActionContract(bankContractKey(combat,'open'),reason,now);
+      objective.bankTalkSentAt=0;
+      objective.bankOptionSentAt=0;
+      objective.phase=basePhase;
+      objective.bankApproachIndex=(Number(objective.bankApproachIndex||0)+1)%BANK_APPROACH_OFFSETS.length;
+      objective.bankArrivalRecoveries=Number(objective.bankArrivalRecoveries||0)+1;
+      navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+    }
+
+    function runBankTalkContract(frame,banker,combat=false){
+      const key=bankContractKey(combat,'talk');
       const basePhase=combat?'combat-bank':'bank';
       const dialoguePhase=combat?'combat-bank-dialogue':'bank-dialogue';
-      const openPhase=combat?'combat-bank-open':'bank-open';
-      if(objective?.phase===dialoguePhase){
-        if(now-Number(objective.bankTalkSentAt||0)<9000)return true;
+      const result=runActionContract(key,frame,{
+        timeout:9000,
+        maxAttempts:3,
+        confirmedLabel:'banker dialogue menu opened',
+        ready:()=>!!banker&&banker.d<=BANKER_TALK_DISTANCE&&[basePhase,dialoguePhase].includes(objective?.phase)&&frame.now-lastAction>=ACTION_INTERVALS.walk,
+        capture:()=>({serverIndex:Number(banker.npc.serverIndex),bankKey:objective?.bankKey}),
+        confirm:()=>mc.showOptionMenu&&bankDialogueOptionExpected(combat,frame.now),
+        execute:()=>{
+          const sent=sendTalkToBanker(banker);
+          if(sent){
+            objective.phase=dialoguePhase;
+            objective.bankTalkSentAt=frame.now;
+            lastAction=frame.now;
+          }
+          return sent;
+        }
+      });
+      if(result.status==='failed'){
         objective.bankTalkTimeouts=Number(objective.bankTalkTimeouts||0)+1;
-        objective.bankTalkSentAt=0;
-        objective.phase=basePhase;
+        blockTimedTarget(blockedBankers,result.state.before?.serverIndex,frame.now,15000,20);
+        resetBankInteraction(combat,'banker gave no dialogue',frame.now);
+      }else if(result.status==='blocked'&&objective?.phase===dialoguePhase&&(!banker||banker.d>BANKER_TALK_DISTANCE)){
+        blockTimedTarget(blockedBankers,result.state.before?.serverIndex,frame.now,15000,20);
+        resetBankInteraction(combat,'banker became unavailable',frame.now);
+        return {...result,status:'failed'};
       }
-      if(objective?.phase===openPhase){
-        if(now-Number(objective.bankOptionSentAt||0)<6000)return true;
+      return result;
+    }
+
+    function runBankOpenContract(frame,combat=false){
+      const key=bankContractKey(combat,'open');
+      const dialoguePhase=combat?'combat-bank-dialogue':'bank-dialogue';
+      const openPhase=combat?'combat-bank-open':'bank-open';
+      const result=runActionContract(key,frame,{
+        timeout:6000,
+        maxAttempts:1,
+        confirmedLabel:'bank interface opened',
+        ready:()=>objective?.phase===dialoguePhase&&mc.showOptionMenu&&bankDialogueOptionExpected(combat,frame.now),
+        capture:()=>({bankKey:objective?.bankKey}),
+        confirm:()=>!!mc.showDialogBank,
+        execute:()=>{
+          const sent=chooseFirstDialogueOption();
+          if(sent){
+            objective.phase=openPhase;
+            objective.bankOptionSentAt=frame.now;
+            lastAction=frame.now;
+          }
+          return sent;
+        }
+      });
+      if(result.status==='failed'){
         objective.bankOptionTimeouts=Number(objective.bankOptionTimeouts||0)+1;
-        objective.bankOptionSentAt=0;
-        objective.phase=basePhase;
+        resetBankInteraction(combat,'bank interface did not open',frame.now);
       }
-      return false;
+      return result;
     }
 
     function gatherSkillLabel(){
@@ -1722,13 +1781,15 @@ ${firstBanker}`;
       return objective?.type==='mining'?`Mining ${miningLevel()}`:`Woodcutting ${wcLevel()}`;
     }
 
-    function advanceBankRoute(){
+    function advanceBankRoute(frame=currentDecisionFrame||buildDecisionFrame()){
       const pp=decisionTile();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return false;
       const banker=nearestLoadedBanker(bank);
 
       if(mc.showDialogBank){
+        runBankOpenContract(frame,false);
+        cancelActionContract(bankContractKey(false,'talk'),'bank interface open',frame.now);
         if(objective.type==='banking'){
           const mode=objective.resource||'carried';
           const deposited=depositGatheredItemsIfBankOpen();
@@ -1750,27 +1811,23 @@ ${firstBanker}`;
       }
 
       if(mc.showOptionMenu&&bankDialogueOptionExpected(false)){
-        if(chooseFirstDialogueOption()){
-          objective.phase='bank-open';
-          objective.bankOptionSentAt=Date.now();
-          lastAction=Date.now();
-          setBotStatus(`${gatherSkillLabel()} • opening ${bank.label} bank`);
-          return true;
-        }
+        runBankTalkContract(frame,banker,false);
+        const result=runBankOpenContract(frame,false);
+        if(['sent','waiting','confirmed'].includes(result.status))setBotStatus(`${gatherSkillLabel()} • opening ${bank.label} bank`);
+        return true;
       }
 
-      // Banker speech is asynchronous. Re-sending NPC_TALK while the greeting
-      // is running resets the server walk action and can prevent the menu.
-      if(bankInteractionWaiting(false))return false;
+      if(['bank-dialogue','bank-open'].includes(objective.phase)){
+        const result=objective.phase==='bank-open'?runBankOpenContract(frame,false):runBankTalkContract(frame,banker,false);
+        if(['sent','waiting','cooldown','blocked','failed'].includes(result.status))return false;
+      }
 
       // NPC interaction already performs its own action walk. Starting it as
       // soon as the correctly scoped banker is nearby avoids orbiting a fixed
       // bank coordinate while the banker stands on the other side of a wall.
       if(banker && banker.d<=BANKER_TALK_DISTANCE){
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk && sendTalkToBanker(banker)){
-          objective.phase='bank-dialogue';
-          objective.bankTalkSentAt=Date.now();
-          lastAction=Date.now();
+        const result=runBankTalkContract(frame,banker,false);
+        if(result.status==='sent'){
           setBotStatus(`${gatherSkillLabel()} • talking to ${bank.label} banker`);
           return true;
         }
@@ -2793,13 +2850,15 @@ ${firstBanker}`;
       return true;
     }
 
-    function advanceCombatBanking(){
+    function advanceCombatBanking(frame=currentDecisionFrame||buildDecisionFrame()){
       const pp=decisionTile();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return;
       const banker=nearestLoadedBanker(bank);
 
       if(mc.showDialogBank){
+        runBankOpenContract(frame,true);
+        cancelActionContract(bankContractKey(true,'talk'),'bank interface open',frame.now);
         if(!objective.combatLootDeposited){
           const batches=depositCombatLootIfBankOpen();
           objective.combatLootDeposited=true;
@@ -2835,22 +2894,20 @@ ${firstBanker}`;
       }
 
       if(mc.showOptionMenu&&bankDialogueOptionExpected(true)){
-        if(chooseFirstDialogueOption()){
-          setPhase('combat-bank-open','Combat • asking banker to open bank');
-          objective.bankOptionSentAt=Date.now();
-          lastAction=Date.now();
-          return;
-        }
+        runBankTalkContract(frame,banker,true);
+        const result=runBankOpenContract(frame,true);
+        if(['sent','waiting','confirmed'].includes(result.status))setBotStatus('Combat • asking banker to open bank');
+        return;
       }
 
-      if(bankInteractionWaiting(true))return;
+      if(['combat-bank-dialogue','combat-bank-open'].includes(objective.phase)){
+        const result=objective.phase==='combat-bank-open'?runBankOpenContract(frame,true):runBankTalkContract(frame,banker,true);
+        if(['sent','waiting','cooldown','blocked','failed'].includes(result.status))return;
+      }
 
       if(banker&&banker.d<=BANKER_TALK_DISTANCE){
-        if(Date.now()-lastAction>ACTION_INTERVALS.walk&&sendTalkToBanker(banker)){
-          objective.bankTalkSentAt=Date.now();
-          setPhase('combat-bank-dialogue',`Combat • talking to ${bank.label} banker`);
-          lastAction=Date.now();
-        }
+        const result=runBankTalkContract(frame,banker,true);
+        if(result.status==='sent')setBotStatus(`Combat • talking to ${bank.label} banker`);
         return;
       }
 
@@ -2942,7 +2999,7 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='combat-bank' || objective.phase==='combat-bank-dialogue' || objective.phase==='combat-bank-open'){
-        advanceCombatBanking();
+        advanceCombatBanking(frame);
         return;
       }
       if(objective.phase==='combat-return'){
@@ -3398,7 +3455,7 @@ ${firstBanker}`;
           return;
         }
         sessionStats.bankTrips++;objective.phase='bank';prepareBankRoute();
-        lastAction=0;advanceBankRoute();return;
+        lastAction=0;advanceBankRoute(frame);return;
       }
       const rock=bestRock();
       if(rock){
@@ -3479,19 +3536,27 @@ ${firstBanker}`;
       }
     }
 
-    function firemakingGatherTick(inventory=inventorySnapshot()){
-      const level=Number(mc.playerStatBase?.[11]||1),wc=wcLevel(),now=Date.now();
-      if(normalLogCount(inventory)>0){objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;markProgress('firemaking-log-ready');return;}
-      if(!inventory.hasAxe){stop(`Continuous Firemaking stopped at level ${level}: no woodcutting axe detected.`);return;}
-      if(inventory.used>=Number(mc.inventoryMaxItemCount||30)){stop('Continuous Firemaking stopped: inventory is full and has no regular logs to burn.');return;}
-      const tree=bestTree();
+    function firemakingGatherTick(frame){
+      const inventory=frame.inventory,level=Number(mc.playerStatBase?.[11]||1),wc=wcLevel(),now=frame.now;
+      if(normalLogCount(inventory)>0){cancelActionContract('firemaking-gather','regular log received',now);objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;markProgress('firemaking-log-ready');return;}
+      if(!inventory.hasAxe){cancelActionContract('firemaking-gather','axe unavailable',now);stop(`Continuous Firemaking stopped at level ${level}: no woodcutting axe detected.`);return;}
+      if(inventory.used>=frame.inventoryMax){cancelActionContract('firemaking-gather','inventory full',now);stop('Continuous Firemaking stopped: inventory is full and has no regular logs to burn.');return;}
+      const tree=bestTree('firemaking');
       if(tree){
         objective.navRoute=[];objective.routeIndex=0;
-        if(now-lastAction>=ACTION_INTERVALS.gather&&chop(tree)){
-          lastAction=now;setBotStatus(`Firemaking ${level} • chopping a regular tree at Woodcutting ${wc}`);
+        const result=runGatherContract('firemaking',frame,tree,new Set([14]),'regular log',chop);
+        if(result.status==='sent')setBotStatus(`Firemaking ${level} • chopping a regular tree at Woodcutting ${wc}`);
+        else if(result.status==='confirmed')setBotStatus(`Firemaking ${level} • regular log received • preparing fire`);
+        else if(result.status==='failed'){
+          blockGatherTarget('firemaking',result.state.before?.target||tree,now);
+          objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+          if(objective.stallRecoveries>5){stop('Continuous Firemaking stopped: six trees failed to produce a confirmed regular log.');return;}
+          setBotStatus(`Firemaking ${level} • tree made no progress • trying another tree`);
         }
         return;
       }
+
+      cancelActionContract('firemaking-gather','resource unavailable',now);
 
       const pp=decisionTile();
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){objective.navRoute=makeRouteTo('lumbridge');objective.routeIndex=0;objective.searchIndex=0;}
@@ -3521,7 +3586,7 @@ ${firstBanker}`;
       if(tinderboxSlot(inventory)<0){stop(`Firemaking stopped at level ${level}: no tinderbox detected.`);return;}
 
       if(objective.phase==='fm-chop'){
-        firemakingGatherTick(inventory);return;
+        firemakingGatherTick(frame);return;
       }
 
       if(objective.phase==='fm-drop'){
@@ -3635,7 +3700,7 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='bank' || objective.phase==='bank-dialogue' || objective.phase==='bank-open'){
-        advanceBankRoute();
+        advanceBankRoute(frame);
         return;
       }
 
@@ -3658,7 +3723,7 @@ ${firstBanker}`;
         objective.phase='bank';
         prepareBankRoute();
         setBotStatus(`Woodcutting ${lvl} • inventory full • heading to ${objective.bankName||'nearest'} bank`);
-        advanceBankRoute();
+        advanceBankRoute(frame);
         return;
       }
       if(objective.phase==='chop'&&!actionContracts.has('woodcutting-gather')&&taskStalled(30000)){
@@ -3715,7 +3780,7 @@ ${firstBanker}`;
 
     const BOT_TASK_NODES=[
       {id:'wait-login',label:'wait for local character',priority:1000,accept:frame=>!frame.loggedIn,execute:()=>setBotStatus('Objective waiting: create/login to your LOCAL character.')},
-      {id:'bank-route',label:'navigate and interact with bank',priority:950,accept:()=>objective?.type==='banking'||['bank','bank-dialogue','bank-open'].includes(objective?.phase),execute:()=>advanceBankRoute()},
+      {id:'bank-route',label:'navigate and interact with bank',priority:950,accept:()=>objective?.type==='banking'||['bank','bank-dialogue','bank-open'].includes(objective?.phase),execute:frame=>advanceBankRoute(frame)},
       {id:'return-route',label:'return to training area',priority:900,accept:()=>objective?.phase==='return'&&['woodcutting','mining'].includes(objective?.type),execute:()=>advanceReturnRoute()},
       {id:'prayer',label:'bury held bones',priority:800,accept:()=>objective?.type==='prayer',execute:frame=>prayerTick(frame)},
       {id:'combat',label:'survive, fight, loot, and recover',priority:800,accept:()=>objective?.type==='combat',execute:frame=>combatTick(frame)},

@@ -675,12 +675,13 @@ test('gathering actions require inventory gains and quarantine failed resources'
   assert.equal(blockHelpers.gatherTargetBlocked('mining',target,200),true);
   assert.equal(blockHelpers.gatherTargetBlocked('mining',target,30100),false);
 
-  for(const name of ['miningTick','woodcuttingTick']){
+  for(const name of ['miningTick','woodcuttingTick','firemakingGatherTick']){
     const source=functionSource(html,name);
     assert.match(source,/runGatherContract\(/,`${name} must use a confirmed gather action`);
     assert.match(source,/blockGatherTarget\(/,`${name} must quarantine a repeatedly failing resource`);
     assert.match(source,/cancelActionContract\(/,`${name} must cancel stale gathering actions`);
   }
+  assert.match(functionSource(html,'firemakingGatherTick'),/bestTree\('firemaking'\)/);
   for(const name of ['mineRock','chop'])assert.doesNotMatch(functionSource(html,name),/markProgress\(/);
   assert.ok(traces.some(entry=>entry[1]==='confirmed'));
 });
@@ -941,7 +942,7 @@ test('regional searches skip unreachable tiles and keep recovery directions movi
 test('banker targeting stays scoped to the selected bank', () => {
   const bankerSource = functionSource(html, 'nearestLoadedBanker');
   const nearestLoadedBanker = new Function(
-    'mc', 'BANKER_IDS', 'globalPlayerTile', 'decisionTile', 'nodeDistance',
+    'mc', 'BANKER_IDS', 'globalPlayerTile', 'decisionTile', 'nodeDistance', 'timedTargetBlocked', 'blockedBankers',
     `${bankerSource}\nreturn nearestLoadedBanker;`
   )(
     {
@@ -957,7 +958,9 @@ test('banker targeting stays scoped to the selected bank', () => {
     new Set([95]),
     () => ({ x: 124, y: 657 }),
     () => ({ x: 124, y: 657 }),
-    (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
+    (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    () => false,
+    new Map()
   );
 
   assert.equal(nearestLoadedBanker({ x: 220, y: 635 }).npc.serverIndex, 2);
@@ -1024,19 +1027,65 @@ test('bank dialogue choices require a recent bot-initiated banker conversation',
   assert.equal(makeExpected({ phase: 'bank-dialogue', bankTalkSentAt: now - 16_000 })(false, now), false);
   assert.equal(makeExpected({ phase: 'bank-dialogue', bankTalkSentAt: 0 })(false, now), false);
 
-  const waitingSource = functionSource(html, 'bankInteractionWaiting');
-  const makeWaiting = objective => new Function(
-    'objective', `${waitingSource}\nreturn bankInteractionWaiting;`
-  )(objective);
-  const active = { phase: 'bank-dialogue', bankTalkSentAt: now - 1_000 };
-  assert.equal(makeWaiting(active)(false, now), true);
-  assert.equal(active.phase, 'bank-dialogue');
+});
 
-  const expired = { phase: 'combat-bank-open', bankOptionSentAt: now - 7_000 };
-  assert.equal(makeWaiting(expired)(true, now), false);
-  assert.equal(expired.phase, 'combat-bank');
-  assert.equal(expired.bankOptionSentAt, 0);
-  assert.equal(expired.bankOptionTimeouts, 1);
+test('bank actions require dialogue and interface confirmation with bounded recovery', () => {
+  const traces=[];
+  const objective={phase:'bank',bankApproachIndex:0,bankArrivalRecoveries:0};
+  const mc={showOptionMenu:false,showDialogBank:false};
+  let talkSends=0,optionSends=0;
+  const harness=new Function(
+    'traceDecision','objective','mc','sendTalkToBanker','chooseFirstDialogueOption',
+    `const actionContracts=new Map(),blockedBankers=new Map();let lastAction=0;
+     const ACTION_INTERVALS={walk:1200},BANKER_TALK_DISTANCE=20;
+     const BANK_APPROACH_OFFSETS=[[0,0],[5,0],[0,5],[-5,0],[0,-5]];
+     let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+     function blockTimedTarget(map,key,now,duration){if(key!==undefined)map.set(String(key),Number(now)+Number(duration));}
+     ${functionSource(html,'cancelActionContract')}
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'bankDialogueOptionExpected')}
+     ${functionSource(html,'bankContractKey')}
+     ${functionSource(html,'resetBankInteraction')}
+     ${functionSource(html,'runBankTalkContract')}
+     ${functionSource(html,'runBankOpenContract')}
+     return {runBankTalkContract,runBankOpenContract,contracts:actionContracts};`
+  )(
+    (...entry)=>traces.push(entry),objective,mc,
+    ()=>{talkSends+=1;return true;},
+    ()=>{if(!mc.showOptionMenu)return false;optionSends+=1;mc.showOptionMenu=false;return true;}
+  );
+  const banker={d:2,npc:{serverIndex:95}};
+
+  assert.equal(harness.runBankTalkContract({now:2000},banker,false).status,'sent');
+  assert.equal(objective.phase,'bank-dialogue');
+  assert.equal(talkSends,1);
+  mc.showOptionMenu=true;
+  assert.equal(harness.runBankTalkContract({now:2200},banker,false).status,'confirmed');
+  assert.equal(harness.runBankOpenContract({now:2200},false).status,'sent');
+  assert.equal(objective.phase,'bank-open');
+  assert.equal(optionSends,1);
+  mc.showDialogBank=true;
+  assert.equal(harness.runBankOpenContract({now:2300},false).status,'confirmed');
+
+  mc.showDialogBank=false;
+  objective.phase='bank';
+  assert.equal(harness.runBankTalkContract({now:4000},banker,false).status,'sent');
+  assert.equal(harness.runBankTalkContract({now:13001},banker,false).status,'sent');
+  assert.equal(harness.runBankTalkContract({now:22002},banker,false).status,'sent');
+  assert.equal(harness.runBankTalkContract({now:31003},banker,false).status,'failed');
+  assert.equal(objective.phase,'bank');
+  assert.equal(objective.bankTalkTimeouts,1);
+  assert.equal(objective.bankApproachIndex,1,'a silent banker must rotate the final approach');
+  assert.equal(harness.contracts.size,0);
+  assert.ok(traces.some(entry=>entry[1]==='confirmed'));
+  assert.ok(traces.some(entry=>entry[1]==='failed'));
+
+  for(const name of ['advanceBankRoute','advanceCombatBanking']){
+    const source=functionSource(html,name);
+    assert.match(source,/runBankTalkContract\(frame,banker,/);
+    assert.match(source,/runBankOpenContract\(frame,/);
+    assert.doesNotMatch(source,/bankInteractionWaiting\(/);
+  }
 });
 
 test('performance guards avoid unchanged UI and storage writes', () => {

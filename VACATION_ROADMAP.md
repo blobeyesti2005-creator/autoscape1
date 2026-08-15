@@ -417,3 +417,30 @@ deleting history, or changing GitHub Pages.
   either metric.
 - Package and app-shell cache metadata advanced to `2.12.10` for the eventual
   reviewed release.
+
+### Confirmed firemaking gathering and banking interactions
+
+- `npm test` (32 regression groups)
+- Continuous Firemaking now uses the shared gathering action contract and only
+  treats chopping as successful after a regular log appears in the next shared
+  inventory snapshot. Packet sends no longer advance the phase by themselves.
+- A tree gets four nine-second chances to produce a log. A repeatedly silent
+  tree is ignored for 30 seconds while the bot tries another loaded tree, and
+  six exhausted resources stop the job safely instead of creating an endless
+  action loop.
+- Normal and combat banking now share explicit talk and open contracts. Banker
+  speech is confirmed by the expected fresh dialogue menu; choosing its first
+  option is confirmed only when the bank interface becomes visible.
+- Banker talk is capped at three nine-second attempts and bank opening at one
+  six-second attempt per dialogue. Failure clears stale action state, rotates
+  the selected bank's final approach, ignores the silent banker for 15 seconds,
+  and resumes scoped banker acquisition. The exclusion is runtime-only and
+  bounded to 20 entries.
+- Banking and firemaking use the existing shared decision frame, so these hot
+  paths do not add extra inventory or player-position snapshots per bot tick.
+- Executable tests cover successful talk-to-menu-to-bank transitions, exhausted
+  banker recovery, firemaking's confirmed-gather contract, and runtime-only
+  resource quarantine. Account, character, inventory, bank, stats, settings,
+  command-job payloads, and persistence keys remain unchanged.
+- Package and app-shell cache metadata advanced to `2.12.11` for the eventual
+  reviewed release.
