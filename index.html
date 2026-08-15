@@ -11,10 +11,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #game-host{position:absolute;left:50%;top:50%;width:512px;height:346px;transform-origin:center center}
 #game-host>div{width:512px!important;height:346px!important}
 #game-host canvas{display:block;width:512px!important;height:346px!important;image-rendering:pixelated;touch-action:none}
-#fsBtn,#botToggle,#guideBtn{position:fixed;z-index:8500;top:max(6px,env(safe-area-inset-top));padding:8px 10px;background:rgba(36,31,22,.88);color:#fff;border:1px solid #9f8657;font-size:12px}
+#fsBtn,#botToggle,#guideBtn,#labBtn{position:fixed;z-index:8500;top:max(6px,env(safe-area-inset-top));padding:8px 10px;background:rgba(36,31,22,.88);color:#fff;border:1px solid #9f8657;font-size:12px}
 #fsBtn{right:6px}
 #botToggle{right:92px}
 #guideBtn{left:6px}
+#labBtn{left:70px}
 #loader{position:fixed;inset:0;z-index:9999;background:#0b0b08;display:flex;align-items:center;justify-content:center;padding:18px}
 #loaderCard{width:min(560px,94vw);background:#29251b;border:2px solid #8b7650;padding:14px}
 #loader h2{margin:0 0 8px;color:#f2cf72;font-size:20px}
@@ -37,7 +38,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #bot button{background:#655438;color:#fff;border:1px solid #9f8657;padding:8px 10px}
 #botNote{font-size:9px;color:#b8aa8e;margin-top:3px}
 .bad{color:#ff9a8f}.good{color:#aee59f}
-body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guideBtn{visibility:hidden}
+body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guideBtn,body.keyboard-open #labBtn{visibility:hidden}
 
 #botMetrics{font-size:11px;color:#aaa;margin-top:3px;min-height:14px}
 #queuePlan{font-size:10px;color:#d8c18d;margin:3px 0;min-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -65,6 +66,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <button id="botToggle" style="display:none">Bot</button>
 <button id="fsBtn" style="display:none">Fullscreen</button>
 <button id="guideBtn" style="display:none">Guide</button>
+<button id="labBtn" style="display:none">5-Bot Lab</button>
 <div id="bot" style="display:none">
 <div id="botTitle">AUTOSCAPE BOT</div>
 <div id="botStatus">Log in or create a local character, then run one objective.</div>
@@ -210,6 +212,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const botToggle=document.getElementById('botToggle');
   const fsBtn=document.getElementById('fsBtn');
   const guideBtn=document.getElementById('guideBtn');
+  const labBtn=document.getElementById('labBtn');
   const guidePanel=document.getElementById('guidePanel');
   const guideClose=document.getElementById('guideClose');
   const guideSearch=document.getElementById('guideSearch');
@@ -1068,6 +1071,7 @@ ${firstBanker}`;
     }
     fsBtn.style.display='block';
     guideBtn.style.display='block';
+    labBtn.style.display='block';
     fitGame();
 
     botToggle.onclick=()=>{
@@ -1075,6 +1079,12 @@ ${firstBanker}`;
       botToggle.textContent = bot.style.display==='none' ? 'Bot' : 'Hide Bot';
     };
     fsBtn.onclick=enterFullscreen;
+    labBtn.onclick=()=>{
+      const destination=new URL(window.location.href);
+      destination.pathname=destination.pathname.replace(/[^/]*$/,'learning-lab.html');
+      destination.search='';destination.hash='';
+      window.location.assign(destination.href);
+    };
     guideBtn.onclick=()=>{
       guidePanel.style.display='block';
       guideSearch.value='';

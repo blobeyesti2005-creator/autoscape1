@@ -73,6 +73,9 @@ deleting history, or changing GitHub Pages.
 - [ ] Expand F2P items, equipment, monsters, NPCs, drops, shops, and skill loops.
 - [ ] Improve mobile controls, accessibility, combat/loot balance, and death
   recovery.
+- [x] Establish an opt-in, deterministic five-bot learning lab with independent
+  adaptive policies, manual takeover, bounded telemetry, and no access to live
+  character persistence.
 - [ ] Complete final regression, compatibility, and manual play-test audit.
 
 ## Verification log
@@ -572,4 +575,38 @@ deleting history, or changing GitHub Pages.
 - No account/save fields, persistence keys, inventory/bank formats, settings, or
   queued-job schemas changed.
 - Package and app-shell cache metadata advanced to `2.12.16` for the eventual
+  reviewed release.
+
+### Isolated five-bot learning lab foundation
+
+- `npm test` (44 regression groups)
+- Added an opt-in, standalone learning lab with exactly five independent bot
+  profiles. It is deliberately disconnected from the live game client and does
+  not read or write local storage, accounts, characters, inventory, banks,
+  settings, or saved jobs.
+- Each learner uses a transparent context/action value table, an individual
+  goal, outcome-based rewards, and exploration that decays from 24% to a 5%
+  floor. This provides measurable local adaptation before considering opaque or
+  heavyweight machine-learning techniques.
+- Sessions are deterministic from a visible reset seed. The five default goals
+  cover Woodcutting, Mining, combat, banking, and balanced behavior so policies
+  can specialize independently under the same simulated conditions.
+- Pause, resume, single-step, 100-tick acceleration, per-bot manual takeover,
+  explicit manual actions, and immediate return to automatic policy control are
+  available in the lab UI. Manual demonstrations remain visible in telemetry
+  and update only that learner's policy.
+- Every learner exposes its current context, chosen action, exploration rate,
+  score, HP, energy, held/banked resources, deaths, and preferred next action.
+  Session summaries compare score, actions, deaths, banked items, and learned
+  ready-state preference.
+- Per-bot history is capped at 120 events and session telemetry at 1,200 events.
+  Exported telemetry can be replayed in order without retaining unbounded
+  runtime state.
+- The learning lab and engine are part of the offline app shell. Executable
+  tests cover seed determinism, policy independence, bounded 500-tick sessions,
+  pause behavior, manual takeover/return, demonstrations, summaries, replay,
+  discoverability, offline caching, and the absence of persistence access.
+- No account/save fields, persistence keys, inventory/bank formats, settings, or
+  queued-job schemas changed.
+- Package and app-shell cache metadata advanced to `2.12.17` for the eventual
   reviewed release.

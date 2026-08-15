@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AutoScape Five-Bot Learning Lab</title>
+<style>
+:root{color-scheme:dark;font-family:Arial,sans-serif;background:#0d0c09;color:#eee}
+*{box-sizing:border-box}body{margin:0;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:linear-gradient(#17140e,#090806);min-height:100vh}
+main{max-width:1100px;margin:auto}h1{color:#ffd875;margin:.2rem 0;font-size:clamp(1.4rem,5vw,2.2rem)}p{color:#cfc4ad;line-height:1.45}.notice{border:1px solid #876f47;background:#2a2419;padding:10px;margin:10px 0}.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}.toolbar button,.bot button,.bot select,.toolbar input{background:#352d20;color:#fff;border:1px solid #9f8657;padding:9px;font:inherit}.toolbar input{width:130px;background:#090909}.toolbar button:disabled,.bot button:disabled{opacity:.45}.status{color:#aee59f;min-height:1.3em}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.bot{border:1px solid #6d5d42;background:#211d15;padding:10px}.bot h2{margin:0;color:#f2cf72;font-size:1.1rem}.meta,.decision,.policy{font-size:.86rem;margin:6px 0}.decision{color:#9ed0b2;min-height:2.2em}.meter{height:8px;background:#080706;margin:4px 0}.meter span{display:block;height:100%;background:#b39455}.meter.hp span{background:#a94d43}.items{font-size:.82rem;color:#cfc4ad}.controls{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.controls select{flex:1;min-width:100px}.policy{color:#aaa}.history{margin-top:12px;border:1px solid #5f523a;background:#11100d;padding:8px;max-height:220px;overflow:auto;font:12px/1.45 monospace;white-space:pre-wrap}a{color:#ffd875}
+</style>
+</head>
+<body>
+<main>
+<a id="backLink" href="#">← Return to AutoScape</a>
+<h1>Five-Bot Learning Lab</h1>
+<p class="notice"><strong>Experimental and isolated:</strong> these five learners run in a deterministic simulation. They cannot read or overwrite your normal character, account, inventory, bank, settings, or job saves.</p>
+<p>Each learner has its own goal and transparent action-value policy. Successful outcomes improve the decisions it favors; bounded exploration lets it try alternatives. Take control of any learner, demonstrate actions, then return it to automatic learning.</p>
+<div class="toolbar">
+<label>Seed <input id="seed" type="number" value="20260815" inputmode="numeric"></label>
+<button id="reset">Reset session</button><button id="run">Run</button><button id="pause" disabled>Pause</button><button id="step">Step once</button>
+<button id="fast">Run 100 ticks</button><button id="replay">Replay latest history</button>
+</div>
+<div id="status" class="status">Paused at tick 0.</div>
+<section id="bots" class="grid" aria-live="polite"></section>
+<div id="history" class="history">No actions yet.</div>
+</main>
+<script type="module">
+import { createLearningSession, createTelemetryReplay, LEARNING_ACTIONS } from './learning-sandbox.mjs';
+const $=id=>document.getElementById(id),botsEl=$('bots'),historyEl=$('history'),statusEl=$('status');
+const here=new URL(location.href);here.pathname=here.pathname.replace(/[^/]*$/,'index.html');here.search='';here.hash='';$('backLink').href=here.href;
+let session=createLearningSession({seed:Number($('seed').value)}),timer=null;
+function inventoryText(value){return `logs ${value.logs} · ore ${value.ores} · bones ${value.bones}`;}
+function card(bot){
+  const actions=LEARNING_ACTIONS.map(action=>`<option value="${action}">${action}</option>`).join('');
+  return `<article class="bot" data-bot="${bot.id}"><h2>${bot.name} · ${bot.goal}</h2>
+  <div class="meta">${bot.mode.toUpperCase()} · score ${bot.score.toFixed(1)} · ${bot.experience} actions · exploration ${(bot.epsilon*100).toFixed(0)}%</div>
+  <div>HP ${bot.hp}/10</div><div class="meter hp"><span style="width:${bot.hp*10}%"></span></div>
+  <div>Energy ${bot.energy}/100</div><div class="meter"><span style="width:${bot.energy}%"></span></div>
+  <div class="items">Held: ${inventoryText(bot.inventory)}<br>Bank: ${inventoryText(bot.bank)} · deaths ${bot.deaths}</div>
+  <div class="decision">${bot.decision}</div><div class="policy">Context: ${bot.context} · preferred: ${bot.bestAction}</div>
+  <div class="controls"><button data-takeover="${bot.id}">${bot.mode==='manual'?'Return to bot':'Take control'}</button><select data-action="${bot.id}" ${bot.mode==='manual'?'':'disabled'}>${actions}</select><button data-do="${bot.id}" ${bot.mode==='manual'?'':'disabled'}>Do action</button></div></article>`;
+}
+function render(){
+  const state=session.snapshot();botsEl.innerHTML=state.bots.map(card).join('');
+  statusEl.textContent=`${state.paused?'Paused':'Running'} at tick ${state.tick} · telemetry ${state.telemetry.length}/1200`;
+  $('run').disabled=!state.paused||state.finished;$('pause').disabled=state.paused;
+  historyEl.textContent=state.telemetry.slice(-24).reverse().map(event=>`#${event.sequence} T${event.tick} L${event.botId} ${event.source} ${event.action} → ${event.detail} (${event.reward>=0?'+':''}${event.reward})`).join('\n')||'No actions yet.';
+}
+function stopTimer(){if(timer){clearInterval(timer);timer=null;}session.pause();render();}
+function reset(){stopTimer();session=createLearningSession({seed:Number($('seed').value)||20260815});render();}
+$('reset').onclick=reset;$('run').onclick=()=>{session.resume();timer=setInterval(()=>{session.step();render();if(session.finished)stopTimer();},250);render();};
+$('pause').onclick=stopTimer;$('step').onclick=()=>{session.resume();session.step();session.pause();render();};
+$('fast').onclick=()=>{session.resume();for(let i=0;i<100&&!session.finished;i++)session.step();session.pause();render();};
+$('replay').onclick=()=>{const replay=createTelemetryReplay(session.exportReplay());const lines=[];let event;while((event=replay.next()))lines.push(`#${event.sequence} T${event.tick} L${event.botId}: ${event.action} → ${event.detail}`);historyEl.textContent=lines.slice(-120).join('\n')||'No replay events yet.';statusEl.textContent=`Replay loaded: ${replay.length} bounded events.`;};
+botsEl.onclick=event=>{
+  const takeover=event.target.closest('[data-takeover]');
+  if(takeover){const id=Number(takeover.dataset.takeover),bot=session.snapshot().bots.find(item=>item.id===id);session.setManual(id,bot.mode!=='manual');render();return;}
+  const actionButton=event.target.closest('[data-do]');
+  if(actionButton){const id=Number(actionButton.dataset.do),select=botsEl.querySelector(`[data-action="${id}"]`);session.manualAction(id,select.value);render();}
+};
+render();
+</script>
+</body>
+</html>
