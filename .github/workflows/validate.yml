@@ -27,5 +27,8 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
+      - name: Run browser UI smoke checks
+        run: npm run test:browser
+
       - name: Run regression checks
         run: npm test

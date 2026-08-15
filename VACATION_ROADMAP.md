@@ -714,3 +714,33 @@ deleting history, or changing GitHub Pages.
   of scope.
 - Package and app-shell cache metadata advanced to `2.12.20` for the eventual
   reviewed release.
+
+### Executable browser and mobile UI smoke harnesses
+
+- `npm test` (54 regression groups) and `npm run test:browser` (3 focused UI
+  smoke groups)
+- Added a dependency-free Android keyboard viewport harness that executes the
+  shipped focus, keyboard-inset, and game-fit functions against a deterministic
+  browser surface. It verifies that meaningful keyboard insets toggle the
+  compact layout, browser-chrome changes do not, and the native game canvas
+  keeps its pre-keyboard scale instead of flickering as viewport heights move.
+- Added an executable live-recorder control harness. It verifies that recording
+  is off until explicitly started, the UI state follows start/stop, the rolling
+  window retains exactly the newest 600 frames, navigation diagnostics and
+  aggregate inventory values reach the export, and returned objects cannot
+  mutate retained observations. The boundary also checks that bank and
+  credential fields are absent.
+- Added an executable five-bot lab controller harness using the real learning
+  session engine and a fake DOM. It boots all five learner cards, advances the
+  100-tick control while returning to paused state, imports a read-only
+  observation report, displays the no-actions-executed guarantee, and proves
+  hostile report labels are escaped before entering the page.
+- GitHub Actions now gives these browser/mobile checks their own named step
+  before the complete regression suite. The harnesses use only Node's built-in
+  test and VM modules, so CI gains controller-level coverage without browser
+  downloads, network dependencies, or a new runtime package.
+- This batch changes no account/save fields, persistence keys, inventory/bank
+  formats, settings, queued-job schemas, bot policy state, or live game action
+  code. Main, Pages, and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.21` for the eventual
+  reviewed release.
