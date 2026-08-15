@@ -877,3 +877,31 @@ deleting history, or changing GitHub Pages.
   and release configuration remain out of scope.
 - Package and app-shell cache metadata advanced to `2.12.26` for the eventual
   reviewed release.
+
+### Lazy shared world snapshots
+
+- `npm test` (62 regression groups) and `npm run test:browser` (9 focused UI
+  smoke groups)
+- Each controller tick now owns one lazy world snapshot alongside its existing
+  inventory, position, hitpoints, combat, and Firemaking state. Loaded objects,
+  NPCs, and ground items are scanned at most once per tick and only when the
+  selected task actually requests that entity list.
+- Woodcutting, mining, Firemaking, combat targeting, kill confirmation, loot,
+  banker selection, and bank routing consume the shared snapshot instead of
+  independently rereading the client arrays. Object records include both local
+  and global coordinates so collision routing and nearby-object checks retain
+  their original coordinate semantics.
+- Snapshot NPC records contain only the fields needed for decisions and action
+  addressing; raw client objects are not retained. The opt-in observation
+  exporter remains aggregate-only and cannot serialize the world snapshot.
+- The prioritized return-route task now receives the same decision frame as
+  every other task node instead of depending on ambient state.
+- Executable regression coverage proves snapshot construction is lazy, repeated
+  consumers receive the same cached list, every loaded entity is read once,
+  coordinate conversion remains exact, and no raw world list enters learner
+  observations.
+- No account/save fields, persistence keys, inventory/bank formats, settings,
+  queued-job schemas, or learner/live-action boundaries changed. Main, Pages,
+  and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.27` for the eventual
+  reviewed release.

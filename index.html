@@ -1228,7 +1228,7 @@ ${firstBanker}`;
       return TREE_DEFS.find(d=>d.name===name) || TREE_DEFS[TREE_DEFS.length-1];
     }
 
-    function bestTree(blockKind='woodcutting'){
+    function bestTree(blockKind='woodcutting',world=null){
       const p=playerTile();
       const lvl=wcLevel();
       const requested=(objective && objective.resource) || 'auto';
@@ -1242,15 +1242,14 @@ ${firstBanker}`;
       // Scan loaded objects once, then retain the original highest-tier-first
       // selection order. Previously automatic mode could traverse the full
       // object list once for every unavailable tree tier.
-      for(let i=0;i<(mc.objectCount||0);i++){
-        const id=Number(mc.objectId[i]),def=byId.get(id);
+      for(const object of world?.objects||readLoadedObjects()){
+        const {index:i,id,x,y,dir}=object,def=byId.get(id);
         if(!def)continue;
-        const x=mc.objectX[i],y=mc.objectY[i];
         if(gatherTargetBlocked(blockKind,{id,x,y}))continue;
         const d=Math.abs(x-p.x)+Math.abs(y-p.y);
         const current=nearest.get(def.name);
         if(!current||d<current.distance){
-          nearest.set(def.name,{index:i,id,x,y,dir:mc.objectDirection[i]||0,tree:def.name,required:def.level,distance:d});
+          nearest.set(def.name,{index:i,id,x,y,dir,tree:def.name,required:def.level,distance:d});
         }
       }
       for(const def of eligible){
@@ -1375,9 +1374,9 @@ ${firstBanker}`;
         timeout:4000,
         maxAttempts:3,
         confirmedLabel:'regular log left inventory',
-        ready:()=>normalLogCount(frame.inventory)>0&&!fireAt(tile,0)&&frame.now-lastAction>=ACTION_INTERVALS.gather,
+        ready:()=>normalLogCount(frame.inventory)>0&&!fireAt(tile,0,frame.world)&&frame.now-lastAction>=ACTION_INTERVALS.gather,
         capture:()=>({logs:normalLogCount(frame.inventory),tile:{x:tile.x,y:tile.y}}),
-        confirm:(next,state)=>normalLogCount(next.inventory)<Number(state.before?.logs||0)&&!!groundNormalLogNear(state.before?.tile,1),
+        confirm:(next,state)=>normalLogCount(next.inventory)<Number(state.before?.logs||0)&&!!groundNormalLogNear(state.before?.tile,1,next.world),
         execute:()=>{
           const sent=dropNormalLog();
           if(sent)lastAction=frame.now;
@@ -1393,7 +1392,7 @@ ${firstBanker}`;
         confirmedLabel:'fire appeared or Firemaking XP increased',
         ready:()=>!!log&&frame.now-lastAction>=1800,
         capture:()=>({xp:Number(frame.firemakingXp||0),tile:{x:log.gx,y:log.gy}}),
-        confirm:(next,state)=>Number(next.firemakingXp||0)>Number(state.before?.xp||0)||fireAt(state.before?.tile,0),
+        confirm:(next,state)=>Number(next.firemakingXp||0)>Number(state.before?.xp||0)||fireAt(state.before?.tile,0,next.world),
         execute:()=>{
           const sent=lightGroundLog(log);
           if(sent)lastAction=frame.now;
@@ -1427,22 +1426,21 @@ ${firstBanker}`;
       for(let i=0;i<inventorySlots();i++)if(Number(mc.inventoryItemId?.[i])===166)return i;
       return -1;
     }
-    function groundNormalLogNear(tile,maxDistance=3){
+    function groundNormalLogNear(tile,maxDistance=3,world=null){
       let best=null,bd=1e9;
-      for(let i=0;i<Number(mc.groundItemCount||0);i++){
-        if(Number(mc.groundItemID?.[i])!==14)continue;
-        const x=Number(mc.groundItemX?.[i]),y=Number(mc.groundItemY?.[i]);
-        const gx=x+Number(mc.regionX||0),gy=y+Number(mc.regionY||0);
+      for(const item of world?.groundItems||readLoadedGroundItems()){
+        if(item.id!==14)continue;
+        const {x,y,gx,gy}=item;
         const d=tile?Math.abs(gx-tile.x)+Math.abs(gy-tile.y):0;
         if(d<=maxDistance&&d<bd){bd=d;best={x,y,gx,gy,id:14};}
       }
       return best;
     }
-    function fireAt(tile,maxDistance=1){
+    function fireAt(tile,maxDistance=1,world=null){
       if(!tile)return false;
-      for(let i=0;i<Number(mc.objectCount||0);i++){
-        if(Number(mc.objectId?.[i])!==97)continue;
-        const gx=Number(mc.objectX?.[i])+Number(mc.regionX||0),gy=Number(mc.objectY?.[i])+Number(mc.regionY||0);
+      for(const object of world?.objects||readLoadedObjects()){
+        if(object.id!==97)continue;
+        const {gx,gy}=object;
         if(Math.abs(gx-tile.x)+Math.abs(gy-tile.y)<=maxDistance)return true;
       }
       return false;
@@ -1538,17 +1536,16 @@ ${firstBanker}`;
     }
     function desiredMiningHub(){return desiredOreDef().name==='coal'?MINING_HUBS.coal:MINING_HUBS.rimmington;}
 
-    function bestRock(){
+    function bestRock(world=null){
       const p=playerTile(),def=desiredOreDef();
       if(!def||miningLevel()<def.level)return null;
       let best=null,bd=1e9;
-      for(let i=0;i<(mc.objectCount||0);i++){
-        const id=Number(mc.objectId[i]);
+      for(const object of world?.objects||readLoadedObjects()){
+        const {id,x,y,dir}=object;
         if(!def.ids.includes(id))continue;
-        const x=mc.objectX[i],y=mc.objectY[i];
         if(gatherTargetBlocked('mining',{id,x,y}))continue;
         const d=Math.abs(x-p.x)+Math.abs(y-p.y);
-        if(d<bd){bd=d;best={id,x,y,dir:mc.objectDirection[i]||0,ore:def.name};}
+        if(d<bd){bd=d;best={id,x,y,dir,ore:def.name};}
       }
       return best;
     }
@@ -1900,22 +1897,18 @@ ${firstBanker}`;
       return true;
     }
 
-    function nearestLoadedBanker(bank){
+    function nearestLoadedBanker(bank,world=null){
       const pp=decisionTile();
       let best=null,bd=1e9;
-      for(let i=0;i<(mc.npcCount||0);i++){
-        const npc=mc.npcs?.[i];
-        if(!npc || !BANKER_IDS.has(Number(npc.npcId))) continue;
-        if(timedTargetBlocked(blockedBankers,Number(npc.serverIndex)))continue;
-        const lx=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
-        const ly=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
-        const x=lx+Number(mc.regionX||0);
-        const y=ly+Number(mc.regionY||0);
+      for(const npc of world?.npcs||readLoadedNpcs()){
+        if(!BANKER_IDS.has(npc.npcId))continue;
+        if(timedTargetBlocked(blockedBankers,npc.serverIndex))continue;
+        const {x,y,lx,ly}=npc;
         // Loaded regions can contain multiple banks. Only interact with a
         // banker at the bank selected for this trip.
         if(bank&&nodeDistance({x,y},bank)>20)continue;
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
-        if(d<bd){bd=d;best={npc,x,y,lx,ly,d};}
+        if(d<bd){bd=d;best={npc:{serverIndex:npc.serverIndex},x,y,lx,ly,d};}
       }
       return best;
     }
@@ -2034,7 +2027,7 @@ ${firstBanker}`;
       const pp=decisionTile();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return false;
-      const banker=nearestLoadedBanker(bank);
+      const banker=nearestLoadedBanker(bank,frame.world);
 
       if(mc.showDialogBank){
         runBankOpenContract(frame,false);
@@ -2219,7 +2212,7 @@ ${firstBanker}`;
       }
 
       // The moment the requested real object is loaded, stop routing and chop it.
-      const found=bestTree();
+      const found=bestTree('woodcutting',frame.world);
       if(found){
         objective.phase='chop';
         objective.home=globalPlayerTile();
@@ -2479,6 +2472,44 @@ ${firstBanker}`;
       }
       return {used,counts,foods,normalLogSlot,tinderboxSlot,hasAxe,hasPickaxe};
     }
+    function readLoadedObjects(){
+      const objects=[],regionX=Number(mc.regionX||0),regionY=Number(mc.regionY||0);
+      for(let i=0;i<Number(mc.objectCount||0);i++){
+        const x=Number(mc.objectX?.[i]),y=Number(mc.objectY?.[i]);
+        objects.push({index:i,id:Number(mc.objectId?.[i]),x,y,gx:x+regionX,gy:y+regionY,dir:Number(mc.objectDirection?.[i]||0)});
+      }
+      return objects;
+    }
+    function readLoadedGroundItems(){
+      const items=[],regionX=Number(mc.regionX||0),regionY=Number(mc.regionY||0);
+      for(let i=0;i<Number(mc.groundItemCount||0);i++){
+        const x=Number(mc.groundItemX?.[i]),y=Number(mc.groundItemY?.[i]);
+        items.push({index:i,id:Number(mc.groundItemID?.[i]),x,y,gx:x+regionX,gy:y+regionY});
+      }
+      return items;
+    }
+    function readLoadedNpcs(){
+      const npcs=[],regionX=Number(mc.regionX||0),regionY=Number(mc.regionY||0),scale=Number(mc.magicLoc||128);
+      for(let i=0;i<Number(mc.npcCount||0);i++){
+        const npc=mc.npcs?.[i];
+        if(!npc)continue;
+        const lx=((Number(npc.currentX||0)-64)/scale)|0,ly=((Number(npc.currentY||0)-64)/scale)|0;
+        npcs.push({
+          index:i,npcId:Number(npc.npcId),serverIndex:Number(npc.serverIndex),
+          lx,ly,x:lx+regionX,y:ly+regionY,
+          healthCurrent:Number(npc.healthCurrent||0),healthMax:Number(npc.healthMax||0)
+        });
+      }
+      return npcs;
+    }
+    function createWorldSnapshot(){
+      let objects=null,groundItems=null,npcs=null;
+      return Object.freeze({
+        get objects(){return objects||(objects=readLoadedObjects());},
+        get groundItems(){return groundItems||(groundItems=readLoadedGroundItems());},
+        get npcs(){return npcs||(npcs=readLoadedNpcs());}
+      });
+    }
     function characterDead(online,hits,maximum){
       const hitpointsKnown=!!mc.playerStatCurrent&&Number.isFinite(Number(mc.playerStatCurrent?.[3]));
       return !!online&&(Number(mc.deathScreenTimeout||0)>0||mc.world?.playerAlive===false||(hitpointsKnown&&Number(maximum)>0&&Number(hits)<=0));
@@ -2492,6 +2523,7 @@ ${firstBanker}`;
         loggedIn:online,
         tile:online?globalPlayerTile():{x:0,y:0},
         inventory:inventorySnapshot(),
+        world:createWorldSnapshot(),
         inventoryMax:Number(mc.inventoryMaxItemCount||30),
         hits,
         maxHits:max,
@@ -2828,17 +2860,16 @@ ${firstBanker}`;
       },750);
     }
 
-    function nearestGroundLoot(snapshot=null){
+    function nearestGroundLoot(snapshot=null,world=null){
       if(Number(snapshot?.used??inventorySlots())>=Number(mc.inventoryMaxItemCount||30))return null;
       const mode=lootSelect.value||'f2p';
       if(mode==='none')return null;
       const allowed=mode==='all'?null:(mode==='valuable'?VALUABLE_LOOT_IDS:F2P_LOOT_IDS);
       const pp=playerTile(),anchor=objective?.lastTargetTile;
       let best=null,bd=1e9;
-      for(let i=0;i<Number(mc.groundItemCount||0);i++){
-        const id=Number(mc.groundItemID?.[i]);
+      for(const item of world?.groundItems||readLoadedGroundItems()){
+        const {index:i,id,x,y}=item;
         if(allowed&&!allowed.has(id))continue;
-        const x=Number(mc.groundItemX?.[i]),y=Number(mc.groundItemY?.[i]);
         if(timedTargetBlocked(blockedLootTargets,`${id}:${x}:${y}`))continue;
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
         if(d>12)continue;
@@ -2941,7 +2972,7 @@ ${firstBanker}`;
       const hub=COMBAT_HUBS[type];
       if(!hub){setPhase('fight');return;}
 
-      const live=nearestCombatNpc();
+      const live=nearestCombatNpc(frame.world);
       if(live){
         objective.home=globalPlayerTile();
         markProgress('target-found');
@@ -3042,7 +3073,7 @@ ${firstBanker}`;
       return 'rat';
     }
 
-    function nearestCombatNpc(){
+    function nearestCombatNpc(world=null){
       const wanted=chooseCombatTargetType();
       const preferred=SAFE_COMBAT_TARGETS[wanted];
       const pp=playerTile();
@@ -3056,15 +3087,14 @@ ${firstBanker}`;
       // One loaded-NPC pass supplies both the exact requested target and the
       // conservative automatic fallback. The old fallback loop rescanned all
       // NPCs once per eligible monster definition.
-      for(let i=0;i<(mc.npcCount||0);i++){
-        const npc=mc.npcs?.[i],def=npc&&byId.get(Number(npc.npcId));
+      for(const npc of world?.npcs||readLoadedNpcs()){
+        const def=byId.get(npc.npcId);
         if(!def)continue;
-        const serverIndex=Number(npc.serverIndex);
+        const serverIndex=npc.serverIndex;
         if(!Number.isFinite(serverIndex))continue;
-        const x=((Number(npc.currentX||0)-64)/Number(mc.magicLoc||128))|0;
-        const y=((Number(npc.currentY||0)-64)/Number(mc.magicLoc||128))|0;
+        const x=npc.lx,y=npc.ly;
         const d=Math.abs(x-pp.x)+Math.abs(y-pp.y);
-        const candidate={npc,x,y,d,name:def.name,level:def.level};
+        const candidate={npc:{serverIndex},x,y,d,name:def.name,level:def.level};
         if(timedTargetBlocked(blockedCombatTargets,serverIndex))continue;
         if(def===preferred&&(!preferredBest||d<preferredBest.d))preferredBest=candidate;
         if(automatic&&def.level<=maxFallbackLevel&&(!fallbackBest||d<fallbackBest.d))fallbackBest=candidate;
@@ -3148,10 +3178,10 @@ ${firstBanker}`;
       return result;
     }
 
-    function lastCombatTargetStillAlive(){
+    function lastCombatTargetStillAlive(world=null){
       const serverIndex=Number(objective?.lastTargetServerIndex);
       if(!Number.isFinite(serverIndex))return false;
-      const live=Array.from(mc.npcs||[]).find(npc=>npc&&Number(npc.serverIndex)===serverIndex);
+      const live=(world?.npcs||readLoadedNpcs()).find(npc=>npc.serverIndex===serverIndex);
       if(!live)return false;
       // Health is populated by the native damage update. An active NPC whose
       // health is unknown or positive has not produced a confirmed kill yet.
@@ -3222,7 +3252,7 @@ ${firstBanker}`;
       const pp=decisionTile();
       const bank=objectiveBank()||prepareBankRoute();
       if(!bank)return;
-      const banker=nearestLoadedBanker(bank);
+      const banker=nearestLoadedBanker(bank,frame.world);
 
       if(mc.showDialogBank){
         runBankOpenContract(frame,true);
@@ -3336,7 +3366,7 @@ ${firstBanker}`;
     function advanceCombatReturn(frame=currentDecisionFrame){
       const type=objective.combatHub||chooseCombatTargetType();
       const hub=COMBAT_HUBS[type]||combatHub();
-      const live=nearestCombatNpc();
+      const live=nearestCombatNpc(frame.world);
       if(live){markProgress('combat-return-complete');setPhase('fight',`Combat • back at ${type} training`);return;}
 
       const pp=decisionTile();
@@ -3431,7 +3461,7 @@ ${firstBanker}`;
       // native GROUNDITEM_TAKE packet before choosing another opponent.
       if(objective.wasInCombat){
         objective.wasInCombat=false;
-        if(lastCombatTargetStillAlive()){
+        if(lastCombatTargetStillAlive(frame.world)){
           objective.lastTargetTile=null;
           setPhase('fight','Combat • target disengaged alive • reacquiring');
           return;
@@ -3449,7 +3479,7 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='loot'){
-        const item=waitingActionTarget('combat-loot',frame.now,4000)||nearestGroundLoot(inventory);
+        const item=waitingActionTarget('combat-loot',frame.now,4000)||nearestGroundLoot(inventory,frame.world);
         const lootResult=runLootContract(frame,item);
         if(lootResult.status==='sent'){
           objective.lootUntil=frame.now+4200;
@@ -3479,7 +3509,7 @@ ${firstBanker}`;
         return;
       }
 
-      const target=waitingActionTarget('combat-attack',frame.now,6500)||nearestCombatNpc();
+      const target=waitingActionTarget('combat-attack',frame.now,6500)||nearestCombatNpc(frame.world);
       if(!target){
         cancelActionContract('combat-attack','target unavailable',frame.now);
         beginCombatTravel();
@@ -3833,7 +3863,7 @@ ${firstBanker}`;
         sessionStats.bankTrips++;objective.phase='bank';prepareBankRoute();
         lastAction=0;advanceBankRoute(frame);return;
       }
-      const rock=waitingActionTarget('mining-gather',frame.now,9000)||bestRock();
+      const rock=waitingActionTarget('mining-gather',frame.now,9000)||bestRock(frame.world);
       if(rock){
         objective.phase='mine';objective.home=decisionTile();
         const result=runGatherContract('mining',frame,rock,ORE_IDS,rock.ore,mineRock);
@@ -3918,7 +3948,7 @@ ${firstBanker}`;
       if(normalLogCount(inventory)>0){cancelActionContract('firemaking-gather','regular log received',now);objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;markProgress('firemaking-log-ready');return;}
       if(!inventory.hasAxe){cancelActionContract('firemaking-gather','axe unavailable',now);stop(`Continuous Firemaking stopped at level ${level}: no woodcutting axe detected.`);return;}
       if(inventory.used>=frame.inventoryMax){cancelActionContract('firemaking-gather','inventory full',now);stop('Continuous Firemaking stopped: inventory is full and has no regular logs to burn.');return;}
-      const tree=waitingActionTarget('firemaking-gather',now,9000)||bestTree('firemaking');
+      const tree=waitingActionTarget('firemaking-gather',now,9000)||bestTree('firemaking',frame.world);
       if(tree){
         objective.navRoute=[];objective.routeIndex=0;
         const result=runGatherContract('firemaking',frame,tree,new Set([14]),'regular log',chop);
@@ -3988,7 +4018,7 @@ ${firstBanker}`;
           return;
         }
         const tile=frame.tile;
-        if(fireAt(tile,0)){
+        if(fireAt(tile,0,frame.world)){
           cancelActionContract('firemaking-drop','fire already occupies tile',now);
           objective.fireTile=tile;objective.phase='fm-move';objective.phaseStarted=now;return;
         }
@@ -4013,7 +4043,7 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='fm-light'||objective.phase==='fm-await'){
-        const log=groundNormalLogNear(objective.fireTile,3);
+        const log=groundNormalLogNear(objective.fireTile,3,frame.world);
         const result=runFiremakingLightContract(frame,log);
         if(result.status==='confirmed'){
           sessionStats.fires++;
@@ -4142,7 +4172,7 @@ ${firstBanker}`;
         return;
       }
 
-      const tree=waitingActionTarget('woodcutting-gather',frame.now,9000)||bestTree();
+      const tree=waitingActionTarget('woodcutting-gather',frame.now,9000)||bestTree('woodcutting',frame.world);
       if(!tree){
         cancelActionContract('woodcutting-gather','resource unavailable',frame.now);
         const def=selectedTreeDefinition();
@@ -4177,7 +4207,7 @@ ${firstBanker}`;
       {id:'wait-login',label:'wait for local character',priority:1000,accept:frame=>!frame.loggedIn,execute:()=>setBotStatus('Objective waiting: create/login to your LOCAL character.')},
       {id:'death-recovery',label:'pause unsafe actions and confirm respawn',priority:990,accept:frame=>frame.dead||deathRecovery.active,execute:frame=>deathRecoveryTick(frame)},
       {id:'bank-route',label:'navigate and interact with bank',priority:950,accept:()=>objective?.type==='banking'||['bank','bank-dialogue','bank-open'].includes(objective?.phase),execute:frame=>advanceBankRoute(frame)},
-      {id:'return-route',label:'return to training area',priority:900,accept:()=>objective?.phase==='return'&&['woodcutting','mining'].includes(objective?.type),execute:()=>advanceReturnRoute()},
+      {id:'return-route',label:'return to training area',priority:900,accept:()=>objective?.phase==='return'&&['woodcutting','mining'].includes(objective?.type),execute:frame=>advanceReturnRoute(frame)},
       {id:'prayer',label:'bury held bones',priority:800,accept:()=>objective?.type==='prayer',execute:frame=>prayerTick(frame)},
       {id:'combat',label:'survive, fight, loot, and recover',priority:800,accept:()=>objective?.type==='combat',execute:frame=>combatTick(frame)},
       {id:'mining',label:'find and mine selected ore',priority:700,accept:()=>objective?.type==='mining',execute:frame=>miningTick(frame)},

@@ -943,7 +943,7 @@ test('gathering actions require inventory gains and quarantine failed resources'
     assert.match(source,/blockGatherTarget\(/,`${name} must quarantine a repeatedly failing resource`);
     assert.match(source,/cancelActionContract\(/,`${name} must cancel stale gathering actions`);
   }
-  assert.match(functionSource(html,'firemakingGatherTick'),/bestTree\('firemaking'\)/);
+  assert.match(functionSource(html,'firemakingGatherTick'),/bestTree\('firemaking',frame\.world\)/);
   for(const name of ['mineRock','chop'])assert.doesNotMatch(functionSource(html,name),/markProgress\(/);
   assert.ok(traces.some(entry=>entry[1]==='confirmed'));
 });
@@ -1211,7 +1211,7 @@ test('navigation recovery measures forward progress instead of any movement', ()
   const recoverySource = section(
     html,
     '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
-    '    function nearestLoadedBanker(bank){'
+    '    function nearestLoadedBanker(bank,world=null){'
   );
   let point = { x: 0, y: 0 };
   let now = 1_000;
@@ -1253,7 +1253,7 @@ test('all routed travel modes rebuild stalled routes from the current position',
   const recoverySource = section(
     html,
     '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
-    '    function nearestLoadedBanker(bank){'
+    '    function nearestLoadedBanker(bank,world=null){'
   );
   const objective = { navRoute: [{ name: 'stale' }], routeIndex: 4 };
   let makeRouteCalls = 0;
@@ -1298,7 +1298,7 @@ test('regional searches skip unreachable tiles and keep recovery directions movi
   const recoverySource = section(
     html,
     '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
-    '    function nearestLoadedBanker(bank){'
+    '    function nearestLoadedBanker(bank,world=null){'
   );
   const objective = { searchIndex: 2 };
   const { advanceRegionalSearchIfStalled, navRetryTarget, setWatch, watch } = new Function(
@@ -1351,7 +1351,7 @@ test('banker targeting stays scoped to the selected bank', () => {
   const bankerSource = functionSource(html, 'nearestLoadedBanker');
   const nearestLoadedBanker = new Function(
     'mc', 'BANKER_IDS', 'globalPlayerTile', 'decisionTile', 'nodeDistance', 'timedTargetBlocked', 'blockedBankers',
-    `${bankerSource}\nreturn nearestLoadedBanker;`
+    `${functionSource(html, 'readLoadedNpcs')}\n${bankerSource}\nreturn nearestLoadedBanker;`
   )(
     {
       npcCount: 2,
@@ -1375,7 +1375,7 @@ test('banker targeting stays scoped to the selected bank', () => {
   assert.equal(nearestLoadedBanker({ x: 400, y: 400 }), null);
   for (const name of ['advanceBankRoute', 'advanceCombatBanking']) {
     const source = functionSource(html, name);
-    assert.match(source, /nearestLoadedBanker\(bank\)/, `${name} must target the selected bank`);
+    assert.match(source, /nearestLoadedBanker\(bank,frame\.world\)/, `${name} must target the selected bank through the shared world snapshot`);
     assert.match(source, /bankDialogueOptionExpected\(/, `${name} must reject unrelated dialogue menus`);
   }
 });
@@ -1384,7 +1384,7 @@ test('bank arrival rotates blocked approaches and engages scoped bankers nearby'
   const recoverySource = section(
     html,
     '    let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};',
-    '    function nearestLoadedBanker(bank){'
+    '    function nearestLoadedBanker(bank,world=null){'
   );
   const objective = { bankApproachIndex: 0 };
   const { bankArrivalTarget, advanceBankArrivalIfStalled, setRetries, watch } = new Function(
@@ -1622,7 +1622,7 @@ test('hot target searches scan each loaded entity list only once', () => {
   });
   const bestTree = new Function(
     'playerTile', 'wcLevel', 'objective', 'TREE_DEFS', 'mc', 'gatherTargetBlocked',
-    `${treeSource}\nreturn bestTree;`
+    `${functionSource(html, 'readLoadedObjects')}\n${treeSource}\nreturn bestTree;`
   )(
     () => ({ x: 0, y: 0 }),
     () => 99,
@@ -1654,7 +1654,7 @@ test('hot target searches scan each loaded entity list only once', () => {
   });
   const nearestCombatNpc = new Function(
     'chooseCombatTargetType', 'SAFE_COMBAT_TARGETS', 'playerTile', 'objective',
-    'combatSelect', 'playerCombatEstimate', 'mc', 'timedTargetBlocked', 'blockedCombatTargets', `${npcSource}\nreturn nearestCombatNpc;`
+    'combatSelect', 'playerCombatEstimate', 'mc', 'timedTargetBlocked', 'blockedCombatTargets', `${functionSource(html, 'readLoadedNpcs')}\n${npcSource}\nreturn nearestCombatNpc;`
   )(
     () => 'guard',
     {
@@ -1672,6 +1672,51 @@ test('hot target searches scan each loaded entity list only once', () => {
   );
   assert.equal(nearestCombatNpc().name, 'cow', 'automatic fallback should remain nearest safe target');
   assert.equal(npcReads, 3, 'combat should read every loaded NPC once');
+});
+
+test('decision frames lazily share loaded world entities across task decisions', () => {
+  const reads={objects:0,ground:0,npcs:0};
+  const tracked=(values,key)=>new Proxy(values,{
+    get(target,property){
+      if(/^\d+$/.test(String(property)))reads[key]++;
+      return target[property];
+    }
+  });
+  const mc={
+    regionX:100,regionY:200,magicLoc:128,
+    objectCount:2,objectId:tracked([97,310],'objects'),objectX:[1,2],objectY:[3,4],objectDirection:[0,1],
+    groundItemCount:2,groundItemID:tracked([14,20],'ground'),groundItemX:[5,6],groundItemY:[7,8],
+    npcCount:2,npcs:tracked([
+      {npcId:3,serverIndex:11,currentX:128+64,currentY:256+64,healthCurrent:2,healthMax:3},
+      {npcId:95,serverIndex:12,currentX:384+64,currentY:512+64}
+    ],'npcs')
+  };
+  const world=new Function(
+    'mc',
+    `${functionSource(html,'readLoadedObjects')}
+     ${functionSource(html,'readLoadedGroundItems')}
+     ${functionSource(html,'readLoadedNpcs')}
+     ${functionSource(html,'createWorldSnapshot')}
+     return createWorldSnapshot();`
+  )(mc);
+
+  assert.deepEqual(reads,{objects:0,ground:0,npcs:0},'creating a frame must not scan unused lists');
+  assert.equal(world.objects,world.objects,'object snapshots must be reused');
+  assert.equal(world.groundItems,world.groundItems,'ground-item snapshots must be reused');
+  assert.equal(world.npcs,world.npcs,'NPC snapshots must be reused');
+  assert.deepEqual(reads,{objects:2,ground:2,npcs:2},'each requested entity list must be read exactly once');
+  assert.deepEqual(world.objects[0],{index:0,id:97,x:1,y:3,gx:101,gy:203,dir:0});
+  assert.equal(world.groundItems[0].gx,105);
+  assert.deepEqual(world.npcs[0],{index:0,npcId:3,serverIndex:11,lx:1,ly:2,x:101,y:202,healthCurrent:2,healthMax:3});
+
+  assert.match(functionSource(html,'buildDecisionFrame'),/world:createWorldSnapshot\(\)/);
+  assert.doesNotMatch(functionSource(html,'buildLiveObservation'),/frame\?*\.world|frame\.world/,'raw world entities must not enter exported observations');
+  assert.match(functionSource(html,'advanceCombatTravel'),/nearestCombatNpc\(frame\.world\)/);
+  assert.match(functionSource(html,'advanceBankRoute'),/nearestLoadedBanker\(bank,frame\.world\)/);
+  assert.match(functionSource(html,'miningTick'),/bestRock\(frame\.world\)/);
+  assert.match(functionSource(html,'firemakingTick'),/groundNormalLogNear\(objective\.fireTile,3,frame\.world\)/);
+  assert.match(functionSource(html,'woodcuttingTick'),/bestTree\('woodcutting',frame\.world\)/);
+  assert.match(html,/id:'return-route'[\s\S]*execute:frame=>advanceReturnRoute\(frame\)/);
 });
 
 test('hot inventory and ground-loot decisions use single-pass snapshots', () => {
@@ -1717,7 +1762,7 @@ test('hot inventory and ground-loot decisions use single-pass snapshots', () => 
   const nearestGroundLoot = new Function(
     'inventorySlots', 'mc', 'lootSelect', 'VALUABLE_LOOT_IDS', 'F2P_LOOT_IDS',
     'playerTile', 'objective', 'ITEM_NAMES', 'timedTargetBlocked', 'blockedLootTargets',
-    `${functionSource(html, 'nearestGroundLoot')}\nreturn nearestGroundLoot;`
+    `${functionSource(html, 'readLoadedGroundItems')}\n${functionSource(html, 'nearestGroundLoot')}\nreturn nearestGroundLoot;`
   )(
     () => 2,
     {
