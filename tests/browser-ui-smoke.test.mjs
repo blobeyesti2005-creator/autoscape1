@@ -80,6 +80,84 @@ test('Android keyboard viewport smoke keeps the game scale stable and exposes th
   assert.equal(ui.stable(), 700);
 });
 
+test('account creation and login hooks remember credentials through the shipped client patch', async () => {
+  const patchStart = appHtml.indexOf('  function patchClient(code){');
+  const patchEnd = appHtml.indexOf('  function patchServerResources(code){', patchStart);
+  assert.ok(patchStart >= 0 && patchEnd > patchStart, 'client patch section is missing');
+  const patchClient = new Function(`${appHtml.slice(patchStart, patchEnd)}\nreturn patchClient;`)();
+  const fixture = `async function boot(args,mc,mcContainer){
+    if (this.mouseActionTimeout > 4500 && this.combatTimeout === 0 && this.logoutTimeout === 0) {
+      this.mouseActionTimeout -= 500; this.sendLogout(); return;
+    }
+    let j5 = 4;
+    const fatigue = \`Fatigue: @yel@\${((this.statFatigue * 100) / 750) | 0}%\`;
+    const options={mobile:false};
+    mc.members = args[0] === 'members';
+    window.mcOptions = mc.options;
+    mc.server = args[1] ? args[1] : '127.0.0.1';
+    document.body.appendChild(mcContainer);
+    await this.login(this.loginUser, this.loginPass, false);
+    await this.register(this.registerUser, this.registerPassword);
+    return {j5,fatigue,options};
+  }`;
+  const patched = patchClient(fixture), stored = new Map(), appended = [];
+  const localStorage = { setItem(key, value) { stored.set(key, value); } };
+  const window = { __AUTOSCAPE_SERVER__: 'local-worker', matchMedia: () => ({ matches: false }) };
+  const document = {
+    body: { appendChild() { throw new Error('patched client must not append to body'); } },
+    getElementById(id) { assert.equal(id, 'game-host'); return { appendChild(value) { appended.push(value); } }; }
+  };
+  const boot = new Function('window', 'document', 'localStorage', `${patched}\nreturn boot;`)(window, document, localStorage);
+  const calls = [], client = {
+    mouseActionTimeout: 5001, combatTimeout: 0, logoutTimeout: 0, statFatigue: 100,
+    loginUser: 'returning-player', loginPass: 'saved-login', registerUser: 'new-player', registerPassword: 'saved-registration',
+    async login(...args) { calls.push(['login', ...args]); }, async register(...args) { calls.push(['register', ...args]); }
+  };
+  const mc = { options: {}, server: '', members: false }, host = { id: 'canvas-host' };
+  const result = await boot.call(client, ['members'], mc, host);
+
+  assert.deepEqual(calls, [
+    ['login', 'returning-player', 'saved-login', false],
+    ['register', 'new-player', 'saved-registration']
+  ]);
+  assert.deepEqual(JSON.parse(stored.get('autoscape_credentials')), { u: 'new-player', p: 'saved-registration' });
+  assert.deepEqual(appended, [host]);
+  assert.equal(mc.server, 'local-worker');
+  assert.equal(result.j5, 8);
+  assert.equal(result.fatigue, 'Fatigue: @gre@Disabled');
+  assert.equal(result.options.mobile, false);
+});
+
+test('remembered auto-login schedules once, reports failure, and remains retryable', async () => {
+  const scheduled = [], status = { textContent: '' }, warnings = [], setStatuses = [];
+  const factory = new Function('botStatus', 'console', 'setBotStatus', `
+    ${functionSource(appHtml, 'loginRememberedCharacter').replace(/^function /, 'async function ')}
+    ${functionSource(appHtml, 'scheduleRememberedAutoLogin')}
+    return scheduleRememberedAutoLogin;
+  `);
+  const scheduleRememberedAutoLogin = factory(status, { warn(...args) { warnings.push(args); } }, value => setStatuses.push(value));
+  const schedule = (callback, delay) => { scheduled.push({ callback, delay }); return 73; };
+  const calls = [], client = { loggedIn: 0, async login(...args) { calls.push(args); } };
+
+  assert.equal(scheduleRememberedAutoLogin({ u: 'player', p: 'pass' }, client, schedule), true);
+  assert.equal(scheduleRememberedAutoLogin({ u: 'player', p: 'pass' }, client, schedule), false, 'a pending timer must suppress duplicate login attempts');
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delay, 700);
+  assert.match(status.textContent, /logging in/);
+  await scheduled[0].callback();
+  assert.deepEqual(calls, [['player', 'pass', false]]);
+  assert.equal(client.__autoscapeAutoLoginTimer, 0);
+
+  const failing = { loggedIn: 0, async login() { throw new Error('offline'); } };
+  assert.equal(scheduleRememberedAutoLogin({ u: 'player', p: 'pass' }, failing, schedule), true);
+  await scheduled.at(-1).callback();
+  assert.equal(failing.__autoscapeAutoLoginTimer, 0);
+  assert.match(setStatuses.at(-1), /account was not removed/);
+  assert.equal(warnings.length, 1);
+  assert.equal(scheduleRememberedAutoLogin({ u: 'player', p: 'pass' }, { loggedIn: 1 }, schedule), false);
+  assert.equal(scheduleRememberedAutoLogin(null, { loggedIn: 0 }, schedule), false);
+});
+
 test('live recorder browser controls are opt-in, bounded, copied, and route-aware', () => {
   const observationToggle = { textContent: '' }, observationDownload = { disabled: true }, observationStatus = { textContent: '' };
   const factory = new Function('observationToggle', 'observationDownload', 'observationStatus', `
@@ -122,6 +200,49 @@ test('live recorder browser controls are opt-in, bounded, copied, and route-awar
   assert.equal(recorder.getLiveObservations().observations[0].tile.x, 1, 'download objects must not expose retained frames');
   assert.equal(observationDownload.disabled, false);
   assert.match(observationStatus.textContent, /600 frames ready/);
+});
+
+test('death recovery UI preempts stale work and visibly confirms a stable respawn', () => {
+  const statuses = [], traces = [];
+  const factory = new Function('setBotStatus', 'traceDecision', `
+    let objective={type:'mining',phase:'mine',resource:'iron',navRoute:[{x:1,y:1}],routeIndex:1,searchIndex:4,attackSentAt:55,lastTargetTile:{x:2,y:2},lastTargetServerIndex:8};
+    let lastAction=42,saved=0,stopped='';
+    const actionContracts=new Map([['walk',{pending:true}],['mine',{pending:true}]]);
+    const deathRecovery={active:false,startedAt:0,stableTicks:0,origin:'',deathCount:0};
+    const sessionStats={deaths:0,kills:0},TREE_HUBS={};
+    function clearActionContracts(){actionContracts.clear();}
+    function renderMetrics(){}
+    function combatBankingEnabled(){return true;}
+    function beginCombatBanking(){objective.phase='combat-bank';}
+    function beginCombatTravel(){objective.phase='combat-travel';}
+    function desiredTreeType(){return 'normal';}
+    function globalPlayerTile(){return {x:122,y:657};}
+    function beginResourceTravel(){}
+    function normalLogCount(){return 0;}
+    function prepareBankRoute(){return null;}
+    function markProgress(){}
+    function saveObjective(){saved++;}
+    ${functionSource(appHtml, 'resetDeathRecovery')}
+    function stop(message){stopped=message;resetDeathRecovery();}
+    ${functionSource(appHtml, 'beginDeathRecovery')}
+    ${functionSource(appHtml, 'resumeAfterDeath')}
+    ${functionSource(appHtml, 'deathRecoveryTick')}
+    return {tick:deathRecoveryTick,contracts:actionContracts,recovery:deathRecovery,get objective(){return objective;},get saved(){return saved;},get stopped(){return stopped;}};
+  `);
+  const recovery = factory(value => statuses.push(value), (...args) => traces.push(args));
+
+  assert.equal(recovery.tick({ now: 1000, dead: true, inventory: { counts: new Map() } }), 'waiting');
+  assert.equal(recovery.contracts.size, 0);
+  assert.deepEqual(recovery.objective.navRoute, []);
+  assert.match(statuses.at(-1), /character defeated/);
+  assert.equal(recovery.tick({ now: 2000, dead: false, inventory: { counts: new Map() } }), 'stabilizing');
+  assert.match(statuses.at(-1), /checking respawn stability/);
+  assert.equal(recovery.tick({ now: 3000, dead: false, inventory: { counts: new Map() } }), 'resumed');
+  assert.equal(recovery.objective.phase, 'mining-travel');
+  assert.match(statuses.at(-1), /respawn confirmed/);
+  assert.equal(recovery.saved, 1);
+  assert.ok(traces.some(entry => entry[0] === 'death-recovery' && entry[1] === 'detected'));
+  assert.ok(traces.some(entry => entry[0] === 'death-recovery' && entry[1] === 'confirmed'));
 });
 
 function createElement(id) {

@@ -4265,19 +4265,25 @@ ${firstBanker}`;
       return true;
     }
 
-    // Auto-login remembered local account on future launches.
-    const rememberedCredentials=readRememberedCredentials();
-    if(rememberedCredentials){
+    function scheduleRememberedAutoLogin(saved,client=mc,schedule=setTimeout){
+      if(!saved||client.loggedIn===1||client.__autoscapeAutoLoginTimer)return false;
       botStatus.textContent='Remembered local account found — logging in…';
-      mc.__autoscapeAutoLoginTimer=setTimeout(async()=>{
+      client.__autoscapeAutoLoginTimer=schedule(async()=>{
         try{
-          await loginRememberedCharacter(rememberedCredentials);
+          await loginRememberedCharacter(saved,client);
         }catch(e){
           console.warn('Auto-login failed:',e);
           setBotStatus('Remembered login could not complete. Use the normal login screen to retry; your local account was not removed.');
+        }finally{
+          client.__autoscapeAutoLoginTimer=0;
         }
       },700);
+      return true;
     }
+
+    // Auto-login remembered local account on future launches.
+    const rememberedCredentials=readRememberedCredentials();
+    scheduleRememberedAutoLogin(rememberedCredentials);
 
     // Resume the last explicit job after login. "stop" clears this.
     setTimeout(()=>{

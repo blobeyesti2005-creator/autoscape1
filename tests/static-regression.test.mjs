@@ -287,7 +287,11 @@ test('remembered browser login validates credentials and reuses the local accoun
   assert.equal(calls.length,1,'an already logged-in character must not receive another login request');
 
   assert.match(html,/your local account was not removed/);
-  assert.match(html,/__autoscapeAutoLoginTimer=setTimeout/);
+  const scheduler = functionSource(html, 'scheduleRememberedAutoLogin');
+  assert.match(scheduler,/__autoscapeAutoLoginTimer=schedule/);
+  assert.match(scheduler,/client\.loggedIn===1\|\|client\.__autoscapeAutoLoginTimer/);
+  assert.match(scheduler,/finally\{\s*client\.__autoscapeAutoLoginTimer=0/);
+  assert.match(html,/scheduleRememberedAutoLogin\(rememberedCredentials\)/);
 });
 
 test('server gameplay patch preserves live stats through load and save', () => {

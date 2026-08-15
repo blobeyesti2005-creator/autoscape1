@@ -744,3 +744,31 @@ deleting history, or changing GitHub Pages.
   code. Main, Pages, and release configuration remain out of scope.
 - Package and app-shell cache metadata advanced to `2.12.21` for the eventual
   reviewed release.
+
+### Account lifecycle and death-recovery browser smoke coverage
+
+- `npm test` (57 regression groups) and `npm run test:browser` (6 focused UI
+  smoke groups)
+- Added an executable synthetic-client harness around the exact shipped client
+  patch. It runs both returning-player login and new-character registration,
+  verifies that each path captures the intended credentials, confirms the new
+  character replaces the remembered login only after registration is invoked,
+  and proves the client attaches to the isolated game host with the local
+  worker, double-speed movement, and disabled-fatigue display intact.
+- Extracted remembered auto-login scheduling into a small guarded controller.
+  It refuses missing credentials, already-online clients, and duplicate pending
+  timers; reports the existing non-destructive retry message on failure; and
+  clears the timer after success or failure so a later launch can retry.
+- Added executable controller coverage for the visible death sequence. A death
+  clears pending work and navigation, shows the defeated state, requires two
+  healthy frames, then shows a confirmed respawn and rebuilds the interrupted
+  mining phase. Detection and confirmation traces are both required.
+- The focused browser suite now covers keyboard viewport stability, account
+  credential hooks, guarded remembered login, live observation controls,
+  death/recovery UI, and the isolated five-bot lab controller. It remains
+  dependency-free and is a named GitHub Actions step.
+- No account/save fields, persistence keys, credential keys, inventory/bank
+  formats, settings, queued-job schemas, or learner/live-action boundaries
+  changed. Main, Pages, and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.22` for the eventual
+  reviewed release.
