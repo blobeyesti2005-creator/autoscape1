@@ -242,6 +242,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const observationStatus=document.getElementById('observationStatus');
 
   let worker=null, objective=null, botTimer=null, lastAction=0;
+  let checkpointRequestSequence=0,checkpointPendingId=0;
   let commandQueue=[],activeCommandText='';
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
@@ -970,6 +971,78 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
     return code;
   }
 
+  // The regular world saver owns one recurring timer. Lifecycle checkpoints
+  // use the same complete player-save path without scheduling another timer,
+  // and the worker serializes explicit requests so hide/page-close bursts
+  // cannot overlap or reorder them.
+  function patchServerLifecycleCheckpoint(code){
+    const saveStart=`    async saveAllPlayers() {
+        if (!this.players.length) {
+            setTimeout(this.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL);
+            return;
+        }`;
+    const checkpointSaveStart=`    async saveAllPlayers(scheduleNext = true) {
+        if (!this.players.length) {
+            if (scheduleNext) setTimeout(this.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL);
+            return;
+        }`;
+    if(!code.includes(saveStart))throw new Error('Server lifecycle checkpoint patch failed: save entry changed.');
+    code=code.replace(saveStart,checkpointSaveStart);
+
+    const saveEnd=`        setTimeout(this.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL);
+    }
+
+    toString() {`;
+    const checkpointSaveEnd=`        if (scheduleNext) setTimeout(this.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL);
+    }
+
+    toString() {`;
+    if(!code.includes(saveEnd))throw new Error('Server lifecycle checkpoint patch failed: save exit changed.');
+    code=code.replace(saveEnd,checkpointSaveEnd);
+
+    const browserWorker=`        addEventListener('message', async (e) => {
+            switch (e.data.type) {
+                case 'start': {
+                    const server = new Server(e.data.config);
+                    await server.init();
+                    postMessage({ type: 'ready' });
+                    break;
+                }
+            }
+        });`;
+    const checkpointWorker=`        let server = null;
+        let checkpointQueue = Promise.resolve();
+        addEventListener('message', async (e) => {
+            switch (e.data.type) {
+                case 'start': {
+                    server = new Server(e.data.config);
+                    await server.init();
+                    postMessage({ type: 'ready' });
+                    break;
+                }
+                case 'checkpoint': {
+                    const requestId = e.data.requestId;
+                    if (!server) {
+                        postMessage({ type: 'checkpoint-result', requestId, success: false, error: 'server-not-ready' });
+                        break;
+                    }
+                    const save = () => server.world.saveAllPlayers(false);
+                    const pending = checkpointQueue.then(save, save);
+                    checkpointQueue = pending.catch(() => undefined);
+                    try {
+                        await pending;
+                        postMessage({ type: 'checkpoint-result', requestId, success: true });
+                    } catch (error) {
+                        postMessage({ type: 'checkpoint-result', requestId, success: false, error: error.message || 'checkpoint-failed' });
+                    }
+                    break;
+                }
+            }
+        });`;
+    if(!code.includes(browserWorker))throw new Error('Server lifecycle checkpoint patch failed: browser worker changed.');
+    return code.replace(browserWorker,checkpointWorker);
+  }
+
   // RuneScape Classic predates the Lumbridge bank familiar from later OSRS.
   // This private-world quality-of-life banker gives the bot (and player) a
   // genuinely nearby bank instead of forcing every southern trip to Draynor.
@@ -1094,6 +1167,33 @@ ${firstBanker}`;
       },{once:true});
     });
   }
+
+  function requestServerCheckpoint(reason='lifecycle'){
+    if(!worker||checkpointPendingId)return false;
+    const requestId=++checkpointRequestSequence;
+    checkpointPendingId=requestId;
+    try{
+      worker.postMessage({type:'checkpoint',requestId,reason:String(reason)});
+      return true;
+    }catch(error){
+      checkpointPendingId=0;
+      console.warn('AutoScape lifecycle checkpoint could not be requested:',error);
+      return false;
+    }
+  }
+
+  function handleServerCheckpointMessage(event){
+    const message=event&&event.data;
+    if(!message||message.type!=='checkpoint-result'||message.requestId!==checkpointPendingId)return false;
+    checkpointPendingId=0;
+    if(!message.success)console.warn('AutoScape lifecycle checkpoint failed:',message.error||'unknown');
+    return true;
+  }
+
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='hidden')requestServerCheckpoint('hidden');
+  });
+  window.addEventListener('pagehide',()=>requestServerCheckpoint('pagehide'));
 
   async function waitClient(timeout=45000){
     const start=Date.now();
@@ -4618,7 +4718,7 @@ ${firstBanker}`;
       const server=await fetchText(SERVER_URL,FALLBACK_SERVER,FALLBACK2_SERVER,'local Classic server');
       // Upstream intentionally allows registration only on F2P worlds.
       // AutoScape is a private local members world, so remove that registration-only guard.
-      let serverCode=patchServerGameplay(patchServerBanking(patchServerPersistence(patchServerResources(server.text))));
+      let serverCode=patchServerGameplay(patchServerBanking(patchServerLifecycleCheckpoint(patchServerPersistence(patchServerResources(server.text)))));
       // Period-correct RuneScape Classic starter inventory:
       // bronze axe (87), cookedmeat (132), tinderbox (166), bronze pickaxe (156).
       const starterInventory=[
@@ -4673,6 +4773,8 @@ ${firstBanker}`;
       const workerUrl=URL.createObjectURL(new Blob([serverCode],{type:'text/javascript'}));
       worker=new Worker(workerUrl);
       window.__AUTOSCAPE_SERVER__=worker;
+      checkpointPendingId=0;
+      worker.addEventListener('message',handleServerCheckpointMessage);
 
       say('Starting private local world…');
       const ready=waitWorkerReady(worker);
@@ -4703,6 +4805,7 @@ ${firstBanker}`;
   retry.addEventListener('click',()=>{
     try{ if(worker) worker.terminate(); }catch(e){}
     worker=null; window.__AUTOSCAPE_SERVER__=null; window.autoscapeClient=null;
+    checkpointPendingId=0;
     boot();
   });
 

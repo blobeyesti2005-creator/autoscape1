@@ -955,3 +955,31 @@ deleting history, or changing GitHub Pages.
   of scope.
 - Package and app-shell cache metadata advanced to `2.12.29` for the eventual
   reviewed release.
+
+### Serialized lifecycle save checkpoints
+
+- `npm test` (65 regression groups) and `npm run test:browser` (9 focused UI
+  smoke groups)
+- Hiding the game or leaving its page now asks the local server worker for one
+  final complete character checkpoint. This narrows the remaining close-window
+  exposure below the regular 15-second save interval without moving any
+  account data through the page lifecycle event itself.
+- Explicit checkpoint requests are serialized inside the worker. A rapid
+  visibility-change/page-hide burst coalesces on the page, while any separately
+  accepted worker requests wait for earlier saves and return an acknowledgement
+  or a visible console diagnostic instead of claiming unverified success.
+- The world saver now has an explicit save-once mode. Normal periodic saves
+  still schedule exactly one successor, while lifecycle saves never create a
+  second recurring timer or gradually multiply storage work during a long
+  session.
+- Executable regression coverage holds one lifecycle save open, verifies a
+  second worker request cannot overtake it, confirms exact acknowledgement
+  order, proves lifecycle saves schedule zero timers, and proves the normal
+  periodic path still schedules one. The page-side test also confirms duplicate
+  lifecycle signals are coalesced and messages contain only control metadata.
+- The existing `playerID` and `players` keys, serialized map, account/save
+  schema, inventory, bank, settings, credentials, bot jobs, and learning
+  isolation are unchanged. Main, Pages, and release configuration remain out
+  of scope.
+- Package and app-shell cache metadata advanced to `2.12.30` for the eventual
+  reviewed release.

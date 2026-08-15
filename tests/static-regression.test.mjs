@@ -204,6 +204,124 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
   );
 });
 
+test('page lifecycle checkpoints serialize full saves without duplicating recurring timers', async () => {
+  const lifecycleSource = section(
+    html,
+    '  function patchServerLifecycleCheckpoint(code){',
+    '  // RuneScape Classic predates the Lumbridge bank'
+  );
+  const patchServerLifecycleCheckpoint = new Function(
+    `${lifecycleSource}\nreturn patchServerLifecycleCheckpoint;`
+  )();
+  const fixture = `
+class World {
+    constructor() {
+        this.players = { length: 1, getAll: () => this.testPlayers };
+        this.testPlayers = [];
+        this.boundSaveAllPlayers = this.saveAllPlayers.bind(this);
+    }
+    async saveAllPlayers() {
+        if (!this.players.length) {
+            setTimeout(this.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL);
+            return;
+        }
+        for (const player of this.players.getAll()) {
+            await player.save();
+        }
+        setTimeout(this.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL);
+    }
+
+    toString() {
+        return 'world';
+    }
+}
+const PLAYER_SAVE_INTERVAL = 1000 * 15;
+const Server = require('./server');
+(async () => {
+        addEventListener('message', async (e) => {
+            switch (e.data.type) {
+                case 'start': {
+                    const server = new Server(e.data.config);
+                    await server.init();
+                    postMessage({ type: 'ready' });
+                    break;
+                }
+            }
+        });
+})();
+return { World };`;
+  const patched = patchServerLifecycleCheckpoint(fixture);
+  assert.match(patched, /saveAllPlayers\(scheduleNext = true\)/);
+  assert.match(patched, /server\.world\.saveAllPlayers\(false\)/);
+  assert.match(patched, /checkpointQueue\.then\(save, save\)/);
+
+  const timers = [];
+  const messages = [];
+  const listeners = [];
+  class FakeServer {
+    constructor() {
+      this.world = new exposed.World();
+      FakeServer.last = this;
+    }
+    async init() {}
+  }
+  let exposed;
+  exposed = new Function('require', 'addEventListener', 'postMessage', 'setTimeout', patched)(
+    () => FakeServer,
+    (type, listener) => { if (type === 'message') listeners.push(listener); },
+    message => messages.push(message),
+    (callback, delay) => { timers.push({ callback, delay }); }
+  );
+  const dispatch = data => Promise.all(listeners.map(listener => listener({ data })));
+  await dispatch({ type: 'start', config: {} });
+  assert.deepEqual(messages.shift(), { type: 'ready' });
+
+  const saveOrder = [];
+  let releaseFirst;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  FakeServer.last.world.testPlayers = [{
+    async save() {
+      saveOrder.push('start');
+      if (saveOrder.length === 1) await firstGate;
+      saveOrder.push('finish');
+    }
+  }];
+  const first = dispatch({ type: 'checkpoint', requestId: 1 });
+  await Promise.resolve();
+  const second = dispatch({ type: 'checkpoint', requestId: 2 });
+  await Promise.resolve();
+  assert.deepEqual(saveOrder, ['start'], 'the second explicit checkpoint must wait for the first');
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(saveOrder, ['start', 'finish', 'start', 'finish']);
+  assert.equal(timers.length, 0, 'explicit lifecycle checkpoints must not create recurring save timers');
+  assert.deepEqual(messages.map(message => [message.type, message.requestId, message.success]), [
+    ['checkpoint-result', 1, true],
+    ['checkpoint-result', 2, true]
+  ]);
+
+  await FakeServer.last.world.saveAllPlayers();
+  assert.equal(timers.length, 1, 'the normal periodic save path still schedules exactly one successor');
+
+  const requestSource = `${functionSource(html, 'requestServerCheckpoint')}\n${functionSource(html, 'handleServerCheckpointMessage')}`;
+  let activeWorker = { sent: [], postMessage(message) { this.sent.push(message); } };
+  const lifecycle = new Function('getWorker', 'console', `
+    let checkpointRequestSequence=0,checkpointPendingId=0;
+    let worker=getWorker();
+    ${requestSource}
+    return {requestServerCheckpoint,handleServerCheckpointMessage,get pending(){return checkpointPendingId;}};
+  `)(() => activeWorker, { warn() {} });
+  assert.equal(lifecycle.requestServerCheckpoint('hidden'), true);
+  assert.equal(lifecycle.requestServerCheckpoint('pagehide'), false, 'hide/pagehide bursts coalesce while a save is pending');
+  assert.deepEqual(activeWorker.sent, [{ type: 'checkpoint', requestId: 1, reason: 'hidden' }]);
+  assert.equal(lifecycle.handleServerCheckpointMessage({ data: { type: 'checkpoint-result', requestId: 99, success: true } }), false);
+  assert.equal(lifecycle.handleServerCheckpointMessage({ data: { type: 'checkpoint-result', requestId: 1, success: true } }), true);
+  assert.equal(lifecycle.requestServerCheckpoint('hidden'), true, 'a later hide can request a fresh save after acknowledgement');
+  assert.deepEqual(Object.keys(activeWorker.sent[0]).sort(), ['reason', 'requestId', 'type'], 'lifecycle messages must not expose account data');
+  assert.match(html, /document\.addEventListener\('visibilitychange'/);
+  assert.match(html, /window\.addEventListener\('pagehide'/);
+});
+
 test('browser save queue preserves checkpoint order and recovers after a failed commit', async () => {
   const persistenceSource = section(
     html,
