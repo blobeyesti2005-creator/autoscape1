@@ -775,6 +775,109 @@ test('combat attacks and loot require observable game-state confirmation', () =>
   assert.match(functionSource(html,'combatTick'),/runLootContract\(frame,item\)/);
 });
 
+test('combat food use requires confirmed inventory consumption', () => {
+  const packets=[];
+  let active=null;
+  const rawStats={actions:0,eats:0};
+  const consumeFood=new Function(
+    'mc','sessionStats','renderMetrics',
+    `${functionSource(html,'consumeFood')}\nreturn consumeFood;`
+  )(
+    {packetStream:{newPacket(id){active={id,values:[]};packets.push(active);},putShort(value){active.values.push(value);},sendPacket(){}}},
+    rawStats,()=>{}
+  );
+  assert.equal(consumeFood({slot:3,id:132,heal:3}),true);
+  assert.deepEqual(packets,[{id:90,values:[3]}]);
+  assert.equal(rawStats.actions,1);
+  assert.equal(rawStats.eats,0,'sending the inventory command must not count as eating');
+
+  const traces=[],sessionStats={eats:0};
+  let sends=0,stopped='';
+  const harness=new Function(
+    'traceDecision','chooseFoodForMissingHits','inventoryFoodCount','consumeFood','sessionStats',
+    'markProgress','renderMetrics','setBotStatus','stop',
+    `const actionContracts=new Map();let lastAction=0;
+     ${functionSource(html,'cancelActionContract')}
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'eatFoodIfNeeded')}
+     return {eatFoodIfNeeded,contracts:actionContracts};`
+  )(
+    (...entry)=>traces.push(entry),snapshot=>snapshot.foods[0]||null,snapshot=>snapshot.foods.length,
+    ()=>{sends+=1;return true;},sessionStats,()=>{},()=>{},()=>{},message=>{stopped=message;}
+  );
+  const food={slot:0,id:132,heal:3};
+  const frame=(now,count,hits=2)=>({now,hits,maxHits:10,inventory:{foods:count?[food]:[]}});
+
+  assert.equal(harness.eatFoodIfNeeded(frame(1000,1)),true);
+  assert.equal(sessionStats.eats,0);
+  assert.equal(harness.eatFoodIfNeeded(frame(1200,1)),true);
+  assert.equal(sessionStats.eats,0,'an unchanged inventory must remain unconfirmed');
+  assert.equal(harness.eatFoodIfNeeded(frame(1300,0)),true);
+  assert.equal(sessionStats.eats,1);
+  assert.equal(sends,1);
+
+  assert.equal(harness.eatFoodIfNeeded(frame(5000,1)),true);
+  assert.equal(harness.eatFoodIfNeeded(frame(8501,1)),true);
+  assert.equal(harness.eatFoodIfNeeded(frame(12002,1)),true);
+  assert.equal(harness.eatFoodIfNeeded(frame(15503,1)),true);
+  assert.match(stopped,/three food-use attempts/);
+  assert.equal(sessionStats.eats,1,'failed attempts must not increment confirmed food totals');
+  assert.equal(harness.contracts.size,0);
+  assert.ok(traces.some(entry=>entry[1]==='confirmed'));
+  assert.ok(traces.some(entry=>entry[1]==='failed'));
+
+  assert.doesNotMatch(functionSource(html,'consumeFood'),/sessionStats\.eats|markProgress/);
+  assert.match(functionSource(html,'combatTick'),/eatFoodIfNeeded\(frame\)/);
+});
+
+test('combat bank restock waits for confirmed food withdrawal', () => {
+  const traces=[];
+  let sends=0,progress=0;
+  const harness=new Function(
+    'traceDecision','mc','inventoryFoodCount','chooseBankFood','withdrawBankItem','markProgress','renderMetrics',
+    `const actionContracts=new Map();
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'restockCombatFood')}
+     return {restockCombatFood,contracts:actionContracts};`
+  )(
+    (...entry)=>traces.push(entry),{showDialogBank:true},snapshot=>snapshot.foods.length,
+    ()=>({id:132,amount:20,heal:3}),()=>{sends+=1;return true;},()=>{progress+=1;},()=>{}
+  );
+  const food={slot:0,id:132,heal:3};
+  const frame=(now,count)=>({
+    now,
+    inventoryMax:30,
+    inventory:{used:5+count,foods:Array.from({length:count},()=>food)}
+  });
+
+  let result=harness.restockCombatFood(frame(1000,0),10);
+  assert.equal(result.pending,true);
+  assert.equal(sends,1);
+  assert.equal(progress,0,'withdraw packet must not mark progress');
+  result=harness.restockCombatFood(frame(2000,0),10);
+  assert.equal(result.pending,true);
+  assert.equal(sends,1);
+  result=harness.restockCombatFood(frame(2100,10),10);
+  assert.equal(result.ok,true);
+  assert.equal(result.reason,'withdrew');
+  assert.equal(result.amount,10);
+  assert.equal(progress,1);
+  assert.equal(harness.contracts.size,0,'reaching the target must still confirm and clear the action');
+
+  assert.equal(harness.restockCombatFood(frame(5000,0),10).pending,true);
+  assert.equal(harness.restockCombatFood(frame(9001,0),10).pending,true);
+  assert.equal(harness.restockCombatFood(frame(13002,0),10).pending,true);
+  result=harness.restockCombatFood(frame(17003,0),10);
+  assert.equal(result.failed,true);
+  assert.equal(harness.contracts.size,0);
+  assert.equal(progress,1,'failed withdrawals must not mark progress');
+  assert.ok(traces.some(entry=>entry[1]==='failed'));
+
+  assert.doesNotMatch(functionSource(html,'withdrawBankItem'),/markProgress/);
+  assert.match(functionSource(html,'advanceCombatBanking'),/restockCombatFood\(frame,10\)/);
+  assert.match(functionSource(html,'advanceCombatBanking'),/if\(result\.pending\)/);
+});
+
 test('navigation graph uses shortest travel distance for bank routes', () => {
   const dataSource = section(html, '    const NAV_NODES={', '    function prepareBankRoute(){');
   const { NAV_NODES, NAV_EDGES, BANKS, graphPath, graphPathDistance, nearestBank } = new Function(

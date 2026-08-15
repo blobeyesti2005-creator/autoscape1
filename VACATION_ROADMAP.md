@@ -468,3 +468,25 @@ deleting history, or changing GitHub Pages.
   schema changed.
 - Package and app-shell cache metadata advanced to `2.12.12` for the eventual
   reviewed release.
+
+### Confirmed combat food and restocking
+
+- `npm test` (35 regression groups)
+- Eating now uses an action contract and increments the combat food metric only
+  after the next shared inventory snapshot contains less food. The inventory
+  command packet alone no longer resets progress or counts as survival work.
+- Food use waits 3.5 seconds before retrying and stops safely after three
+  unconfirmed attempts. Pending food actions are cancelled when food disappears
+  or health recovers through another source, preventing stale confirmation.
+- Combat bank withdrawal now keeps the bank open and the bot stationary until
+  a shared inventory snapshot confirms that food arrived. It retries at
+  four-second intervals and stops after three unconfirmed packets.
+- Withdrawal packets no longer mark progress. Only a confirmed food-count gain
+  advances the banking state and permits the bot to return to combat.
+- Both decisions reuse the existing inventory and hit-point decision frame;
+  they add no storage writes, save fields, or extra inventory scans per tick.
+- Executable tests cover sent/waiting/confirmed/failed food consumption and
+  withdrawal transitions, ensure raw packets cannot change confirmed metrics,
+  and enforce cleanup after retry exhaustion.
+- Package and app-shell cache metadata advanced to `2.12.13` for the eventual
+  reviewed release.

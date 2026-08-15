@@ -1372,25 +1372,41 @@ ${firstBanker}`;
       mc.packetStream.putInt(0x12345678); // Classic MAGIC_WITHDRAW
       mc.packetStream.sendPacket();
       sessionStats.actions++;
-      markProgress('withdraw');
       renderMetrics();
       return true;
     }
 
-    function restockCombatFood(targetCount=10){
+    function restockCombatFood(frame,targetCount=10){
       if(!mc.showDialogBank)return {ok:false,reason:'bank-not-open'};
-      const have=inventoryFoodCount();
-      if(have>=targetCount)return {ok:true,reason:'no-need',amount:0};
+      const have=inventoryFoodCount(frame.inventory);
+      const pending=actionContracts.has('combat-withdraw-food');
+      if(have>=targetCount&&!pending)return {ok:true,reason:'no-need',amount:0};
       const food=chooseBankFood();
-      if(!food)return {ok:false,reason:'no-bank-food'};
-      const max=Number(mc.inventoryMaxItemCount||30);
-      const used=inventorySlots();
-      const free=Math.max(0,max-used);
+      if(!food&&!pending)return {ok:false,reason:'no-bank-food'};
+      const free=Math.max(0,frame.inventoryMax-frame.inventory.used);
       const need=Math.max(0,targetCount-have);
-      const amount=Math.min(food.amount,free,need);
-      if(amount<=0)return {ok:have>0,reason:'no-space-or-no-need',food};
-      withdrawBankItem(food.id,amount);
-      return {ok:true,reason:'withdrew',food,amount};
+      const amount=food?Math.min(food.amount,free,need):0;
+      if(amount<=0&&!pending)return {ok:have>0,reason:'no-space-or-no-need',food};
+      const result=runActionContract('combat-withdraw-food',frame,{
+        timeout:4000,
+        maxAttempts:3,
+        confirmedLabel:'food added to inventory',
+        ready:()=>!!food&&amount>0&&mc.showDialogBank&&frame.inventory.used<frame.inventoryMax,
+        capture:()=>({foodCount:have,id:food.id,amount}),
+        confirm:(next,state)=>inventoryFoodCount(next.inventory)>Number(state.before?.foodCount||0),
+        execute:()=>withdrawBankItem(food.id,amount)
+      });
+      if(result.status==='confirmed'){
+        const added=Math.max(1,inventoryFoodCount(frame.inventory)-Number(result.state.before?.foodCount||0));
+        markProgress('withdraw-confirmed');renderMetrics();
+        return {ok:true,reason:'withdrew',food:{...(food||{}),id:result.state.before.id},amount:added};
+      }
+      if(result.status==='failed')return {ok:false,reason:'withdraw-failed',failed:true,food,amount};
+      if(result.status==='blocked'&&(!food||amount<=0)){
+        cancelActionContract('combat-withdraw-food','withdrawal preconditions changed',frame.now);
+        return {ok:have>0,reason:food?'no-space-or-no-need':'no-bank-food',food,amount:0};
+      }
+      return {ok:false,reason:'withdraw-pending',pending:true,status:result.status,food,amount};
     }
 
     function globalPlayerTile(){
@@ -2255,8 +2271,8 @@ ${firstBanker}`;
       }
       return out;
     }
-    function chooseFoodForMissingHits(snapshot=null){
-      const missing=Math.max(0,maxHits()-currentHits()), foods=inventoryFood(snapshot);
+    function chooseFoodForMissingHits(snapshot=null,hits=currentHits(),maximum=maxHits()){
+      const missing=Math.max(0,Number(maximum)-Number(hits)), foods=inventoryFood(snapshot);
       if(!foods.length)return null;
       const enough=foods.filter(f=>f.heal>=missing).sort((a,b)=>a.heal-b.heal);
       return enough[0]||foods.sort((a,b)=>b.heal-a.heal)[0];
@@ -2856,18 +2872,50 @@ ${firstBanker}`;
       return Number(live.healthCurrent||0)>0;
     }
 
-    function eatFoodIfNeeded(snapshot=null){
-      const hp=currentHits(),max=maxHits();
-      if(max<=0||hp>Math.max(4,Math.floor(max*.45)))return false;
-      const food=chooseFoodForMissingHits(snapshot);
-      if(!food)return false;
+    function consumeFood(food){
+      if(!food||!mc.packetStream)return false;
       mc.packetStream.newPacket(90);
       mc.packetStream.putShort(food.slot);
       mc.packetStream.sendPacket();
-      sessionStats.actions++;sessionStats.eats++;markProgress('eat');renderMetrics();
-      setBotStatus(`Combat • eating item ${food.id} (+${food.heal}) at ${hp}/${max} hits`);
-      lastAction=Date.now();
+      sessionStats.actions++;renderMetrics();
       return true;
+    }
+
+    function eatFoodIfNeeded(frame){
+      const hp=frame.hits,max=frame.maxHits,threshold=Math.max(4,Math.floor(max*.45));
+      const pending=actionContracts.has('combat-eat');
+      if(!pending&&(max<=0||hp>threshold))return false;
+      const food=chooseFoodForMissingHits(frame.inventory,hp,max);
+      if(!food&&!pending)return false;
+      const result=runActionContract('combat-eat',frame,{
+        timeout:3500,
+        maxAttempts:3,
+        confirmedLabel:'food removed from inventory',
+        ready:()=>!!food&&frame.hits>0&&frame.hits<=threshold,
+        capture:()=>({foodCount:inventoryFoodCount(frame.inventory),id:food.id,slot:food.slot,heal:food.heal,hits:frame.hits}),
+        confirm:(next,state)=>inventoryFoodCount(next.inventory)<Number(state.before?.foodCount||0),
+        execute:()=>{
+          const sent=consumeFood(food);
+          if(sent)lastAction=frame.now;
+          return sent;
+        }
+      });
+      if(result.status==='sent'){
+        const attempted=result.state.before;
+        setBotStatus(`Combat • eating item ${attempted.id} (+${attempted.heal}) at ${attempted.hits}/${max} hits`);
+      }else if(result.status==='confirmed'){
+        sessionStats.eats++;markProgress('eat-confirmed');renderMetrics();
+        setBotStatus(`Combat • food consumed • hits ${frame.hits}/${max}`);
+      }else if(result.status==='failed'){
+        stop('Combat stopped: three food-use attempts made no confirmed inventory progress.');
+      }else if(result.status==='blocked'&&!food){
+        cancelActionContract('combat-eat','food unavailable',frame.now);
+        return false;
+      }else if(result.status==='blocked'&&frame.hits>threshold){
+        cancelActionContract('combat-eat','health recovered without food confirmation',frame.now);
+        return false;
+      }
+      return ['sent','waiting','confirmed','failed','cooldown'].includes(result.status);
     }
     function beginCombatBanking(reason='food'){
       if(!objective||objective.type!=='combat'||!combatBankingEnabled())return false;
@@ -2903,7 +2951,15 @@ ${firstBanker}`;
         }
         if(Date.now()-Number(objective.combatLootDepositAt||0)<700)return;
         if(objective.combatBankFinishing)return;
-        const result=restockCombatFood(10);
+        const result=restockCombatFood(frame,10);
+        if(result.pending){
+          if(result.status==='sent')setBotStatus(`Combat • withdrawing ${result.amount||0} × item ${result.food?.id||''} for food`);
+          return;
+        }
+        if(result.failed){
+          stop('Combat stopped: three bank-withdraw attempts produced no confirmed food.');
+          return;
+        }
         if(result.reason==='no-bank-food'){
           if(objective.combatBankReason==='inventory-full'&&currentHits()>=Math.max(5,Math.floor(maxHits()*.70))){
             objective.combatBankFinishing=true;
@@ -3044,7 +3100,7 @@ ${firstBanker}`;
       if(fighting)objective.wasInCombat=true;
 
       if(hp>0 && hp<=Math.max(3,Math.floor(max*0.25))){
-        if(eatFoodIfNeeded(inventory)) return;
+        if(eatFoodIfNeeded(frame)) return;
         if(combatBankingEnabled()&&fighting){
           // Do not issue a new attack while critically low. As soon as combat
           // disengages, the next tick routes to the bank.
