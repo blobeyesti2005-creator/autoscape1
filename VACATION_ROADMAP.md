@@ -983,3 +983,33 @@ deleting history, or changing GitHub Pages.
   of scope.
 - Package and app-shell cache metadata advanced to `2.12.30` for the eventual
   reviewed release.
+
+### Manual complete-character backup export
+
+- `npm test` (67 regression groups) and `npm run test:browser` (10 focused UI
+  smoke groups)
+- The Bot panel now offers an explicit local backup download. The worker first
+  completes the same serialized save-once checkpoint used by the protected
+  lifecycle path, then captures the complete validated account map without
+  granting the page direct database access.
+- The export retains the player-ID counter and complete character records,
+  including stats, inventory, bank, settings, and the local credential needed
+  for future recovery. The interface prominently warns that the file contains
+  credentials and must be kept private; nothing is uploaded.
+- The page independently validates the worker payload, rejects malformed,
+  duplicate, mismatched, unsafe-ID, torn-counter, or oversized exports, and
+  includes a SHA-256 digest over canonical character state. Export metadata
+  cannot alter that integrity value.
+- This batch adds download only. It does not add import or restore authority,
+  and it never transforms, repairs, deletes, or replaces live character
+  records. The only storage operation is the normal pre-export checkpoint.
+- Executable worker and browser coverage proves the export waits behind prior
+  checkpoints, schedules no extra timer, preserves nested state and credential
+  fields, downloads only after validation, and sends no account contents in
+  the page's request message.
+- The existing `playerID` and `players` keys, serialized map, account/save
+  schema, inventory, bank, settings, credentials, bot jobs, and learning
+  isolation are unchanged. Main, Pages, and release configuration remain out
+  of scope.
+- Package and app-shell cache metadata advanced to `2.12.31` for the eventual
+  reviewed release.

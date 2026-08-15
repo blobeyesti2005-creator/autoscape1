@@ -52,7 +52,8 @@ test('required UI controls exist once and labels point to controls', () => {
     'game-host', 'loader', 'bot', 'botStatus', 'botMetrics', 'queuePlan', 'botTrace',
     'botInput', 'resourceSelect', 'miningSelect', 'combatSelect',
     'combatStyleSelect', 'combatBankSelect', 'lootSelect', 'guidePanel',
-    'observationToggle', 'observationDownload', 'observationStatus'
+    'observationToggle', 'observationDownload', 'observationStatus',
+    'backupDownload', 'backupStatus'
   ];
   required.forEach(id => assert.ok(ids.includes(id), `missing #${id}`));
 
@@ -261,6 +262,10 @@ return { World };`;
   class FakeServer {
     constructor() {
       this.world = new exposed.World();
+      this.dataClient = {
+        playerID: 2,
+        players: new Map([['tester', { id: 1, username: 'tester', password: 'private', inventory: [{ id: 14, amount: 3 }] }]])
+      };
       FakeServer.last = this;
     }
     async init() {}
@@ -303,6 +308,19 @@ return { World };`;
   await FakeServer.last.world.saveAllPlayers();
   assert.equal(timers.length, 1, 'the normal periodic save path still schedules exactly one successor');
 
+  messages.length = 0;
+  await dispatch({ type: 'export-backup', requestId: 3 });
+  assert.equal(timers.length, 1, 'backup checkpoints must not create recurring timers');
+  assert.deepEqual(messages, [{
+    type: 'backup-result',
+    requestId: 3,
+    success: true,
+    payload: {
+      playerID: 2,
+      players: JSON.stringify(Array.from(FakeServer.last.dataClient.players.entries()))
+    }
+  }]);
+
   const requestSource = `${functionSource(html, 'requestServerCheckpoint')}\n${functionSource(html, 'handleServerCheckpointMessage')}`;
   let activeWorker = { sent: [], postMessage(message) { this.sent.push(message); } };
   const lifecycle = new Function('getWorker', 'console', `
@@ -320,6 +338,60 @@ return { World };`;
   assert.deepEqual(Object.keys(activeWorker.sent[0]).sort(), ['reason', 'requestId', 'type'], 'lifecycle messages must not expose account data');
   assert.match(html, /document\.addEventListener\('visibilitychange'/);
   assert.match(html, /window\.addEventListener\('pagehide'/);
+});
+
+test('manual character backups validate complete state and add deterministic integrity', async () => {
+  const validateCharacterBackupPayload = new Function(
+    `${functionSource(html, 'validateCharacterBackupPayload')}\nreturn validateCharacterBackupPayload;`
+  )();
+  const buildCharacterBackup = new Function(
+    `${functionSource(html, 'validateCharacterBackupPayload')}\nasync ${functionSource(html, 'buildCharacterBackup')}\nreturn buildCharacterBackup;`
+  )();
+  const complete = [[
+    'tester',
+    {
+      id: 1,
+      username: 'tester',
+      password: 'local-private-credential',
+      skills: { attack: { current: 12, experience: 1_500 } },
+      inventory: [{ id: 14, amount: 7 }],
+      bank: [{ id: 10, amount: 42 }],
+      settings: { cameraAuto: 1, soundOn: 1 }
+    }
+  ]];
+  const payload = { playerID: 2, players: JSON.stringify(complete) };
+  const backup = await buildCharacterBackup(payload, '2026-08-15T20:00:00.000Z', 'https://example.test');
+  assert.equal(backup.format, 'autoscape-character-backup');
+  assert.equal(backup.version, 1);
+  assert.equal(backup.playerID, 2);
+  assert.deepEqual(backup.players, complete);
+  assert.equal(backup.players[0][1].password, 'local-private-credential', 'a recovery backup must retain the local login credential');
+  assert.deepEqual(backup.players[0][1].inventory, complete[0][1].inventory);
+  assert.deepEqual(backup.players[0][1].bank, complete[0][1].bank);
+  assert.deepEqual(backup.players[0][1].settings, complete[0][1].settings);
+  assert.match(backup.integrity.sha256, /^[a-f0-9]{64}$/);
+  const again = await buildCharacterBackup(payload, 'later', 'https://other.test');
+  assert.equal(again.integrity.sha256, backup.integrity.sha256, 'metadata must not alter character-state integrity');
+  const changed = await buildCharacterBackup({ playerID: 2, players: JSON.stringify([['tester', { ...complete[0][1], bank: [] }]]) }, 'later', 'https://other.test');
+  assert.notEqual(changed.integrity.sha256, backup.integrity.sha256, 'changed character state must change the digest');
+  assert.equal(payload.players, JSON.stringify(complete), 'building a backup must not mutate the live serialized payload');
+
+  const invalid = [
+    [{ playerID: 1, players: JSON.stringify(complete) }, /torn player ID counter/],
+    [{ playerID: 2, players: '{bad json' }, /malformed character data/],
+    [{ playerID: 2, players: JSON.stringify([complete[0], complete[0]]) }, /duplicate username/],
+    [{ playerID: 2, players: JSON.stringify([['tester', { ...complete[0][1], username: 'other' }]]) }, /mismatched username/],
+    [{ playerID: 2, players: JSON.stringify([['tester', { ...complete[0][1], id: -1 }]]) }, /invalid character ID/]
+  ];
+  for (const [candidate, expected] of invalid) assert.throws(() => validateCharacterBackupPayload(candidate), expected);
+
+  assert.match(functionSource(html, 'requestCharacterBackup'), /postMessage\(\{type:'export-backup',requestId\}\)/);
+  assert.doesNotMatch(functionSource(html, 'requestCharacterBackup'), /players|password|inventory|bank/);
+  assert.match(functionSource(html, 'saveCharacterBackupFile'), /new Blob/);
+  assert.match(functionSource(html, 'saveCharacterBackupFile'), /anchor\.download=/);
+  assert.match(functionSource(html, 'handleServerBackupMessage'), /saveCharacterBackupFile\(backup\)/);
+  assert.match(html, /contains character credentials · keep private/);
+  assert.match(html, /Apart from that checkpoint, export never transforms, repairs, deletes, uploads, imports, or restores character records/);
 });
 
 test('browser save queue preserves checkpoint order and recovers after a failed commit', async () => {

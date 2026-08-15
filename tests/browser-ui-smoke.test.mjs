@@ -30,6 +30,8 @@ function functionSource(source, name) {
 function fakeClassList() {
   const values = new Set();
   return {
+    add(name) { values.add(name); },
+    remove(name) { values.delete(name); },
     toggle(name, enabled) { enabled ? values.add(name) : values.delete(name); },
     contains(name) { return values.has(name); }
   };
@@ -294,6 +296,53 @@ test('live recorder browser controls are opt-in, bounded, copied, and route-awar
   assert.equal(recorder.getLiveObservations().observations[0].tile.x, 1, 'download objects must not expose retained frames');
   assert.equal(observationDownload.disabled, false);
   assert.match(observationStatus.textContent, /600 frames ready/);
+});
+
+test('manual backup control checkpoints, validates, and downloads without page-side save access', async () => {
+  const sent = [], downloads = [], revoked = [];
+  const worker = { postMessage(message) { sent.push(message); } };
+  const backupDownload = { disabled: false };
+  const backupStatus = { textContent: '', classList: fakeClassList() };
+  const anchor = { href: '', download: '', click() { downloads.push({ href: this.href, download: this.download }); }, remove() {} };
+  const document = {
+    body: { appendChild(value) { assert.equal(value, anchor); } },
+    createElement(tag) { assert.equal(tag, 'a'); return anchor; }
+  };
+  const MockURL = {
+    createObjectURL(blob) { assert.ok(blob instanceof Blob); return 'blob:backup'; },
+    revokeObjectURL(url) { revoked.push(url); }
+  };
+  const factory = new Function('worker', 'backupDownload', 'backupStatus', 'document', 'URL', 'setTimeout', 'location', `
+    let backupRequestSequence=0,backupPendingId=0;
+    ${functionSource(appHtml, 'validateCharacterBackupPayload')}
+    async ${functionSource(appHtml, 'buildCharacterBackup')}
+    ${functionSource(appHtml, 'saveCharacterBackupFile')}
+    ${functionSource(appHtml, 'requestCharacterBackup')}
+    async ${functionSource(appHtml, 'handleServerBackupMessage')}
+    return {requestCharacterBackup,handleServerBackupMessage,get pending(){return backupPendingId;}};
+  `);
+  const backup = factory(worker, backupDownload, backupStatus, document, MockURL, callback => callback(), { origin: 'https://example.test' });
+  assert.equal(backup.requestCharacterBackup(), true);
+  assert.deepEqual(sent, [{ type: 'export-backup', requestId: 1 }]);
+  assert.equal(backupDownload.disabled, true);
+  assert.match(backupStatus.textContent, /Checkpointing and validating/);
+
+  const players = [['tester', {
+    id: 1, username: 'tester', password: 'private',
+    inventory: [{ id: 14, amount: 3 }], bank: [{ id: 10, amount: 5 }], settings: { soundOn: 1 }
+  }]];
+  assert.equal(await backup.handleServerBackupMessage({ data: {
+    type: 'backup-result', requestId: 1, success: true,
+    payload: { playerID: 2, players: JSON.stringify(players) }
+  } }), true);
+  assert.equal(backupDownload.disabled, false);
+  assert.equal(downloads.length, 1);
+  assert.equal(downloads[0].href, 'blob:backup');
+  assert.match(downloads[0].download, /^autoscape-character-backup-/);
+  assert.deepEqual(revoked, ['blob:backup']);
+  assert.match(backupStatus.textContent, /1 character · keep it private/);
+  assert.equal(backupStatus.classList.contains('bad'), false);
+  assert.equal(sent[0].players, undefined, 'the page request must never contain account state');
 });
 
 test('death recovery UI preempts stale work and visibly confirms a stable respawn', () => {

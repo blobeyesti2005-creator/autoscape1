@@ -37,8 +37,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:
 #combatSelect,#combatStyleSelect,#combatBankSelect,#lootSelect{flex:1;min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:7px;font-size:12px}
 #bot button{background:#655438;color:#fff;border:1px solid #9f8657;padding:8px 10px}
 #botNote{font-size:9px;color:#b8aa8e;margin-top:3px}
-#observationRow{display:flex;gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap}
+#observationRow,#backupRow{display:flex;gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap}
 #observationStatus{color:#9ed0b2;font-size:9px;flex:1;min-width:120px}
+#backupStatus{color:#d8c18d;font-size:9px;flex:1;min-width:120px}
 .bad{color:#ff9a8f}.good{color:#aee59f}
 body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guideBtn,body.keyboard-open #labBtn{visibility:hidden}
 
@@ -152,6 +153,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 </form>
 <div id="botNote">Try “chop 10 logs, then firemake them”. Numbered steps count confirmed results; Stop cancels the queue.</div>
 <div id="observationRow"><button type="button" id="observationToggle">Record observations</button><button type="button" id="observationDownload" disabled>Download</button><span id="observationStatus">Recorder off · no account data is captured</span></div>
+<div id="backupRow"><button type="button" id="backupDownload">Download character backup</button><span id="backupStatus">Manual local export · contains character credentials · keep private</span></div>
 </div>
 <div id="guidePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
 <button id="guideClose" type="button">Close</button>
@@ -193,6 +195,8 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 </tbody></table></section>
 <section class="guideEntry" data-guide="starter items inventory axe pickaxe tinderbox cooked meat bank lumbridge nearest quick bank">
 <h3>Starter kit and safe banking</h3><p>New characters receive a bronze axe <strong>87</strong>, cooked meat <strong>132</strong>, tinderbox <strong>166</strong>, and bronze pickaxe <strong>156</strong>. Existing accounts are preserved. This private world adds a Lumbridge banker, and automation chooses the nearest supported bank for its current position. Quick Bank's Gathered and Loot buttons skip equipped items; Carried deposits every unequipped stack intentionally.</p></section>
+<section class="guideEntry" data-guide="backup export save recovery download character credentials private">
+<h3>Character backup export</h3><p>The Bot panel can download a manual backup of every local character after first completing a normal fresh checkpoint. The file includes credentials required for future recovery, so keep it private. Apart from that checkpoint, export never transforms, repairs, deletes, uploads, imports, or restores character records.</p></section>
 <section class="guideEntry" data-guide="item items ids reference loot drops equipment runes ores logs food tools">
 <h3>Supported item reference</h3><table><thead><tr><th>Item ID</th><th>Name</th></tr></thead><tbody id="guideItems"></tbody></table></section>
 <section class="guideEntry" data-guide="commands bot natural language jobs queue chain then comma combat strength attack defence bank death">
@@ -240,9 +244,12 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const observationToggle=document.getElementById('observationToggle');
   const observationDownload=document.getElementById('observationDownload');
   const observationStatus=document.getElementById('observationStatus');
+  const backupDownload=document.getElementById('backupDownload');
+  const backupStatus=document.getElementById('backupStatus');
 
   let worker=null, objective=null, botTimer=null, lastAction=0;
   let checkpointRequestSequence=0,checkpointPendingId=0;
+  let backupRequestSequence=0,backupPendingId=0;
   let commandQueue=[],activeCommandText='';
   let metricFoodCount=()=>0,metricNormalLogCount=()=>0;
   let lastMetricsText='',lastQueueText='',lastStatusText='',lastMetricsRenderAt=0;
@@ -1037,6 +1044,33 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
                     }
                     break;
                 }
+                case 'export-backup': {
+                    const requestId = e.data.requestId;
+                    if (!server) {
+                        postMessage({ type: 'backup-result', requestId, success: false, error: 'server-not-ready' });
+                        break;
+                    }
+                    const exportBackup = async () => {
+                        await server.world.saveAllPlayers(false);
+                        const playerID = server.dataClient.playerID;
+                        const players = server.dataClient.players;
+                        if (!Number.isSafeInteger(playerID) || playerID < 0 || !(players instanceof Map)) {
+                            throw new Error('account database is not ready for export');
+                        }
+                        const serializedPlayers = JSON.stringify(Array.from(players.entries()));
+                        if (serializedPlayers.length > 10 * 1024 * 1024) throw new Error('account database is too large to export safely');
+                        return { playerID, players: serializedPlayers };
+                    };
+                    const pending = checkpointQueue.then(exportBackup, exportBackup);
+                    checkpointQueue = pending.then(() => undefined, () => undefined);
+                    try {
+                        const payload = await pending;
+                        postMessage({ type: 'backup-result', requestId, success: true, payload });
+                    } catch (error) {
+                        postMessage({ type: 'backup-result', requestId, success: false, error: error.message || 'backup-failed' });
+                    }
+                    break;
+                }
             }
         });`;
     if(!code.includes(browserWorker))throw new Error('Server lifecycle checkpoint patch failed: browser worker changed.');
@@ -1190,10 +1224,80 @@ ${firstBanker}`;
     return true;
   }
 
+  function validateCharacterBackupPayload(payload){
+    if(!payload||!Number.isSafeInteger(payload.playerID)||payload.playerID<0||typeof payload.players!=='string'){
+      throw new Error('The local server returned an invalid backup header.');
+    }
+    if(new TextEncoder().encode(payload.players).byteLength>10*1024*1024){
+      throw new Error('The local character database is too large for a safe browser export.');
+    }
+    let entries;
+    try{entries=JSON.parse(payload.players);}catch(error){throw new Error('The local server returned malformed character data.');}
+    if(!Array.isArray(entries))throw new Error('The exported character list is not an array.');
+    const usernames=new Set();
+    let maximumPlayerID=-1;
+    for(const entry of entries){
+      if(!Array.isArray(entry)||entry.length!==2||typeof entry[0]!=='string'||!entry[0]||
+        !entry[1]||typeof entry[1]!=='object'||Array.isArray(entry[1]))throw new Error('The export contains an invalid character entry.');
+      if(usernames.has(entry[0]))throw new Error('The export contains a duplicate username.');
+      usernames.add(entry[0]);
+      if(entry[1].username!==entry[0])throw new Error('The export contains a mismatched username.');
+      if(!Number.isSafeInteger(entry[1].id)||entry[1].id<0)throw new Error('The export contains an invalid character ID.');
+      maximumPlayerID=Math.max(maximumPlayerID,entry[1].id);
+    }
+    if(maximumPlayerID>=payload.playerID)throw new Error('The export contains a torn player ID counter.');
+    return entries;
+  }
+
+  async function buildCharacterBackup(payload,exportedAt=new Date().toISOString(),sourceOrigin=location.origin){
+    const players=validateCharacterBackupPayload(payload);
+    if(!globalThis.crypto||!crypto.subtle)throw new Error('This browser cannot calculate backup integrity safely.');
+    const canonical=JSON.stringify({playerID:payload.playerID,players});
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical));
+    const sha256=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+    return {format:'autoscape-character-backup',version:1,exportedAt,sourceOrigin,
+      integrity:{algorithm:'SHA-256',canonical:'playerID-and-players-json',sha256},
+      playerID:payload.playerID,players};
+  }
+
+  function saveCharacterBackupFile(backup){
+    const stamp=String(backup.exportedAt).replace(/[:.]/g,'-');
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const anchor=document.createElement('a');
+    anchor.href=url;anchor.download=`autoscape-character-backup-${stamp}.json`;
+    document.body.appendChild(anchor);anchor.click();anchor.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),0);
+  }
+
+  function requestCharacterBackup(){
+    if(!worker||backupPendingId)return false;
+    const requestId=++backupRequestSequence;
+    backupPendingId=requestId;backupDownload.disabled=true;
+    backupStatus.textContent='Checkpointing and validating local characters…';backupStatus.classList.remove('bad');
+    try{worker.postMessage({type:'export-backup',requestId});return true;}
+    catch(error){backupPendingId=0;backupDownload.disabled=false;backupStatus.textContent='Backup request failed: '+error.message;backupStatus.classList.add('bad');return false;}
+  }
+
+  async function handleServerBackupMessage(event){
+    const message=event&&event.data;
+    if(!message||message.type!=='backup-result'||message.requestId!==backupPendingId)return false;
+    backupPendingId=0;backupDownload.disabled=false;
+    if(!message.success){backupStatus.textContent='Backup failed: '+(message.error||'unknown');backupStatus.classList.add('bad');return true;}
+    try{
+      const backup=await buildCharacterBackup(message.payload);
+      saveCharacterBackupFile(backup);
+      backupStatus.textContent=`Backup downloaded · ${backup.players.length} character${backup.players.length===1?'':'s'} · keep it private`;
+      backupStatus.classList.remove('bad');
+    }catch(error){backupStatus.textContent='Backup validation failed: '+error.message;backupStatus.classList.add('bad');}
+    return true;
+  }
+
   document.addEventListener('visibilitychange',()=>{
     if(document.visibilityState==='hidden')requestServerCheckpoint('hidden');
   });
   window.addEventListener('pagehide',()=>requestServerCheckpoint('pagehide'));
+  backupDownload.addEventListener('click',requestCharacterBackup);
 
   async function waitClient(timeout=45000){
     const start=Date.now();
@@ -4775,6 +4879,7 @@ ${firstBanker}`;
       window.__AUTOSCAPE_SERVER__=worker;
       checkpointPendingId=0;
       worker.addEventListener('message',handleServerCheckpointMessage);
+      worker.addEventListener('message',handleServerBackupMessage);
 
       say('Starting private local world…');
       const ready=waitWorkerReady(worker);
@@ -4806,6 +4911,7 @@ ${firstBanker}`;
     try{ if(worker) worker.terminate(); }catch(e){}
     worker=null; window.__AUTOSCAPE_SERVER__=null; window.autoscapeClient=null;
     checkpointPendingId=0;
+    backupPendingId=0;backupDownload.disabled=false;
     boot();
   });
 
