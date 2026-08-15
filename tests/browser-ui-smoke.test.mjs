@@ -80,6 +80,51 @@ test('Android keyboard viewport smoke keeps the game scale stable and exposes th
   assert.equal(ui.stable(), 700);
 });
 
+test('first online runtime load seeds a verified cache used by an offline restart', async () => {
+  const statuses=[],warnings=[],entries=new Map();
+  const makeResponse=text=>({
+    ok:true,status:200,
+    async text(){return text;},
+    clone(){return makeResponse(text);}
+  });
+  const runtimeCache={
+    async match(url){return entries.get(url)||null;},
+    async put(url,response){entries.set(url,response);}
+  };
+  const cacheStorage={
+    async open(name){assert.equal(name,'autoscape-runtime-v1');return runtimeCache;}
+  };
+  const factory=new Function('say','console','RUNTIME_CACHE_NAME', `
+    ${functionSource(appHtml, 'fetchText').replace(/^function /,'async function ')}
+    return fetchText;
+  `);
+  const fetchText=factory((...args)=>statuses.push(args),{warn(...args){warnings.push(args);}},'autoscape-runtime-v1');
+  const url='https://runtime.invalid/client.js';
+  const payload='verified-runtime'.repeat(100);
+  let networkCalls=0;
+  const online=async requested=>{networkCalls++;assert.equal(requested,url);return makeResponse(payload);};
+
+  const first=await fetchText(url,null,null,'Classic client',online,cacheStorage);
+  assert.equal(first.source,'network');
+  assert.equal(first.text,payload);
+  assert.equal(networkCalls,1);
+  assert.ok(entries.has(url),'successful validation must seed the runtime cache');
+
+  const offline=async()=>{networkCalls++;throw new Error('offline');};
+  const second=await fetchText(url,null,null,'Classic client',offline,cacheStorage);
+  assert.equal(second.source,'cache');
+  assert.equal(second.text,payload);
+  assert.equal(networkCalls,1,'a verified cached restart must not touch the network');
+  assert.match(statuses.at(-1)[0],/offline cache/);
+
+  entries.set(url,makeResponse('short'));
+  const replacement='replacement-runtime'.repeat(80);
+  const repaired=await fetchText(url,null,null,'Classic client',async()=>makeResponse(replacement),cacheStorage);
+  assert.equal(repaired.source,'network','an invalid cache entry must fall back to the network');
+  assert.equal(repaired.text,replacement);
+  assert.equal(warnings.length,0);
+});
+
 test('account creation and login hooks remember credentials through the shipped client patch', async () => {
   const patchStart = appHtml.indexOf('  function patchClient(code){');
   const patchEnd = appHtml.indexOf('  function patchServerResources(code){', patchStart);

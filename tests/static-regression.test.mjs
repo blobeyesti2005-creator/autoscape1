@@ -98,6 +98,10 @@ test('manifest and offline shell stay internally consistent', () => {
   }
 
   assert.match(serviceWorker, /RUNTIME_CACHE/);
+  assert.match(html, /const RUNTIME_CACHE_NAME='autoscape-runtime-v1'/);
+  assert.match(functionSource(html, 'fetchText'), /runtimeCache\.put\(url,cacheCopy\)/);
+  assert.match(functionSource(html, 'fetchText'), /source:'cache'/);
+  assert.match(html, /first successful launch needs internet/);
   assert.match(serviceWorker, /migrateRuntimeEntries/);
   assert.match(serviceWorker, /request\.mode === 'navigate'/);
 });

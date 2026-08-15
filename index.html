@@ -207,6 +207,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const FALLBACK_SERVER='https://cdn.jsdelivr.net/npm/@2003scape/rsc-server@1.1.0/dist/browser.bundle.js';
   const FALLBACK2_CLIENT='https://unpkg.com/@2003scape/rsc-client@1.1.0/dist/index.bundle.js';
   const FALLBACK2_SERVER='https://unpkg.com/@2003scape/rsc-server@1.1.0/dist/browser.bundle.js';
+  const RUNTIME_CACHE_NAME='autoscape-runtime-v1';
 
   const state=document.getElementById('loadState');
   const loader=document.getElementById('loader');
@@ -511,16 +512,45 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 
   function say(s,cls){ state.className=cls||''; state.textContent=s; }
 
-  async function fetchText(primary,fallback,fallback2,label){
+  async function fetchText(primary,fallback,fallback2,label,fetcher=fetch,cacheStorage=globalThis.caches){
     let errors=[];
+    let runtimeCache=null;
+    try{
+      if(cacheStorage&&typeof cacheStorage.open==='function')runtimeCache=await cacheStorage.open(RUNTIME_CACHE_NAME);
+    }catch(e){
+      console.warn('AutoScape runtime cache is unavailable:',e);
+    }
     for(const url of [primary,fallback,fallback2].filter(Boolean)){
+      if(runtimeCache){
+        try{
+          const cached=await runtimeCache.match(url);
+          if(cached){
+            const text=await cached.text();
+            if(text.length>=1000){
+              say(`Loading ${label} from verified offline cache…`);
+              return {text,url,source:'cache'};
+            }
+            errors.push(`${url}: cached copy was unexpectedly small`);
+          }
+        }catch(e){
+          errors.push(`${url}: cached copy could not be read (${e.message})`);
+        }
+      }
       try{
         say(`Downloading ${label}…\n${url.includes('jsdelivr')?'jsDelivr':'UNPKG'} mirror`);
-        const r=await fetch(url,{cache:'force-cache',mode:'cors'});
+        const r=await fetcher(url,{cache:'force-cache',mode:'cors'});
         if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        const cacheCopy=typeof r.clone==='function'?r.clone():null;
         const text=await r.text();
         if(text.length<1000) throw new Error('download was unexpectedly small');
-        return {text,url};
+        if(runtimeCache&&cacheCopy){
+          try{
+            await runtimeCache.put(url,cacheCopy);
+          }catch(e){
+            console.warn(`AutoScape could not cache ${label} for offline use:`,e);
+          }
+        }
+        return {text,url,source:'network'};
       }catch(e){ errors.push(`${url}: ${e.message}`); }
     }
     throw new Error(`Could not download ${label}.\n`+errors.join('\n'));
@@ -4529,7 +4559,7 @@ ${firstBanker}`;
       console.log('AutoScape Classic v2.10 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
-      say(`Boot failed.\n\n${e.message}\n\nThis build needs internet while starting so your phone can fetch the preservation client/server files.\n\nANDROID:\n1. Save this HTML to Downloads.\n2. In My Files / Files, long-press it and choose Open with.\n3. Choose Chrome or Samsung Internet (not the built-in document preview).\n4. Keep internet on for launch.`, 'bad');
+      say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
       retry.style.display='inline-block';
     }
   }
