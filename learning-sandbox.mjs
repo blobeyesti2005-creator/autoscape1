@@ -4,6 +4,7 @@ const GOALS = Object.freeze(['woodcutting', 'mining', 'combat', 'banking', 'bala
 const INVENTORY_LIMIT = 8;
 const MAX_HISTORY = 120;
 const MAX_TELEMETRY = 1200;
+const MAX_REPLAY_TEXT = 2_000_000;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, Number(value) || 0));
@@ -30,11 +31,97 @@ function copyInventory(value) {
   return { logs: Number(value.logs) || 0, ores: Number(value.ores) || 0, bones: Number(value.bones) || 0 };
 }
 
+function normalizeInventory(value) {
+  return Object.fromEntries(['logs', 'ores', 'bones'].map(key => [
+    key, Math.trunc(clamp(value?.[key], 0, 1_000_000))
+  ]));
+}
+
 function copyEvent(event) {
   return {
     ...event,
     before: { ...event.before, inventory: copyInventory(event.before.inventory), bank: copyInventory(event.before.bank) },
     after: { ...event.after, inventory: copyInventory(event.after.inventory), bank: copyInventory(event.after.bank) }
+  };
+}
+
+function finiteNumber(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new TypeError(`Invalid replay ${label}.`);
+  return number;
+}
+
+function normalizeReplayEvent(value, index, previousSequence) {
+  if (!value || typeof value !== 'object') throw new TypeError(`Invalid replay event ${index}.`);
+  const sequence = Math.trunc(finiteNumber(value.sequence, 'sequence'));
+  const tick = Math.trunc(finiteNumber(value.tick, 'tick'));
+  const botId = Math.trunc(finiteNumber(value.botId, 'bot ID'));
+  if (sequence <= previousSequence || tick < 0 || botId < 1 || botId > 5) throw new TypeError(`Invalid replay event ordering at ${index}.`);
+  if (!ACTIONS.includes(value.action) || !CONTEXTS.includes(value.context) || !['auto', 'manual'].includes(value.source)) {
+    throw new TypeError(`Invalid replay action at ${index}.`);
+  }
+  if (!value.before || !value.after) throw new TypeError(`Invalid replay state at ${index}.`);
+  return {
+    sequence, tick, botId, source: value.source, context: value.context, action: value.action,
+    explored: Boolean(value.explored), reward: finiteNumber(value.reward, 'reward'),
+    qBefore: finiteNumber(value.qBefore, 'Q value'), qAfter: finiteNumber(value.qAfter, 'Q value'),
+    detail: String(value.detail || '').slice(0, 240),
+    before: {
+      hp: clamp(value.before.hp, 0, 10), energy: clamp(value.before.energy, 0, 100),
+      score: finiteNumber(value.before.score || 0, 'score'), actions: Math.max(0, Math.trunc(finiteNumber(value.before.actions || 0, 'action count'))),
+      deaths: Math.max(0, Math.trunc(finiteNumber(value.before.deaths || 0, 'death count'))),
+      inventory: normalizeInventory(value.before.inventory), bank: normalizeInventory(value.before.bank)
+    },
+    after: {
+      hp: clamp(value.after.hp, 0, 10), energy: clamp(value.after.energy, 0, 100),
+      score: finiteNumber(value.after.score ?? ((value.before.score || 0) + Number(value.reward || 0)), 'score'),
+      actions: Math.max(0, Math.trunc(finiteNumber(value.after.actions ?? ((value.before.actions || 0) + 1), 'action count'))),
+      deaths: Math.max(0, Math.trunc(finiteNumber(value.after.deaths ?? (value.before.deaths || 0), 'death count'))),
+      inventory: normalizeInventory(value.after.inventory), bank: normalizeInventory(value.after.bank)
+    }
+  };
+}
+
+function minimalBot(bot) {
+  return {
+    id: bot.id, name: bot.name, goal: bot.goal, hp: bot.hp, energy: bot.energy,
+    inventory: copyInventory(bot.inventory), bank: copyInventory(bot.bank)
+  };
+}
+
+function normalizeInitialBots(value, goals) {
+  if (!Array.isArray(value) || value.length !== 5) {
+    return goals.map((goal, index) => ({
+      id: index + 1, name: `Learner ${index + 1}`, goal, hp: 10, energy: 100,
+      inventory: { logs: 0, ores: 0, bones: 0 }, bank: { logs: 0, ores: 0, bones: 0 }
+    }));
+  }
+  return value.map((bot, index) => ({
+    id: index + 1, name: String(bot?.name || `Learner ${index + 1}`).slice(0, 40), goal: goals[index],
+    hp: clamp(bot?.hp, 0, 10), energy: clamp(bot?.energy, 0, 100),
+    inventory: copyInventory(bot?.inventory || {}), bank: copyInventory(bot?.bank || {})
+  }));
+}
+
+function normalizeReplayData(data) {
+  if (!data || data.format !== 'autoscape-learning-replay-v1' || !Array.isArray(data.events)) {
+    throw new TypeError('Invalid AutoScape learning replay.');
+  }
+  if (data.events.length > MAX_TELEMETRY) throw new RangeError('Learning replay exceeds the 1,200-event safety limit.');
+  if (!Array.isArray(data.goals) || data.goals.length !== 5 || data.goals.some(goal => !GOALS.includes(goal))) {
+    throw new TypeError('Invalid replay learner goals.');
+  }
+  let previousSequence = 0;
+  const events = data.events.map((event, index) => {
+    const normalized = normalizeReplayEvent(event, index, previousSequence);
+    previousSequence = normalized.sequence;
+    return normalized;
+  });
+  return {
+    format: 'autoscape-learning-replay-v1', seed: Number(data.seed) >>> 0,
+    ticks: Math.max(0, Math.trunc(finiteNumber(data.ticks, 'tick count'))),
+    goals: [...data.goals], initialBots: normalizeInitialBots(data.initialBots, data.goals),
+    summary: Array.isArray(data.summary) ? data.summary.map(row => ({ ...row })) : [], events
   };
 }
 
@@ -204,11 +291,13 @@ export function createLearningSession(options = {}) {
     seed, maxTicks, tick: 0, paused: true, finished: false,
     bots: goals.map((goal, index) => createBot(index, seed, goal)), telemetry: []
   };
+  const initialBots = state.bots.map(minimalBot);
 
   function execute(bot, action, source, explored = false) {
     if (!ACTIONS.includes(action)) throw new RangeError(`Unknown learning action: ${action}`);
     const context = contextFor(bot), before = {
       hp: bot.hp, energy: bot.energy,
+      score: Number(bot.score.toFixed(3)), actions: bot.experience, deaths: bot.deaths,
       inventory: copyInventory(bot.inventory), bank: copyInventory(bot.bank)
     }, qBefore = bot.policy[context][action];
     const result = performAction(bot, action), reward = rewardFor(bot, action, result);
@@ -222,8 +311,11 @@ export function createLearningSession(options = {}) {
       tick: state.tick, botId: bot.id, source, context, action,
       explored: source === 'auto' ? Boolean(explored) : false,
       reward, qBefore, qAfter: bot.policy[context][action], detail: result.detail,
-      before: { hp: before.hp, energy: before.energy, inventory: before.inventory, bank: before.bank },
-      after: { hp: bot.hp, energy: bot.energy, inventory: copyInventory(bot.inventory), bank: copyInventory(bot.bank) }
+      before: { ...before, inventory: before.inventory, bank: before.bank },
+      after: {
+        hp: bot.hp, energy: bot.energy, score: Number(bot.score.toFixed(3)), actions: bot.experience, deaths: bot.deaths,
+        inventory: copyInventory(bot.inventory), bank: copyInventory(bot.bank)
+      }
     };
     bot.history.push(event);
     if (bot.history.length > MAX_HISTORY) bot.history.shift();
@@ -278,7 +370,7 @@ export function createLearningSession(options = {}) {
   function exportReplay() {
     return {
       format: 'autoscape-learning-replay-v1', seed: state.seed, ticks: state.tick,
-      goals: state.bots.map(bot => bot.goal), summary: summary(),
+      goals: state.bots.map(bot => bot.goal), initialBots: initialBots.map(bot => ({ ...bot, inventory: copyInventory(bot.inventory), bank: copyInventory(bot.bank) })), summary: summary(),
       events: state.telemetry.map(copyEvent)
     };
   }
@@ -292,15 +384,81 @@ export function createLearningSession(options = {}) {
 }
 
 export function createTelemetryReplay(data) {
-  if (!data || data.format !== 'autoscape-learning-replay-v1' || !Array.isArray(data.events)) {
-    throw new TypeError('Invalid AutoScape learning replay.');
-  }
-  const events = data.events.map(copyEvent);
+  const normalized = normalizeReplayData(data), events = normalized.events.map(copyEvent);
   let cursor = 0;
+  function current() { return cursor > 0 ? copyEvent(events[cursor - 1]) : null; }
+  function state() {
+    const bots = normalized.initialBots.map(bot => ({
+      ...bot, inventory: copyInventory(bot.inventory), bank: copyInventory(bot.bank),
+      score: 0, actions: 0, decision: 'Session start', lastAction: '', source: ''
+    }));
+    for (const bot of bots) {
+      const first = events.find(event => event.botId === bot.id);
+      if (!first) continue;
+      bot.hp = first.before.hp; bot.energy = first.before.energy; bot.score = first.before.score;
+      bot.actions = first.before.actions; bot.deaths = first.before.deaths;
+      bot.inventory = copyInventory(first.before.inventory); bot.bank = copyInventory(first.before.bank);
+    }
+    let tick = 0;
+    for (let index = 0; index < cursor; index++) {
+      const event = events[index], bot = bots[event.botId - 1];
+      tick = Math.max(tick, event.tick); bot.hp = event.after.hp; bot.energy = event.after.energy;
+      bot.inventory = copyInventory(event.after.inventory); bot.bank = copyInventory(event.after.bank);
+      bot.score = event.after.score; bot.actions = event.after.actions; bot.deaths = event.after.deaths;
+      bot.lastAction = event.action; bot.source = event.source; bot.decision = event.detail;
+    }
+    return { seed: normalized.seed, tick, cursor, length: events.length, bots };
+  }
   return {
     next() { return cursor < events.length ? copyEvent(events[cursor++]) : null; },
+    previous() { if (cursor === 0) return null; cursor--; return current(); },
+    seek(position) { cursor = Math.trunc(clamp(position, 0, events.length)); return current(); },
+    current, state,
     reset() { cursor = 0; },
     get cursor() { return cursor; }, get length() { return events.length; }
+  };
+}
+
+export function parseLearningReplay(text) {
+  if (typeof text !== 'string' || text.length > MAX_REPLAY_TEXT) throw new RangeError('Learning replay file is empty or exceeds 2 MB.');
+  let data;
+  try { data = JSON.parse(text); } catch { throw new TypeError('Learning replay is not valid JSON.'); }
+  return normalizeReplayData(data);
+}
+
+export function serializeLearningReplay(data) {
+  return JSON.stringify(normalizeReplayData(data), null, 2);
+}
+
+export function evaluateLearningPolicies(options = {}) {
+  const seeds = Array.isArray(options.seeds) && options.seeds.length
+    ? options.seeds.slice(0, 12).map(seed => Number(seed) >>> 0)
+    : [101, 202, 303, 404, 505];
+  const ticks = Math.trunc(clamp(options.ticks || 200, 20, 2000));
+  const rows = GOALS.map((goal, index) => ({
+    id: index + 1, goal, score: 0, banked: 0, deaths: 0, actions: 0, goalActions: 0
+  }));
+  for (const seed of seeds) {
+    const session = createLearningSession({ seed, maxTicks: ticks });
+    session.resume();
+    for (let tick = 0; tick < ticks; tick++) session.step();
+    const snapshot = session.snapshot();
+    for (const bot of snapshot.bots) {
+      const row = rows[bot.id - 1], preferred = { woodcutting: 'chop', mining: 'mine', combat: 'fight', banking: 'bank' }[bot.goal];
+      row.score += bot.score; row.banked += inventoryCount(bot.bank); row.deaths += bot.deaths; row.actions += bot.experience;
+      if (preferred) row.goalActions += bot.history.filter(event => event.action === preferred).length;
+    }
+  }
+  return {
+    seeds: [...seeds], ticks,
+    bots: rows.map(row => ({
+      id: row.id, goal: row.goal,
+      averageScore: Number((row.score / seeds.length).toFixed(2)),
+      averageBanked: Number((row.banked / seeds.length).toFixed(2)),
+      averageDeaths: Number((row.deaths / seeds.length).toFixed(2)),
+      measuredActions: row.actions,
+      recentGoalActionRate: row.goalActions ? Number((row.goalActions / Math.min(row.actions, seeds.length * MAX_HISTORY)).toFixed(3)) : null
+    }))
   };
 }
 

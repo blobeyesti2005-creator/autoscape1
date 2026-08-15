@@ -610,3 +610,37 @@ deleting history, or changing GitHub Pages.
   queued-job schemas changed.
 - Package and app-shell cache metadata advanced to `2.12.17` for the eventual
   reviewed release.
+
+### Portable learning sessions and evaluation
+
+- `npm test` (47 regression groups)
+- Learning sessions can now be downloaded as human-readable JSON and loaded
+  back into the lab without touching browser storage. Imports are capped at 2
+  MB and 1,200 events, then validated for format, five known goals, monotonic
+  event ordering, known contexts/actions/sources, finite values, and safe
+  inventory bounds before they are displayed.
+- Replay mode is read-only and reconstructs all five learners from recorded
+  before/after state. Previous, next, seek-slider, and exit controls show the
+  selected action, outcome, reward, and Q-value change without executing a
+  training action or replacing the active session.
+- Replay events and nested inventories are copied at every public boundary.
+  Mutating an inspected snapshot, imported object, or returned replay event
+  cannot alter the underlying session or later timeline positions.
+- The lab now runs a repeatable five-seed evaluation and compares average score,
+  banked resources, deaths, and recent goal-action rate for each independent
+  learner. Evaluation sessions are fresh, deterministic, capped, and discarded
+  after aggregation.
+- A fixed five-seed, 200-tick evaluation produced resources for every learner.
+  Woodcutting, Mining, and combat specialists selected their goal actions for
+  roughly 61–75% of the recent measured decisions; the banking learner gathered
+  before depositing instead of repeatedly attempting an empty bank.
+- A maximum-size 1,200-event training replay serialized to about 1.12 MB, below
+  the import safety limit. Tests also cover malformed JSON, invalid actions,
+  non-monotonic sequences, oversized files/event arrays, exact timeline state
+  reconstruction, seek boundaries, deterministic evaluation, UI controls, and
+  HTML escaping of imported labels and decisions.
+- The normal game still does not import the learning engine. No live action
+  bridge exists, and no account/save field, persistence key, inventory/bank
+  format, setting, or queued-job schema changed.
+- Package and app-shell cache metadata advanced to `2.12.18` for the eventual
+  reviewed release.

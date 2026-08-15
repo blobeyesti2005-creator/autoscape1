@@ -5,7 +5,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import {
-  createLearningSession, createTelemetryReplay, LEARNING_ACTIONS, LEARNING_GOALS
+  createLearningSession, createTelemetryReplay, evaluateLearningPolicies,
+  parseLearningReplay, serializeLearningReplay, LEARNING_ACTIONS, LEARNING_GOALS
 } from '../learning-sandbox.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,6 +21,9 @@ test('learning lab is isolated, offline-capable, and discoverable', () => {
   assert.match(worker, /\.\/learning-lab\.html/);
   assert.match(worker, /\.\/learning-sandbox\.mjs/);
   assert.match(lab, /Experimental and isolated/);
+  for (const id of ['export', 'importFile', 'evaluate', 'replayControls', 'replayPosition', 'replayPrev', 'replayNext', 'replayExit']) {
+    assert.match(lab, new RegExp(`id="${id}"`), `missing learning lab control #${id}`);
+  }
   assert.doesNotMatch(`${lab}\n${engine}`, /localStorage|sessionStorage|indexedDB/);
   assert.doesNotMatch(app, /from ['"]\.\/learning-sandbox\.mjs/);
 
@@ -29,6 +33,8 @@ test('learning lab is isolated, offline-capable, and discoverable', () => {
   assert.ok(moduleScript, 'learning lab controller is missing');
   const withoutImport = moduleScript.replace(/^\s*import[^;]+;\s*/m, '');
   assert.doesNotThrow(() => new vm.Script(withoutImport, { filename: 'learning-lab-inline.js' }));
+  assert.match(moduleScript, /escapeHtml\(bot\.name\)/);
+  assert.match(moduleScript, /escapeHtml\(bot\.decision\)/);
 });
 
 test('five independent learners produce deterministic seeded sessions', () => {
@@ -58,6 +64,12 @@ test('learning telemetry and per-bot history stay bounded in long sessions', () 
   assert.ok(state.telemetry[0].sequence > 1);
   assert.ok(state.bots.every(bot => bot.history.length === 120));
   assert.ok(state.bots.every(bot => bot.epsilon >= 0.05 && bot.epsilon <= 0.24));
+  const replay = createTelemetryReplay(session.exportReplay());
+  replay.seek(replay.length);
+  const replayed = replay.state();
+  assert.deepEqual(replayed.bots.map(bot => bot.bank), state.bots.map(bot => bot.bank));
+  assert.deepEqual(replayed.bots.map(bot => bot.score), state.bots.map(bot => bot.score));
+  assert.ok(replayed.bots.every(bot => bot.actions === 500), 'a capped replay must retain its pre-window action baseline');
 });
 
 test('pause, manual takeover, demonstration, and bot return are explicit', () => {
@@ -97,6 +109,7 @@ test('session summaries and exported telemetry can be replayed', () => {
   assert.equal(summary.length, 5);
   assert.equal(exported.format, 'autoscape-learning-replay-v1');
   assert.equal(exported.events.length, 20);
+  assert.equal(exported.initialBots.length, 5);
   const replay = createTelemetryReplay(exported);
   assert.equal(replay.length, 20);
   const first = replay.next();
@@ -112,4 +125,62 @@ test('session summaries and exported telemetry can be replayed', () => {
   const snapshot = session.snapshot();
   if (snapshot.telemetry[0]) snapshot.telemetry[0].after.inventory.logs = 999;
   assert.notEqual(session.snapshot().telemetry[0]?.after.inventory.logs, 999, 'snapshots must not expose live telemetry');
+});
+
+test('learning replay JSON is bounded and rejects malformed actions', () => {
+  const session = createLearningSession({ seed: 31337, maxTicks: 20 });
+  session.resume();
+  for (let tick = 0; tick < 5; tick++) session.step();
+  const exported = session.exportReplay(), text = serializeLearningReplay(exported);
+  const parsed = parseLearningReplay(text);
+  assert.deepEqual(parsed.events, exported.events);
+  assert.equal(parsed.initialBots.length, 5);
+  assert.throws(() => parseLearningReplay('{broken'), /valid JSON/);
+  assert.throws(() => parseLearningReplay('x'.repeat(2_000_001)), /exceeds 2 MB/);
+
+  const badAction = structuredClone(exported);
+  badAction.events[0].action = 'delete-character';
+  assert.throws(() => parseLearningReplay(JSON.stringify(badAction)), /Invalid replay action/);
+  const badOrder = structuredClone(exported);
+  badOrder.events[1].sequence = badOrder.events[0].sequence;
+  assert.throws(() => createTelemetryReplay(badOrder), /ordering/);
+  const tooLong = structuredClone(exported);
+  tooLong.events = Array.from({ length: 1201 }, (_, index) => ({ ...exported.events[0], sequence: index + 1 }));
+  assert.throws(() => createTelemetryReplay(tooLong), /1,200-event/);
+});
+
+test('timeline seeking reconstructs recorded learner state without executing actions', () => {
+  const session = createLearningSession({ seed: 88, maxTicks: 50 });
+  session.resume();
+  for (let tick = 0; tick < 10; tick++) session.step();
+  const exported = session.exportReplay(), replay = createTelemetryReplay(exported);
+
+  assert.equal(replay.state().cursor, 0);
+  assert.equal(replay.state().bots.every(bot => bot.actions === 0), true);
+  replay.seek(17);
+  const middle = replay.state();
+  assert.equal(middle.cursor, 17);
+  assert.equal(middle.bots.reduce((total, bot) => total + bot.actions, 0), 17);
+  assert.equal(replay.current().sequence, 17);
+  replay.previous();
+  assert.equal(replay.cursor, 16);
+  replay.next();
+  assert.equal(replay.cursor, 17);
+  replay.seek(9999);
+  assert.equal(replay.cursor, replay.length);
+  assert.deepEqual(replay.state().bots.map(bot => bot.bank), session.snapshot().bots.map(bot => bot.bank));
+});
+
+test('multi-seed evaluation is deterministic, bounded, and productive', () => {
+  const options = { seeds: [11, 22, 33, 44, 55], ticks: 200 };
+  const first = evaluateLearningPolicies(options), second = evaluateLearningPolicies(options);
+  assert.deepEqual(first, second);
+  assert.equal(first.bots.length, 5);
+  assert.deepEqual(first.bots.map(bot => bot.goal), LEARNING_GOALS);
+  assert.ok(first.bots.every(bot => bot.measuredActions === 1000));
+  assert.ok(first.bots.every(bot => bot.averageBanked > 20));
+  assert.ok(first.bots.slice(0, 4).every(bot => bot.recentGoalActionRate > 0));
+  const capped = evaluateLearningPolicies({ seeds: Array.from({ length: 30 }, (_, index) => index + 1), ticks: 1 });
+  assert.equal(capped.seeds.length, 12);
+  assert.equal(capped.ticks, 20);
 });
