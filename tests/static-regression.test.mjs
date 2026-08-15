@@ -686,6 +686,49 @@ test('gathering actions require inventory gains and quarantine failed resources'
   assert.ok(traces.some(entry=>entry[1]==='confirmed'));
 });
 
+test('firemaking drop and light actions require observable outcomes', () => {
+  const traces=[];
+  let groundLog=false,fireVisible=false,dropSends=0,lightSends=0;
+  const normalLogCount=snapshot=>Number(snapshot.counts.get(14)||0);
+  const harness=new Function(
+    'traceDecision','normalLogCount','groundNormalLogNear','fireAt','dropNormalLog','lightGroundLog',
+    `const actionContracts=new Map();let lastAction=0;
+     const ACTION_INTERVALS={gather:2800};
+     ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'runFiremakingDropContract')}
+     ${functionSource(html,'runFiremakingLightContract')}
+     return {runFiremakingDropContract,runFiremakingLightContract};`
+  )(
+    (...entry)=>traces.push(entry),normalLogCount,()=>groundLog,()=>fireVisible,
+    ()=>{dropSends+=1;return true;},()=>{lightSends+=1;return true;}
+  );
+  const tile={x:122,y:657};
+  const frame=(now,logs,xp)=>({now,firemakingXp:xp,inventory:{counts:new Map([[14,logs]])}});
+
+  assert.equal(harness.runFiremakingDropContract(frame(3000,1,100),tile).status,'sent');
+  assert.equal(harness.runFiremakingDropContract(frame(3200,0,100),tile).status,'waiting','inventory loss alone must not confirm a ground drop');
+  groundLog=true;
+  assert.equal(harness.runFiremakingDropContract(frame(3300,0,100),tile).status,'confirmed');
+  assert.equal(dropSends,1);
+
+  const log={gx:122,gy:657};
+  assert.equal(harness.runFiremakingLightContract(frame(5000,0,100),log).status,'sent');
+  groundLog=false;
+  assert.equal(harness.runFiremakingLightContract(frame(5200,0,100),null).status,'waiting','a vanished log must not count as a fire');
+  assert.equal(harness.runFiremakingLightContract(frame(5300,0,110),null).status,'confirmed','Firemaking XP confirms success');
+  assert.equal(lightSends,1);
+
+  assert.ok(traces.some(entry=>entry[1]==='confirmed'));
+  const tickSource=functionSource(html,'firemakingTick');
+  assert.match(tickSource,/runFiremakingDropContract\(frame,tile\)/);
+  assert.match(tickSource,/runFiremakingLightContract\(frame,log\)/);
+  assert.match(tickSource,/const p=frame\.tile/);
+  assert.match(tickSource,/shortStepToward\(objective\.moveTarget,2,0\)/);
+  assert.doesNotMatch(tickSource,/\|\|\(!log/,'log disappearance must not count as a lit fire');
+  assert.doesNotMatch(tickSource,/walkGlobal\(objective\.moveTarget/);
+  assert.match(functionSource(html,'buildDecisionFrame'),/firemakingXp:/);
+});
+
 test('combat attacks and loot require observable game-state confirmation', () => {
   const traces=[];
   const attackHarness=new Function(

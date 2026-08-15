@@ -444,3 +444,27 @@ deleting history, or changing GitHub Pages.
   command-job payloads, and persistence keys remain unchanged.
 - Package and app-shell cache metadata advanced to `2.12.11` for the eventual
   reviewed release.
+
+### Confirmed fire placement and lighting
+
+- `npm test` (33 regression groups)
+- Dropping a regular log now uses an action contract that requires both an
+  inventory decrease and a visible ground log at the captured player tile.
+  Three packet sends without that outcome stop safely instead of advancing.
+- Lighting now confirms only when a fire appears at the captured log tile or
+  the shared decision frame reports increased Firemaking XP. A disappearing
+  log by itself no longer counts as a successfully lit fire.
+- Tinderbox use waits 4.5 seconds between retries and is capped at eight sends,
+  preserving normal low-level failure retries without permitting click loops.
+- Logs that disappear without fire/XP and inventory drops that never produce a
+  visible ground log enter bounded recovery rather than incrementing fire or
+  task progress totals.
+- Stepping away from a completed fire now uses the shared confirmed-navigation
+  contract and decision-frame position instead of a raw walk packet and an
+  extra live position read.
+- Executable tests prove that packet sends and log disappearance do not confirm
+  progress, while ground placement, Firemaking XP, and visible fires do. No
+  account, character, inventory, bank, stat, setting, command-job, or storage
+  schema changed.
+- Package and app-shell cache metadata advanced to `2.12.12` for the eventual
+  reviewed release.

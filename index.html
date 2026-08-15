@@ -1204,6 +1204,38 @@ ${firstBanker}`;
       });
     }
 
+    function runFiremakingDropContract(frame,tile){
+      return runActionContract('firemaking-drop',frame,{
+        timeout:4000,
+        maxAttempts:3,
+        confirmedLabel:'regular log left inventory',
+        ready:()=>normalLogCount(frame.inventory)>0&&!fireAt(tile,0)&&frame.now-lastAction>=ACTION_INTERVALS.gather,
+        capture:()=>({logs:normalLogCount(frame.inventory),tile:{x:tile.x,y:tile.y}}),
+        confirm:(next,state)=>normalLogCount(next.inventory)<Number(state.before?.logs||0)&&!!groundNormalLogNear(state.before?.tile,1),
+        execute:()=>{
+          const sent=dropNormalLog();
+          if(sent)lastAction=frame.now;
+          return sent;
+        }
+      });
+    }
+
+    function runFiremakingLightContract(frame,log){
+      return runActionContract('firemaking-light',frame,{
+        timeout:4500,
+        maxAttempts:8,
+        confirmedLabel:'fire appeared or Firemaking XP increased',
+        ready:()=>!!log&&frame.now-lastAction>=1800,
+        capture:()=>({xp:Number(frame.firemakingXp||0),tile:{x:log.gx,y:log.gy}}),
+        confirm:(next,state)=>Number(next.firemakingXp||0)>Number(state.before?.xp||0)||fireAt(state.before?.tile,0),
+        execute:()=>{
+          const sent=lightGroundLog(log);
+          if(sent)lastAction=frame.now;
+          return sent;
+        }
+      });
+    }
+
     function objectiveGoalReached(){
       const goal=Number(objective?.countGoal||0);
       return goal>0&&Number(objective?.countProgress||0)>=goal;
@@ -2210,7 +2242,8 @@ ${firstBanker}`;
         inventoryMax:Number(mc.inventoryMaxItemCount||30),
         hits:online?currentHits():0,
         maxHits:online?maxHits():0,
-        fighting:online?inCombat():false
+        fighting:online?inCombat():false,
+        firemakingXp:online?Number(mc.playerExperience?.[11]||0):0
       };
     }
     function inventoryFood(snapshot=null){
@@ -3590,11 +3623,13 @@ ${firstBanker}`;
       }
 
       if(objective.phase==='fm-drop'){
+        cancelActionContract('firemaking-light','ready to place next log',now);
         if(objectiveGoalReached()){
           finishObjective(`Firemaking step complete • ${objective.countProgress}/${objective.countGoal} fires lit.`);
           return;
         }
         if(normalLogCount(inventory)<=0){
+          cancelActionContract('firemaking-drop','no regular logs held',now);
           if(objective.supply==='gather'){
             objective.phase='fm-chop';objective.phaseStarted=now;objective.navRoute=[];objective.routeIndex=0;lastAction=0;
             setBotStatus(`Firemaking ${level} • no regular logs held • chopping another`);
@@ -3607,22 +3642,60 @@ ${firstBanker}`;
           finishObjective(`Firemaking complete • ${sessionStats.fires} fire${sessionStats.fires===1?'':'s'} lit • no regular logs left.`);
           return;
         }
-        if(now-lastAction<ACTION_INTERVALS.gather)return;
-        const tile=globalPlayerTile();
+        const tile=frame.tile;
         if(fireAt(tile,0)){
+          cancelActionContract('firemaking-drop','fire already occupies tile',now);
           objective.fireTile=tile;objective.phase='fm-move';objective.phaseStarted=now;return;
         }
-        if(dropNormalLog()){
-          objective.fireTile=tile;
+        const result=runFiremakingDropContract(frame,tile);
+        if(result.status==='sent')setBotStatus(`Firemaking ${level} • dropping regular log ${sessionStats.fires+1}`);
+        else if(result.status==='confirmed'){
+          objective.fireTile=result.state.before.tile;
           objective.phase='fm-light';objective.phaseStarted=now;objective.lightAttempts=0;
-          lastAction=now;markProgress('firemaking-drop');
+          lastAction=0;markProgress('firemaking-drop-confirmed');
           setBotStatus(`Firemaking ${level} • dropped regular logs • preparing tinderbox`);
+        }else if(result.status==='failed'){
+          stop('Firemaking stopped: three drop attempts made no confirmed inventory progress.');
+        }else if(result.status==='blocked'&&Number(result.state.attempts||0)>0&&normalLogCount(inventory)<Number(result.state.before?.logs||0)){
+          cancelActionContract('firemaking-drop','inventory changed without a visible ground log',now);
+          objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+          if(objective.stallRecoveries>4){stop('Firemaking stopped: five dropped logs never appeared on the ground.');return;}
+          objective.phase=normalLogCount(inventory)>0?'fm-drop':(objective.supply==='gather'?'fm-chop':'fm-drop');
+          objective.phaseStarted=now;lastAction=0;
+          setBotStatus(`Firemaking ${level} • dropped log was not visible • recovering supplies`);
         }
         return;
       }
 
-      if(objective.phase==='fm-light'){
+      if(objective.phase==='fm-light'||objective.phase==='fm-await'){
         const log=groundNormalLogNear(objective.fireTile,3);
+        const result=runFiremakingLightContract(frame,log);
+        if(result.status==='confirmed'){
+          sessionStats.fires++;
+          objective.countProgress=Number(objective.countProgress||0)+1;
+          markProgress('fire-lit-confirmed');saveObjective();renderMetrics();
+          objective.phase='fm-move';objective.phaseStarted=now;objective.moveTarget=null;objective.moveAttempts=0;
+          setBotStatus(`Firemaking ${level} • fire ${sessionStats.fires} lit • ${normalLogCount(inventory)} regular logs left`);
+          return;
+        }
+        if(result.status==='sent'){
+          objective.lightAttempts=Number(result.state.attempts||0)+1;
+          objective.phase='fm-await';objective.phaseStarted=now;
+          setBotStatus(`Firemaking ${level} • attempting to light log ${sessionStats.fires+1} • try ${objective.lightAttempts}/8`);
+          return;
+        }
+        if(result.status==='failed'){
+          stop('Firemaking stopped: eight tinderbox attempts produced no fire or Firemaking XP.');
+          return;
+        }
+        if(!log&&result.status==='blocked'&&Number(result.state.attempts||0)>0){
+          cancelActionContract('firemaking-light','ground log vanished without confirmation',now);
+          objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
+          if(objective.stallRecoveries>4){stop('Firemaking stopped: five dropped logs vanished without a confirmed fire.');return;}
+          objective.phase='fm-drop';objective.phaseStarted=now;lastAction=0;
+          setBotStatus(`Firemaking ${level} • dropped log vanished without XP • using another log`);
+          return;
+        }
         if(!log){
           if(now-Number(objective.phaseStarted||now)>7000){
             objective.stallRecoveries=Number(objective.stallRecoveries||0)+1;
@@ -3632,35 +3705,13 @@ ${firstBanker}`;
           return;
         }
         objective.fireTile={x:log.gx,y:log.gy};
-        if(now-lastAction<1800)return;
-        if(lightGroundLog(log)){
-          objective.lightAttempts=Number(objective.lightAttempts||0)+1;
-          objective.phase='fm-await';objective.phaseStarted=now;lastAction=now;
-          setBotStatus(`Firemaking ${level} • attempting to light log ${sessionStats.fires+1}`);
-        }
-        return;
-      }
-
-      if(objective.phase==='fm-await'){
-        const log=groundNormalLogNear(objective.fireTile,2);
-        if(fireAt(objective.fireTile,0)||(!log&&now-Number(objective.phaseStarted||now)>1500)){
-          sessionStats.fires++;
-          objective.countProgress=Number(objective.countProgress||0)+1;
-          markProgress('fire-lit');saveObjective();renderMetrics();
-          objective.phase='fm-move';objective.phaseStarted=now;objective.moveTarget=null;objective.moveAttempts=0;
-          setBotStatus(`Firemaking ${level} • fire ${sessionStats.fires} lit • ${normalLogCount(inventory)} regular logs left`);
-          return;
-        }
-        if(now-Number(objective.phaseStarted||now)>4200){
-          objective.phase='fm-light';objective.phaseStarted=now;lastAction=0;
-          setBotStatus(`Firemaking ${level} • logs did not catch • retrying (${objective.lightAttempts||1})`);
-        }
         return;
       }
 
       if(objective.phase==='fm-move'){
-        const p=globalPlayerTile(),from=objective.fireTile||p;
+        const p=frame.tile,from=objective.fireTile||p;
         if(Math.abs(p.x-from.x)+Math.abs(p.y-from.y)>=1){
+          cancelActionContract('navigation-walk','fire line step confirmed',now);
           objective.phase='fm-drop';objective.phaseStarted=now;objective.moveTarget=null;lastAction=0;markProgress('fire-line-step');
           return;
         }
@@ -3670,8 +3721,11 @@ ${firstBanker}`;
           const idx=Number(objective.moveIndex||0)%offsets.length,off=offsets[idx];
           objective.moveIndex=idx+1;objective.moveTarget={x:from.x+off[0],y:from.y+off[1]};
         }
-        if(walkGlobal(objective.moveTarget.x,objective.moveTarget.y)){
-          objective.lastMoveAttempt=now;objective.moveAttempts=Number(objective.moveAttempts||0)+1;lastAction=now;
+        const previousSentAt=Number(actionContracts.get('navigation-walk')?.sentAt||0);
+        shortStepToward(objective.moveTarget,2,0);
+        const sentAt=Number(actionContracts.get('navigation-walk')?.sentAt||0);
+        if(sentAt&&sentAt!==previousSentAt){
+          objective.lastMoveAttempt=now;objective.moveAttempts=Number(objective.moveAttempts||0)+1;
           setBotStatus(`Firemaking ${level} • stepping away from fire ${sessionStats.fires}`);
         }
         if(objective.moveAttempts>12){stop('Firemaking stopped: no clear tile could be reached for the next fire.');}
