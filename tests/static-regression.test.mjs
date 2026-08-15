@@ -1324,6 +1324,85 @@ test('performance guards avoid unchanged UI and storage writes', () => {
   assert.match(html, /if\(bar\.style\.display!==display\)bar\.style\.display=display/);
 });
 
+test('long-session diagnostics remain bounded and expose per-node tick costs', () => {
+  const traces=[];
+  const decisionHistory=[{sequence:1,at:100,node:'combat',outcome:'sent',detail:'test'}];
+  const actionContracts=new Map([['combat-attack',{pending:true,attempts:1,sentAt:90}]]);
+  const objective={type:'combat',phase:'fight',target:'chicken',countProgress:2,countGoal:10};
+  const commandQueue=['bank loot'];
+  const activeTaskNode='combat';
+  const botProfile={startedAt:0,ticks:0,activeTicks:0,idleTicks:0,totalMs:0,maxMs:0,slowTicks:0,errors:0,lastNode:'idle',lastSlowTraceAt:0,byNode:new Map()};
+  const harness=new Function(
+    'botProfile','decisionHistory','actionContracts','objective','commandQueue','activeTaskNode',
+    'traceDecision','SLOW_TICK_MS','MAX_PROFILE_NODES',
+    `${functionSource(html,'recordTickProfile')}
+     ${functionSource(html,'diagnosticsSnapshot')}
+     ${functionSource(html,'resetDiagnostics')}
+     return {recordTickProfile,diagnosticsSnapshot,resetDiagnostics};`
+  )(
+    botProfile,decisionHistory,actionContracts,objective,commandQueue,activeTaskNode,
+    (...entry)=>traces.push(entry),50,20
+  );
+
+  harness.recordTickProfile('combat',12,1000,'completed');
+  harness.recordTickProfile('combat',88,2000,'error');
+  harness.recordTickProfile('idle',1,3000,'completed');
+  for(let i=0;i<5000;i++)harness.recordTickProfile(`synthetic-${i%30}`,i%7,4000+i,'completed');
+  const snapshot=harness.diagnosticsSnapshot(10000);
+
+  assert.equal(snapshot.profile.ticks,5003);
+  assert.equal(snapshot.profile.errors,1);
+  assert.equal(snapshot.profile.slowTicks,1);
+  assert.equal(snapshot.profile.nodes.combat.ticks,2);
+  assert.equal(snapshot.profile.nodes.combat.maxMs,88);
+  assert.ok(Object.keys(snapshot.profile.nodes).length<=20,'arbitrary long sessions must not grow profile node storage without bound');
+  assert.equal(snapshot.pendingActions[0].key,'combat-attack');
+  assert.equal(snapshot.objective.target,'chicken');
+  assert.deepEqual(snapshot.queue,['bank loot']);
+  assert.ok(traces.some(entry=>entry[1]==='slow-tick'));
+
+  snapshot.decisions[0].detail='mutated copy';
+  assert.equal(decisionHistory[0].detail,'test','diagnostic snapshots must not expose mutable live history');
+  harness.resetDiagnostics(12000);
+  assert.equal(botProfile.ticks,0);
+  assert.equal(botProfile.byNode.size,0);
+  assert.equal(decisionHistory.length,0);
+
+  assert.match(functionSource(html,'tick'),/finally\{[\s\S]*recordTickProfile\(/);
+  assert.match(html,/getDiagnostics:diagnosticsSnapshot,resetDiagnostics/);
+});
+
+test('pending interactions reuse captured targets instead of rescanning hot entity lists', () => {
+  const actionContracts=new Map([
+    ['woodcutting-gather',{pending:true,sentAt:1000,before:{target:{id:1,x:2,y:3,tree:'normal'}}}],
+    ['combat-attack',{pending:true,sentAt:1000,before:{target:{x:4,y:5,name:'chicken',npc:{serverIndex:9}}}}]
+  ]);
+  const waitingActionTarget=new Function(
+    'actionContracts',`${functionSource(html,'waitingActionTarget')}\nreturn waitingActionTarget;`
+  )(actionContracts);
+
+  const tree=waitingActionTarget('woodcutting-gather',5000,9000);
+  assert.equal(tree.tree,'normal');
+  tree.x=99;
+  assert.equal(actionContracts.get('woodcutting-gather').before.target.x,2,'callers receive a safe target copy');
+  const npc=waitingActionTarget('combat-attack',5000,6500);
+  npc.npc.serverIndex=100;
+  assert.equal(actionContracts.get('combat-attack').before.target.npc.serverIndex,9,'nested NPC references are copied');
+  assert.equal(waitingActionTarget('combat-attack',7500,6500),null,'a timed-out interaction must rescan before retrying');
+  actionContracts.get('woodcutting-gather').pending=false;
+  assert.equal(waitingActionTarget('woodcutting-gather',5000,9000),null);
+
+  for(const [name,key,timeout] of [
+    ['woodcuttingTick','woodcutting-gather',9000],
+    ['miningTick','mining-gather',9000],
+    ['firemakingGatherTick','firemaking-gather',9000],
+    ['combatTick','combat-loot',4000],
+    ['combatTick','combat-attack',6500]
+  ]){
+    assert.match(functionSource(html,name),new RegExp(`waitingActionTarget\\('${key}'[\\s\\S]*?${timeout}\\)`),`${name} must reuse ${key} while confirmation is pending`);
+  }
+});
+
 test('job preferences skip identical synchronous storage writes', () => {
   const values = new Map([['autoscape_job', 'same']]);
   const calls = { set: 0, remove: 0 };

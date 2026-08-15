@@ -515,3 +515,32 @@ deleting history, or changing GitHub Pages.
   queued-job schemas changed.
 - Package and app-shell cache metadata advanced to `2.12.14` for the eventual
   reviewed release.
+
+### Bounded long-session profiling and target reuse
+
+- `npm test` (38 regression groups)
+- Every bot tick now records wall-clock cost by selected task node, including
+  average/max duration, slow-tick and error totals, active/idle counts, and a
+  global summary. Slow ticks are reported to the existing decision trace at
+  most once every 30 seconds to avoid new UI churn.
+- Profiling storage is runtime-only and capped at 20 node summaries. Decision
+  history remains capped at 40 entries and action diagnostics expose only
+  bounded contract summaries.
+- `window.AutoScape.getDiagnostics()` returns a plain, copied snapshot of the
+  current goal, queue, task timing, pending actions, and recent decisions.
+  `resetDiagnostics()` clears only runtime measurements; neither function reads
+  or writes account/save storage.
+- Pending woodcutting, mining, continuous-Firemaking, combat-attack, and loot
+  actions now reuse their captured target during the confirmation window. This
+  removes repeated full object, NPC, and ground-item scans on each one-second
+  tick while waiting for the server.
+- When an action reaches its retry timeout, the cached target is discarded and
+  the live entity list is scanned again before another packet is sent. Existing
+  retry limits, target quarantine, and disappearance handling remain intact.
+- Executable tests simulate 5,003 profiled ticks, arbitrary task-node names,
+  slow/error measurements, copied diagnostics, reset behavior, nested target
+  copying, and timeout-triggered rescanning.
+- No persistence key, account/save field, inventory/bank format, setting, or
+  queued-job schema changed.
+- Package and app-shell cache metadata advanced to `2.12.15` for the eventual
+  reviewed release.
