@@ -905,3 +905,26 @@ deleting history, or changing GitHub Pages.
   and release configuration remain out of scope.
 - Package and app-shell cache metadata advanced to `2.12.27` for the eventual
   reviewed release.
+
+### Ordered, retry-safe browser checkpoints
+
+- `npm test` (63 regression groups) and `npm run test:browser` (9 focused UI
+  smoke groups)
+- Browser account checkpoints now capture an immutable player-ID and complete
+  player-map payload when each save is requested, then serialize IndexedDB
+  commits through a per-client promise queue. A delayed older write can no
+  longer finish after a newer checkpoint and restore stale stats, inventory,
+  bank contents, settings, or account records.
+- IndexedDB failures still reject the save that encountered them, so callers do
+  not receive false success. The queue separately recovers after rejection,
+  allowing the next recurring checkpoint to retry the current in-memory state
+  instead of permanently poisoning all later saves.
+- Executable regression coverage holds the first storage operation open while
+  a newer save is requested, verifies exact commit ordering and snapshot
+  contents, injects a quota-style failure, and proves a subsequent checkpoint
+  succeeds with the newest state.
+- The existing IndexedDB keys, serialized player-map format, account fields,
+  save schema, credentials, bot-job schema, and learning isolation are
+  unchanged. Main, Pages, and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.28` for the eventual
+  reviewed release.

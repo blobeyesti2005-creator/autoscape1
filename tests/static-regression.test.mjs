@@ -136,6 +136,15 @@ test('server persistence patch performs durable registration and recurring saves
     `${persistenceSource}\nreturn patchServerPersistence;`
   )();
   const fixture = `
+        // { playerID: username }
+        this.playerUsernames = new Map();
+    async save() {
+        await idbKeyval.set('playerID', this.playerID);
+        await idbKeyval.set(
+            'players',
+            JSON.stringify(Array.from(this.players.entries()))
+        );
+    }
                 this.players.set(player.username, player);
 
                 return {
@@ -157,6 +166,9 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
         }`;
   const patched = patchServerPersistence(fixture);
 
+  assert.match(patched, /this\.saveQueue = Promise\.resolve\(\)/);
+  assert.match(patched, /const pending = this\.saveQueue\.then\(commit, commit\)/);
+  assert.match(patched, /this\.saveQueue = pending\.catch\(\(\) => undefined\)/);
   assert.match(patched, /this\.players\.set\(player\.username, player\);\s*await this\.save\(\);/);
   assert.match(patched, /this\.players\.set\(player\.username, JSON\.parse\(JSON\.stringify\(player\)\)\)/);
   assert.match(patched, /const PLAYER_SAVE_INTERVAL = 1000 \* 15/);
@@ -170,6 +182,102 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
     () => patchServerPersistence(fixture.replace('JSON.parse(JSON.stringify(player))', '{ ...player }')),
     /player clone save changed/
   );
+  assert.throws(
+    () => patchServerPersistence(fixture.replace('this.playerUsernames = new Map();', 'this.playerUsernames = new Set();')),
+    /browser data constructor changed/
+  );
+});
+
+test('browser save queue preserves checkpoint order and recovers after a failed commit', async () => {
+  const persistenceSource = section(
+    html,
+    '  function patchServerPersistence(code){',
+    '  // RuneScape Classic predates the Lumbridge bank'
+  );
+  const patchServerPersistence = new Function(
+    `${persistenceSource}\nreturn patchServerPersistence;`
+  )();
+  const fixture = `
+class BrowserDataClient {
+    constructor() {
+        // { playerID: username }
+        this.playerUsernames = new Map();
+        this.playerID = 1;
+        this.players = new Map();
+    }
+    async save() {
+        await idbKeyval.set('playerID', this.playerID);
+        await idbKeyval.set(
+            'players',
+            JSON.stringify(Array.from(this.players.entries()))
+        );
+    }
+    async savePlayer(player) {
+        player.password = this.players.get(player.username).password;
+        this.players.set(player.username, JSON.parse(JSON.stringify(player)));
+        await this.save();
+    }
+    async register(player) {
+                this.players.set(player.username, player);
+
+                return {
+                    success: true,
+                    code: 2
+                };
+    }
+}
+const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
+class World {
+    constructor() {
+        this.boundSaveAllPlayers = this.saveAllPlayers.bind(this);
+
+        this.ticks = 0;
+    }
+    async saveAllPlayers() {
+        if (!this.players.length) {
+            return;
+        }
+    }
+}
+return BrowserDataClient;`;
+  const writes = [];
+  let releaseFirst;
+  let failNext = false;
+  const gate = new Promise(resolve => { releaseFirst = resolve; });
+  const idbKeyval = {
+    async set(key, value) {
+      writes.push({ key, value });
+      if (writes.length === 1) await gate;
+      if (failNext && key === 'players') {
+        failNext = false;
+        throw new Error('simulated quota interruption');
+      }
+    }
+  };
+  const Client = new Function('idbKeyval', patchServerPersistence(fixture))(idbKeyval);
+  const client = new Client();
+  client.players.set('tester', { username: 'tester', password: 'secret', coins: 1 });
+  const first = client.save();
+  await Promise.resolve();
+  client.playerID = 2;
+  client.players.get('tester').coins = 2;
+  const second = client.save();
+  await Promise.resolve();
+  assert.equal(writes.length, 1, 'newer checkpoint must wait for the active IndexedDB commit');
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(writes.map(write => write.key), ['playerID', 'players', 'playerID', 'players']);
+  assert.equal(new Map(JSON.parse(writes[1].value)).get('tester').coins, 1);
+  assert.equal(new Map(JSON.parse(writes[3].value)).get('tester').coins, 2);
+
+  failNext = true;
+  client.players.get('tester').coins = 3;
+  await assert.rejects(client.save(), /simulated quota interruption/);
+  client.players.get('tester').coins = 4;
+  await client.save();
+  const playerWrites = writes.filter(write => write.key === 'players');
+  assert.equal(new Map(JSON.parse(playerWrites.at(-1).value)).get('tester').coins, 4);
+  assert.ok(client.saveQueue instanceof Promise, 'queue remains usable after a rejected transaction');
 });
 
 test('browser account storage round-trips complete character state without aliases', async () => {

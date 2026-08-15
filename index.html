@@ -809,6 +809,40 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
   // immediately and checkpoint active characters every 15 seconds so closing
   // or crashing a tab cannot silently erase a newly-created account.
   function patchServerPersistence(code){
+    // idb-keyval commits each call in its own transaction. Serialize complete
+    // snapshots so a slower, older save can never finish after a newer one and
+    // overwrite it. A rejected commit stays visible to its caller while the
+    // queue recovers, allowing the next 15-second checkpoint to retry the
+    // still-current in-memory state.
+    const browserConstructor=`        // { playerID: username }
+        this.playerUsernames = new Map();`;
+    const queuedBrowserConstructor=`        // { playerID: username }
+        this.playerUsernames = new Map();
+        this.saveQueue = Promise.resolve();`;
+    if(!code.includes(browserConstructor))throw new Error('Server persistence patch failed: browser data constructor changed.');
+    code=code.replace(browserConstructor,queuedBrowserConstructor);
+
+    const browserSave=`    async save() {
+        await idbKeyval.set('playerID', this.playerID);
+        await idbKeyval.set(
+            'players',
+            JSON.stringify(Array.from(this.players.entries()))
+        );
+    }`;
+    const queuedBrowserSave=`    async save() {
+        const playerID = this.playerID;
+        const players = JSON.stringify(Array.from(this.players.entries()));
+        const commit = async () => {
+            await idbKeyval.set('playerID', playerID);
+            await idbKeyval.set('players', players);
+        };
+        const pending = this.saveQueue.then(commit, commit);
+        this.saveQueue = pending.catch(() => undefined);
+        await pending;
+    }`;
+    if(!code.includes(browserSave))throw new Error('Server persistence patch failed: browser save transaction changed.');
+    code=code.replace(browserSave,queuedBrowserSave);
+
     const registration=`                this.players.set(player.username, player);
 
                 return {
