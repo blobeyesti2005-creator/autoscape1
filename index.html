@@ -4273,15 +4273,24 @@ ${firstBanker}`;
     botTimer=setInterval(tick,1000);
     window.AutoScape={start,stop,getDiagnostics:diagnosticsSnapshot,resetDiagnostics,startObservationRecording:startLiveObservationRecording,stopObservationRecording:stopLiveObservationRecording,getObservations:getLiveObservations,downloadObservations:downloadLiveObservations,get objective(){return objective;},get queue(){return [...commandQueue];},mc};
 
-    function readRememberedCredentials(storage=localStorage){
+    function readStoredJSON(key,storage=localStorage){
       try{
-        const saved=JSON.parse(storage.getItem('autoscape_credentials')||'null');
-        if(!saved||typeof saved!=='object')return null;
-        if(typeof saved.u!=='string'||!saved.u||typeof saved.p!=='string'||!saved.p)return null;
-        return {u:saved.u,p:saved.p};
-      }catch(e){
-        return null;
+        const raw=storage.getItem(key);
+        if(raw===null||raw==='')return {state:'missing',value:null};
+        return {state:'ok',value:JSON.parse(raw)};
+      }catch(error){
+        // Never delete or rewrite malformed storage here. A later build or a
+        // manual recovery tool may still be able to understand the raw value.
+        return {state:'invalid',value:null,error};
       }
+    }
+
+    function readRememberedCredentials(storage=localStorage){
+      const stored=readStoredJSON('autoscape_credentials',storage);
+      const saved=stored.state==='ok'?stored.value:null;
+      if(!saved||typeof saved!=='object')return null;
+      if(typeof saved.u!=='string'||!saved.u||typeof saved.p!=='string'||!saved.p)return null;
+      return {u:saved.u,p:saved.p};
     }
 
     async function loginRememberedCharacter(saved,client=mc){
@@ -4308,14 +4317,44 @@ ${firstBanker}`;
       return true;
     }
 
+    function scheduleSavedJobResume(restore,client=mc,schedule=setTimeout,now=Date.now,timeout=45000,settle=2000){
+      if(typeof restore!=='function'||client.__autoscapeJobResumePending)return false;
+      const startedAt=now();
+      const readyAt=startedAt+Math.max(0,Number(settle)||0);
+      const deadline=startedAt+Math.max(1000,Number(timeout)||45000);
+      client.__autoscapeJobResumePending=true;
+      const attempt=()=>{
+        client.__autoscapeJobResumeTimer=0;
+        if(client.loggedIn===1&&now()>=readyAt){
+          client.__autoscapeJobResumePending=false;
+          restore();
+          return;
+        }
+        if(now()>=deadline){
+          client.__autoscapeJobResumePending=false;
+          setBotStatus('Saved bot job is still available, but was not resumed because login did not complete.');
+          return;
+        }
+        client.__autoscapeJobResumeTimer=schedule(attempt,500);
+      };
+      client.__autoscapeJobResumeTimer=schedule(attempt,500);
+      return true;
+    }
+
     // Auto-login remembered local account on future launches.
     const rememberedCredentials=readRememberedCredentials();
     scheduleRememberedAutoLogin(rememberedCredentials);
 
     // Resume the last explicit job after login. "stop" clears this.
-    setTimeout(()=>{
+    const storedStartupJob=readStoredJSON('autoscape_job');
+    if(storedStartupJob.state!=='missing')scheduleSavedJobResume(()=>{
       try{
-        const savedJob=normalizeSavedJob(JSON.parse(localStorage.getItem('autoscape_job')||'null'));
+        const storedJob=storedStartupJob;
+        if(storedJob.state==='invalid'){
+          setBotStatus('Saved bot job is damaged and was ignored. Your character, inventory, bank, and raw saved job were not changed.');
+          return;
+        }
+        const savedJob=normalizeSavedJob(storedJob.value);
         if(savedJob && savedJob.active && !objective){
           commandQueue=[...savedJob.queue];
           activeCommandText=String(savedJob.commandText||savedJob.type||'');
@@ -4399,8 +4438,11 @@ ${firstBanker}`;
             }
           }
         }
-      }catch(e){}
-    },2200);
+      }catch(e){
+        console.warn('Saved bot job could not be resumed:',e);
+        setBotStatus('Saved bot job could not be resumed. Your character and stored data were not changed.');
+      }
+    });
   }
 
   async function boot(){

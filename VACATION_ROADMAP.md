@@ -56,6 +56,8 @@ deleting history, or changing GitHub Pages.
   progress checkpoints immediate and preserving every existing storage key.
 - [x] Execute remembered-account login with valid, malformed, incomplete, and
   already-logged-in browser states without deleting credentials on failure.
+- [x] Delay saved-job restoration until login is confirmed and preserve corrupt
+  startup JSON byte-for-byte while reporting a recoverable dormant state.
 - [x] Add explicit carried/gathered/loot banking steps to persistent command
   chains using nearest-bank routing and equipped-item protection.
 - [x] Dispatch bot jobs through prioritized task nodes using one shared decision
@@ -805,4 +807,30 @@ deleting history, or changing GitHub Pages.
   queued-job schemas, or learner/live-action boundaries changed. Main, Pages,
   and release configuration remain out of scope.
 - Package and app-shell cache metadata advanced to `2.12.23` for the eventual
+  reviewed release.
+
+### Login-gated, non-destructive startup recovery
+
+- `npm test` (59 regression groups) and `npm run test:browser` (8 focused UI
+  smoke groups)
+- Saved bot jobs no longer restore on a blind fixed delay. A bounded startup
+  controller waits for the client to confirm a logged-in character, suppresses
+  duplicate restore timers, and only then rebuilds the saved objective.
+- If login does not complete within 45 seconds, the job stays dormant and the
+  player receives a retry-safe status. The stored job is not deleted, replaced,
+  or normalized in place.
+- Added a shared defensive JSON reader for remembered credentials and bot jobs.
+  It distinguishes missing, valid, and malformed data without issuing any
+  storage write or removal. Malformed job data produces an explicit recovery
+  message while leaving the exact raw value available for future recovery.
+- Unexpected restoration failures are visible and non-destructive instead of
+  disappearing inside an empty catch block.
+- Executable browser tests cover pre-login deferral, duplicate suppression,
+  post-login restoration, bounded expiry, and byte-for-byte preservation of
+  malformed JSON. Static tests retain valid, malformed, incomplete, and
+  already-online credential coverage.
+- No account/save fields, persistence keys, inventory/bank formats, settings,
+  queued-job schemas, or learner/live-action boundaries changed. Main, Pages,
+  and release configuration remain out of scope.
+- Package and app-shell cache metadata advanced to `2.12.24` for the eventual
   reviewed release.

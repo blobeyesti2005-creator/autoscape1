@@ -252,8 +252,11 @@ test('browser account storage round-trips complete character state without alias
 });
 
 test('remembered browser login validates credentials and reuses the local account', async () => {
+  const readStoredJSON = new Function(
+    `${functionSource(html, 'readStoredJSON')}\nreturn readStoredJSON;`
+  )();
   const readRememberedCredentials = new Function(
-    `${functionSource(html, 'readRememberedCredentials')}\nreturn readRememberedCredentials;`
+    `${functionSource(html, 'readStoredJSON')}\n${functionSource(html, 'readRememberedCredentials')}\nreturn readRememberedCredentials;`
   )();
   const loginSource = functionSource(html, 'loginRememberedCharacter').replace(/^function /,'async function ');
   const loginRememberedCharacter = new Function(
@@ -268,6 +271,19 @@ test('remembered browser login validates credentials and reuses the local accoun
   assert.equal(readRememberedCredentials(storage('{damaged')), null);
   assert.equal(readRememberedCredentials(storage(JSON.stringify({ u: 'saved-player' }))), null);
   assert.equal(readRememberedCredentials(storage(JSON.stringify({ u: 123, p: true }))), null);
+
+  const damagedStorage={
+    value:'{damaged',writes:0,removals:0,
+    getItem(){return this.value;},
+    setItem(){this.writes++;},
+    removeItem(){this.removals++;}
+  };
+  const damaged=readStoredJSON('autoscape_job',damagedStorage);
+  assert.equal(damaged.state,'invalid');
+  assert.equal(damaged.value,null);
+  assert.equal(damagedStorage.value,'{damaged');
+  assert.equal(damagedStorage.writes,0);
+  assert.equal(damagedStorage.removals,0);
 
   const calls=[];
   const client={
@@ -292,6 +308,8 @@ test('remembered browser login validates credentials and reuses the local accoun
   assert.match(scheduler,/client\.loggedIn===1\|\|client\.__autoscapeAutoLoginTimer/);
   assert.match(scheduler,/finally\{\s*client\.__autoscapeAutoLoginTimer=0/);
   assert.match(html,/scheduleRememberedAutoLogin\(rememberedCredentials\)/);
+  assert.match(html,/storedStartupJob\.state!=='missing'\)scheduleSavedJobResume\(\(\)=>\{/);
+  assert.doesNotMatch(html,/normalizeSavedJob\(JSON\.parse\(localStorage\.getItem\('autoscape_job'\)/);
 });
 
 test('server gameplay patch preserves live stats through load and save', () => {
@@ -482,7 +500,8 @@ test('saved command chains round-trip progress, style, and banking intent', () =
   assert.equal(prayer.countProgress, 4);
   assert.deepEqual(prayer.queue, ['bank loot']);
 
-  assert.match(html, /normalizeSavedJob\(JSON\.parse\(localStorage\.getItem\('autoscape_job'\)/);
+  assert.match(html, /const storedStartupJob=readStoredJSON\('autoscape_job'\)/);
+  assert.match(html, /const savedJob=normalizeSavedJob\(storedJob\.value\)/);
   assert.match(functionSource(html, 'saveObjective'), /serializeObjectiveState\(\)/);
 });
 

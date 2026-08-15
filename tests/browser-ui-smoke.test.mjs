@@ -158,6 +158,55 @@ test('remembered auto-login schedules once, reports failure, and remains retryab
   assert.equal(scheduleRememberedAutoLogin(null, { loggedIn: 0 }, schedule), false);
 });
 
+test('saved jobs wait for confirmed login and expire without touching stored state', () => {
+  const scheduled=[],statuses=[];
+  const factory=new Function('setBotStatus', `
+    ${functionSource(appHtml, 'scheduleSavedJobResume')}
+    return scheduleSavedJobResume;
+  `);
+  const scheduleSavedJobResume=factory(value=>statuses.push(value));
+  let clock=1000,restores=0;
+  const schedule=(callback,delay)=>{scheduled.push({callback,delay});return scheduled.length;};
+  const client={loggedIn:0};
+
+  assert.equal(scheduleSavedJobResume(()=>{restores++;},client,schedule,()=>clock,3000,1000),true);
+  assert.equal(scheduleSavedJobResume(()=>{restores++;},client,schedule,()=>clock,3000,1000),false);
+  assert.equal(scheduled[0].delay,500);
+  scheduled.shift().callback();
+  assert.equal(restores,0,'a login-screen client must not restore a bot objective');
+  assert.equal(scheduled[0].delay,500);
+  client.loggedIn=1;
+  clock=2000;
+  scheduled.shift().callback();
+  assert.equal(restores,1);
+  assert.equal(client.__autoscapeJobResumePending,false);
+
+  client.loggedIn=0;
+  assert.equal(scheduleSavedJobResume(()=>{restores++;},client,schedule,()=>clock,1000,0),true);
+  clock=3000;
+  scheduled.shift().callback();
+  assert.equal(restores,1,'an expired startup must leave the saved job dormant');
+  assert.match(statuses.at(-1),/still available/);
+  assert.equal(client.__autoscapeJobResumePending,false);
+});
+
+test('damaged startup JSON is classified without deletion or replacement', () => {
+  const readStoredJSON=new Function(`${functionSource(appHtml, 'readStoredJSON')}\nreturn readStoredJSON;`)();
+  const storage={
+    raw:'{"type":',writes:[],removals:[],
+    getItem(key){assert.equal(key,'autoscape_job');return this.raw;},
+    setItem(...args){this.writes.push(args);},
+    removeItem(...args){this.removals.push(args);}
+  };
+  const result=readStoredJSON('autoscape_job',storage);
+  assert.equal(result.state,'invalid');
+  assert.equal(result.value,null);
+  assert.equal(storage.raw,'{"type":');
+  assert.deepEqual(storage.writes,[]);
+  assert.deepEqual(storage.removals,[]);
+  assert.match(appHtml,/raw saved job were not changed/);
+});
+
 test('live recorder browser controls are opt-in, bounded, copied, and route-aware', () => {
   const observationToggle = { textContent: '' }, observationDownload = { disabled: true }, observationStatus = { textContent: '' };
   const factory = new Function('observationToggle', 'observationDownload', 'observationStatus', `
