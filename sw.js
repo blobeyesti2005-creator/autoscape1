@@ -1,8 +1,8 @@
 'use strict';
 
-const APP_CACHE_VERSION = 'autoscape-app-v2.10.1';
+const APP_CACHE_VERSION = 'autoscape-app-v2.13.5';
 const RUNTIME_CACHE = 'autoscape-runtime-v1';
-const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+const APP_SHELL = ['./', './index.html', './learning-lab.html', './learning-sandbox.mjs', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(

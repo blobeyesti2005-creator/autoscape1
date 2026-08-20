@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AutoScape Five-Bot Learning Lab</title>
+<style>
+:root{color-scheme:dark;font-family:Arial,sans-serif;background:#0d0c09;color:#eee}
+*{box-sizing:border-box}body{margin:0;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:linear-gradient(#17140e,#090806);min-height:100vh}
+main{max-width:1100px;margin:auto}h1{color:#ffd875;margin:.2rem 0;font-size:clamp(1.4rem,5vw,2.2rem)}p{color:#cfc4ad;line-height:1.45}.notice{border:1px solid #876f47;background:#2a2419;padding:10px;margin:10px 0}.toolbar,.replaybar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}.toolbar button,.buttonlike,.replaybar button,.bot button,.bot select,.toolbar input{background:#352d20;color:#fff;border:1px solid #9f8657;padding:9px;font:inherit}.toolbar input{width:130px;background:#090909}.toolbar button:disabled,.replaybar button:disabled,.bot button:disabled{opacity:.45}.buttonlike{cursor:pointer}.status{color:#aee59f;min-height:1.3em}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.bot{border:1px solid #6d5d42;background:#211d15;padding:10px}.bot h2{margin:0;color:#f2cf72;font-size:1.1rem}.meta,.decision,.policy{font-size:.86rem;margin:6px 0}.decision{color:#9ed0b2;min-height:2.2em}.meter{height:8px;background:#080706;margin:4px 0}.meter span{display:block;height:100%;background:#b39455}.meter.hp span{background:#a94d43}.items{font-size:.82rem;color:#cfc4ad}.controls{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.controls select{flex:1;min-width:100px}.policy{color:#aaa}.history{margin-top:12px;border:1px solid #5f523a;background:#11100d;padding:8px;max-height:220px;overflow:auto;font:12px/1.45 monospace;white-space:pre-wrap}.replaybar input{flex:1;min-width:150px}.evaluation{margin-top:12px;overflow:auto}.evaluation table{width:100%;border-collapse:collapse;font-size:.82rem}.evaluation th,.evaluation td{border:1px solid #5f523a;padding:6px;text-align:right}.evaluation th:first-child,.evaluation td:first-child{text-align:left}.evaluation th{color:#ffd875}a{color:#ffd875}
+</style>
+<style>
+.observationbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.observationReport{margin-top:12px;overflow:auto}.observationReport table{width:100%;border-collapse:collapse;font-size:.82rem}.observationReport th,.observationReport td{border:1px solid #5f523a;padding:6px;text-align:right}.observationReport th:first-child,.observationReport td:first-child{text-align:left}.observationReport th{color:#ffd875}
+</style>
+</head>
+<body>
+<main>
+<a id="backLink" href="#">← Return to AutoScape</a>
+<h1>Five-Bot Learning Lab</h1>
+<p class="notice"><strong>Experimental and isolated:</strong> these five learners run in a deterministic simulation. They cannot read or overwrite your normal character, account, inventory, bank, settings, or job saves.</p>
+<p>Each learner has its own goal and transparent action-value policy. Successful outcomes improve the decisions it favors; bounded exploration lets it try alternatives. Take control of any learner, demonstrate actions, then return it to automatic learning.</p>
+<div class="toolbar">
+<label>Seed <input id="seed" type="number" value="20260815" inputmode="numeric"></label>
+<button id="reset">Reset session</button><button id="run">Run</button><button id="pause" disabled>Pause</button><button id="step">Step once</button>
+<button id="fast">Run 100 ticks</button><button id="replay">Replay latest history</button><button id="export">Download session</button>
+<label class="buttonlike" for="importFile">Load session</label><input id="importFile" type="file" accept="application/json,.json" hidden><button id="evaluate">Evaluate 5 seeds</button>
+</div>
+<div id="status" class="status">Paused at tick 0.</div>
+<div class="observationbar"><label class="buttonlike" for="observationFile">Analyze game observations</label><input id="observationFile" type="file" accept="application/json,.json" hidden><span>Read-only files are summarized here; they cannot issue game actions.</span></div>
+<div id="observationReport" class="observationReport"></div>
+<div id="replayControls" class="replaybar" hidden><button id="replayPrev">Previous</button><input id="replayPosition" type="range" min="0" max="0" value="0"><button id="replayNext">Next</button><button id="replayExit">Exit replay</button></div>
+<section id="bots" class="grid" aria-live="polite"></section>
+<div id="evaluation" class="evaluation"></div>
+<div id="history" class="history">No actions yet.</div>
+</main>
+<script type="module">
+import { analyzeLiveObservations, createLearningSession, createTelemetryReplay, evaluateLearningPolicies, parseLearningReplay, parseLiveObservations, serializeLearningReplay, LEARNING_ACTIONS } from './learning-sandbox.mjs';
+const $=id=>document.getElementById(id),botsEl=$('bots'),historyEl=$('history'),statusEl=$('status');
+const here=new URL(location.href);here.pathname=here.pathname.replace(/[^/]*$/,'index.html');here.search='';here.hash='';$('backLink').href=here.href;
+let session=createLearningSession({seed:Number($('seed').value)}),timer=null,activeReplay=null;
+function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));}
+function inventoryText(value){return `logs ${value.logs} · ore ${value.ores} · bones ${value.bones}`;}
+function observationReportHtml(report){
+  const tasks=Object.entries(report.byTaskNode).sort((a,b)=>b[1]-a[1]);
+  const targets=Object.entries(report.stallTargets).sort((a,b)=>b[1]-a[1]);
+  const episodes=report.stallEpisodes.slice(0,10).map(episode=>`<tr><td>Stall #${episode.startSequence}–${episode.endSequence}</td><td>${escapeHtml(episode.taskNode)} · ${escapeHtml(episode.target)} · ${(episode.durationMs/1000).toFixed(0)}s · retries ${episode.maxRetries} · ${escapeHtml(episode.resolvedBy)}</td></tr>`).join('');
+  const flags=report.diagnosticFlags.length?report.diagnosticFlags.map(escapeHtml).join(' · '):'none';
+  return `<table><thead><tr><th>Observation summary</th><th>Value</th></tr></thead><tbody><tr><td>Frames / duration</td><td>${report.frames} / ${(report.durationMs/1000).toFixed(0)}s</td></tr><tr><td>All movement / longest stationary run</td><td>${(report.movementRate*100).toFixed(0)}% / ${report.maxStationaryRun}</td></tr><tr><td>Navigation movement / longest navigation stall</td><td>${(report.navigationMovementRate*100).toFixed(0)}% / ${report.maxNavigationStationaryRun} frames</td></tr><tr><td>Navigation stall episodes</td><td>${report.stallEpisodeCount}${report.stallEpisodeCount>report.stallEpisodes.length?` (${report.stallEpisodes.length} shown)`:''}</td></tr><tr><td>Peak retries / stalls / rebuilds / recoveries</td><td>${report.maxNavigationRetries} / ${report.maxNavigationStalls} / ${report.maxRouteRebuilds} / ${report.maxStallRecoveries}</td></tr><tr><td>Diagnostic flags</td><td>${flags}</td></tr><tr><td>Fighting / dead / low HP / full inventory</td><td>${report.fighting} / ${report.deaths} / ${report.lowHp} / ${report.fullInventory}</td></tr>${targets.map(([key,value])=>`<tr><td>Stall target: ${escapeHtml(key)}</td><td>${value}</td></tr>`).join('')}${tasks.map(([key,value])=>`<tr><td>Task: ${escapeHtml(key)}</td><td>${value}</td></tr>`).join('')}${episodes}</tbody></table>`;
+}
+function card(bot,replaying=false){
+  const mode=replaying?'replay':bot.mode,experience=bot.experience??bot.actions??0,epsilon=Number(bot.epsilon||0);
+  const actions=LEARNING_ACTIONS.map(action=>`<option value="${action}">${action}</option>`).join('');
+  return `<article class="bot" data-bot="${bot.id}"><h2>${escapeHtml(bot.name)} · ${escapeHtml(bot.goal)}</h2>
+  <div class="meta">${mode.toUpperCase()} · score ${Number(bot.score||0).toFixed(1)} · ${experience} actions${replaying?'':` · exploration ${(epsilon*100).toFixed(0)}%`}</div>
+  <div>HP ${bot.hp}/10</div><div class="meter hp"><span style="width:${bot.hp*10}%"></span></div>
+  <div>Energy ${bot.energy}/100</div><div class="meter"><span style="width:${bot.energy}%"></span></div>
+  <div class="items">Held: ${inventoryText(bot.inventory)}<br>Bank: ${inventoryText(bot.bank)} · deaths ${bot.deaths||0}</div>
+  <div class="decision">${escapeHtml(bot.decision)}</div><div class="policy">${replaying?`Recorded action: ${escapeHtml(bot.lastAction||'none')}`:`Context: ${escapeHtml(bot.context)} · preferred: ${escapeHtml(bot.bestAction)}`}</div>
+  ${replaying?'':`<div class="controls"><button data-takeover="${bot.id}">${bot.mode==='manual'?'Return to bot':'Take control'}</button><select data-action="${bot.id}" ${bot.mode==='manual'?'':'disabled'}>${actions}</select><button data-do="${bot.id}" ${bot.mode==='manual'?'':'disabled'}>Do action</button></div>`}</article>`;
+}
+function render(){
+  if(activeReplay){renderReplay();return;}
+  const state=session.snapshot();botsEl.innerHTML=state.bots.map(card).join('');
+  statusEl.textContent=`${state.paused?'Paused':'Running'} at tick ${state.tick} · telemetry ${state.telemetry.length}/1200`;
+  $('run').disabled=!state.paused||state.finished;$('pause').disabled=state.paused;
+  historyEl.textContent=state.telemetry.slice(-24).reverse().map(event=>`#${event.sequence} T${event.tick} L${event.botId} ${event.source} ${event.action} → ${event.detail} (${event.reward>=0?'+':''}${event.reward})`).join('\n')||'No actions yet.';
+}
+function renderReplay(){
+  const state=activeReplay.state(),event=activeReplay.current();
+  botsEl.innerHTML=state.bots.map(bot=>card(bot,true)).join('');
+  $('replayPosition').value=state.cursor;statusEl.textContent=`Replay position ${state.cursor}/${state.length} · tick ${state.tick} · seed ${state.seed}`;
+  $('replayPrev').disabled=state.cursor===0;$('replayNext').disabled=state.cursor===state.length;
+  historyEl.textContent=event?`#${event.sequence} · tick ${event.tick} · Learner ${event.botId} · ${event.source} ${event.action}\n${event.detail}\nreward ${event.reward} · Q ${event.qBefore.toFixed(3)} → ${event.qAfter.toFixed(3)}`:'Session start — no actions applied.';
+}
+function stopTimer(){if(timer){clearInterval(timer);timer=null;}session.pause();}
+function exitReplay(){activeReplay=null;$('replayControls').hidden=true;render();}
+function reset(){stopTimer();exitReplay();session=createLearningSession({seed:Number($('seed').value)||20260815});$('evaluation').innerHTML='';render();}
+function beginReplay(data){stopTimer();activeReplay=createTelemetryReplay(data);activeReplay.seek(activeReplay.length);$('replayPosition').max=activeReplay.length;$('replayControls').hidden=false;renderReplay();}
+$('reset').onclick=reset;$('run').onclick=()=>{exitReplay();session.resume();timer=setInterval(()=>{session.step();render();if(session.finished){stopTimer();render();}},250);render();};
+$('pause').onclick=()=>{stopTimer();render();};$('step').onclick=()=>{exitReplay();session.resume();session.step();session.pause();render();};
+$('fast').onclick=()=>{exitReplay();session.resume();for(let i=0;i<100&&!session.finished;i++)session.step();session.pause();render();};
+$('replay').onclick=()=>beginReplay(session.exportReplay());
+$('replayPrev').onclick=()=>{activeReplay.previous();renderReplay();};$('replayNext').onclick=()=>{activeReplay.next();renderReplay();};
+$('replayPosition').oninput=event=>{activeReplay.seek(Number(event.target.value));renderReplay();};$('replayExit').onclick=exitReplay;
+$('export').onclick=()=>{const text=serializeLearningReplay(session.exportReplay()),blob=new Blob([text],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`autoscape-learning-${session.snapshot().seed}-tick-${session.snapshot().tick}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);statusEl.textContent='Session downloaded as validated JSON.';};
+$('importFile').onchange=async event=>{try{const file=event.target.files?.[0];if(!file)return;if(file.size>2_000_000)throw new Error('Session file exceeds 2 MB.');beginReplay(parseLearningReplay(await file.text()));statusEl.textContent=`Loaded ${activeReplay.length} validated replay events.`;}catch(error){statusEl.textContent=`Could not load session: ${error.message}`;}finally{event.target.value='';}};
+$('observationFile').onchange=async event=>{try{const file=event.target.files?.[0];if(!file)return;if(file.size>1_000_000)throw new Error('Observation file exceeds 1 MB.');const report=analyzeLiveObservations(parseLiveObservations(await file.text()));$('observationReport').innerHTML=observationReportHtml(report);statusEl.textContent=`Analyzed ${report.frames} validated read-only game frames · ${report.stallEpisodeCount} navigation stall episodes. No actions were executed.`;}catch(error){statusEl.textContent=`Could not analyze observations: ${error.message}`;$('observationReport').innerHTML='';}finally{event.target.value='';}};
+$('evaluate').onclick=()=>{const result=evaluateLearningPolicies({seeds:[101,202,303,404,505],ticks:200});$('evaluation').innerHTML=`<table><thead><tr><th>Goal</th><th>Avg score</th><th>Avg banked</th><th>Avg deaths</th><th>Recent goal action</th></tr></thead><tbody>${result.bots.map(bot=>`<tr><td>${escapeHtml(bot.goal)}</td><td>${bot.averageScore}</td><td>${bot.averageBanked}</td><td>${bot.averageDeaths}</td><td>${bot.recentGoalActionRate===null?'mixed':`${(bot.recentGoalActionRate*100).toFixed(0)}%`}</td></tr>`).join('')}</tbody></table>`;statusEl.textContent=`Evaluation complete: ${result.seeds.length} deterministic seeds × ${result.ticks} ticks.`;};
+botsEl.onclick=event=>{
+  const takeover=event.target.closest('[data-takeover]');
+  if(takeover){const id=Number(takeover.dataset.takeover),bot=session.snapshot().bots.find(item=>item.id===id);session.setManual(id,bot.mode!=='manual');render();return;}
+  const actionButton=event.target.closest('[data-do]');
+  if(actionButton){const id=Number(actionButton.dataset.do),select=botsEl.querySelector(`[data-action="${id}"]`);session.manualAction(id,select.value);render();}
+};
+render();
+</script>
+</body>
+</html>

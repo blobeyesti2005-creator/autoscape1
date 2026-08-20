@@ -1,0 +1,34 @@
+name: Validate AutoScape
+
+on:
+  push:
+    branches:
+      - main
+      - codex/vacation-safe-mode
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Run browser UI smoke checks
+        run: npm run test:browser
+
+      - name: Run regression checks
+        run: npm test

@@ -1,0 +1,13 @@
+{
+  "name": "autoscape-classic",
+  "version": "2.13.5",
+  "private": true,
+  "description": "Regression checks for the browser-only AutoScape build",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node --test tests/browser-ui-smoke.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
