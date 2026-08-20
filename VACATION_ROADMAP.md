@@ -1033,3 +1033,18 @@ deleting history, or changing GitHub Pages.
 - Existing IndexedDB keys, account/save schema, characters, credentials, stats,
   inventory, equipment, bank, settings, jobs, and backup format are unchanged.
 - Package, visible build, and app-shell cache metadata advanced to `2.12.32`.
+
+### Upstream browser-worker boot compatibility
+
+- The hosted preservation server added a formatting-only blank line before the
+  browser worker's start-message `break`. The lifecycle checkpoint transformer
+  correctly stopped because its exact source guard had not reviewed that layout.
+- The transformer now accepts exactly the earlier and current worker layouts.
+  Worker construction, initialization, ready acknowledgement, and message-flow
+  statements remain byte-for-byte guarded, so behavioral changes still fail
+  closed before any character state can be written.
+- Executable regression coverage applies the complete lifecycle transformer to
+  both layouts and confirms serialized checkpoints replace the original worker.
+- Existing storage keys, account/save schema, characters, inventory, equipment,
+  bank, stats, settings, jobs, and backup format remain unchanged.
+- Package, visible build, and app-shell cache metadata advanced to `2.12.33`.
