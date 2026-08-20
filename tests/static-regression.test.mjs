@@ -123,8 +123,60 @@ test('mobile keyboard keeps bot controls visible without rescaling flicker', () 
 
 test('chicken routing approaches the open Lumbridge farm gate', () => {
   assert.match(html, /lumbridgeFarm:\{x:112,y:619\}/);
-  assert.match(html, /chicken:\{node:'lumbridgeFarm',centre:\{x:119,y:604\}/);
+  assert.match(html, /area:\{minX:112,maxX:123,minY:602,maxY:613\}/);
+  assert.match(html, /approach:\[\{x:112,y:619\},\{x:112,y:616\},\{x:113,y:613\}\]/);
   assert.doesNotMatch(html, /lumbridgeFarm:\{x:119,y:605\}/);
+});
+
+test('chicken combat completes the farm entrance before accepting loaded targets', () => {
+  const hubsSource = section(html, '    const COMBAT_HUBS={', '    function combatHub(){');
+  const hubs = new Function(`${hubsSource}\nreturn COMBAT_HUBS;`)();
+  const hub = hubs.chicken;
+  assert.deepEqual(hub.approach, [{ x: 112, y: 619 }, { x: 112, y: 616 }, { x: 113, y: 613 }]);
+  for (const [dx, dy] of hub.search) {
+    const x = hub.centre.x + dx, y = hub.centre.y + dy;
+    assert.ok(x >= hub.area.minX && x <= hub.area.maxX, `chicken search x ${x} left the pen`);
+    assert.ok(y >= hub.area.minY && y <= hub.area.maxY, `chicken search y ${y} left the pen`);
+  }
+
+  let tile = { x: 120, y: 619 }, live = { name: 'chicken' };
+  const objective = {
+    combatHub: 'chicken', navRoute: [{ x: 112, y: 619, name: 'lumbridgeFarm' }],
+    routeIndex: 0, approachIndex: 0
+  };
+  const walks = [], phases = [];
+  const advanceCombatTravel = new Function(
+    'objective', 'COMBAT_HUBS', 'chooseCombatTargetType', 'decisionTile', 'nearestCombatNpc',
+    'globalPlayerTile', 'markProgress', 'setPhase', 'makeRouteTo', 'nodeDistance',
+    'rebuildRouteIfStalled', 'runNavigationStep', 'setBotStatus', 'playerCombatEstimate',
+    'advanceRegionalSearchIfStalled', 'MAX_NAV_RETRIES', 'navWatch',
+    `${functionSource(html, 'advanceCombatTravel')}\nreturn advanceCombatTravel;`
+  )(
+    objective, hubs, () => 'chicken', () => tile, () => live, () => tile,
+    () => {}, (phase, status) => { objective.phase = phase; phases.push([phase, status]); },
+    () => [{ x: 112, y: 619 }], (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    () => false, target => { walks.push({ ...target }); return { sent: true }; }, () => {},
+    () => 3, () => false, 4, { x: null, y: null, lastMove: 0, stalls: 0, retries: 0 }
+  );
+
+  advanceCombatTravel({ world: {} });
+  assert.equal(objective.routeIndex, 0, 'a visible chicken must not bypass the unfinished gate route');
+  assert.deepEqual(walks.pop(), { x: 112, y: 619, name: 'lumbridgeFarm' });
+
+  live = null; tile = { x: 112, y: 619 };
+  advanceCombatTravel({ world: {} });
+  assert.equal(objective.routeIndex, 1);
+  advanceCombatTravel({ world: {} });
+  assert.equal(objective.approachIndex, 1);
+  tile = { x: 112, y: 616 };
+  advanceCombatTravel({ world: {} });
+  assert.equal(objective.approachIndex, 2);
+
+  live = { name: 'chicken' }; tile = { x: 113, y: 613 };
+  advanceCombatTravel({ world: {} });
+  assert.equal(objective.approachIndex, 3);
+  assert.equal(objective.phase, 'fight');
+  assert.equal(phases.at(-1)[0], 'fight');
 });
 
 test('manifest and offline shell stay internally consistent', () => {

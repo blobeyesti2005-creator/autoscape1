@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.13.0 — Private Local World</title>
+<title>AutoScape Classic v2.13.1 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -73,7 +73,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.13.0</h2>
+<h2>AUTOSCAPE CLASSIC v2.13.1</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -3357,7 +3357,14 @@ ${firstBanker}`;
     // be the source of truth for the exact spawn tile.
     const COMBAT_HUBS={
       rat:{node:'lumbridgeSwamp',centre:{x:140,y:667},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,8],[-10,8]]},
-      chicken:{node:'lumbridgeFarm',centre:{x:119,y:604},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,6],[-10,6]]},
+      chicken:{
+        node:'lumbridgeFarm',
+        centre:{x:118,y:607},
+        area:{minX:112,maxX:123,minY:602,maxY:613},
+        routeArrival:2,
+        approach:[{x:112,y:619},{x:112,y:616},{x:113,y:613}],
+        search:[[0,0],[4,0],[-4,0],[0,4],[0,-4],[4,4],[-4,-4]]
+      },
       imp:{node:'edgeville',centre:{x:199,y:461},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[12,8],[-12,8]]},
       cow:{node:'lumbridgeCows',centre:{x:105,y:619},search:[[0,0],[10,0],[-10,0],[0,10],[0,-10],[12,8],[-12,8]]},
       man:{node:'lumbridgeNorth',centre:{x:132,y:639},search:[[0,0],[8,0],[-8,0],[0,8],[0,-8],[10,10],[-10,10]]},
@@ -3385,6 +3392,7 @@ ${firstBanker}`;
       objective.combatHub=type;
       objective.navRoute=makeRouteTo(hub.node);
       objective.routeIndex=0;
+      objective.approachIndex=0;
       objective.searchIndex=0;
       objective.combatNavRetries=0;
       navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
@@ -3397,15 +3405,23 @@ ${firstBanker}`;
       const hub=COMBAT_HUBS[type];
       if(!hub){setPhase('fight');return;}
 
+      const pp=decisionTile();
+      const approach=Array.isArray(hub.approach)?hub.approach:[];
+      const insideArea=hub.area&&pp.x>=hub.area.minX&&pp.x<=hub.area.maxX&&pp.y>=hub.area.minY&&pp.y<=hub.area.maxY;
+      if(insideArea){
+        objective.routeIndex=Array.isArray(objective.navRoute)?objective.navRoute.length:0;
+        objective.approachIndex=approach.length;
+      }
+      const routeComplete=Array.isArray(objective.navRoute)&&Number(objective.routeIndex||0)>=objective.navRoute.length;
+      const approachComplete=Number(objective.approachIndex||0)>=approach.length;
       const live=nearestCombatNpc(frame.world);
-      if(live){
+      if(live&&(!approach.length||(routeComplete&&approachComplete))){
         objective.home=globalPlayerTile();
         markProgress('target-found');
         setPhase('fight',`Combat ${playerCombatEstimate()} • found ${live.name}`);
         return;
       }
 
-      const pp=decisionTile();
       if(!Array.isArray(objective.navRoute)||!objective.navRoute.length){
         objective.navRoute=makeRouteTo(hub.node);
         objective.routeIndex=0;
@@ -3414,7 +3430,9 @@ ${firstBanker}`;
       let idx=Number(objective.routeIndex||0);
       if(idx<objective.navRoute.length){
         const wp=objective.navRoute[idx];
-        if(nodeDistance(pp,wp)<10){
+        const finalNode=idx===objective.navRoute.length-1;
+        const arrival=finalNode?Number(hub.routeArrival||10):10;
+        if(nodeDistance(pp,wp)<=arrival){
           objective.routeIndex=idx+1;
           objective.combatNavRetries=0;
           markProgress('combat-route-node');
@@ -3430,6 +3448,27 @@ ${firstBanker}`;
           objective.combatNavRetries=Number(objective.combatNavRetries||0)+1;
           setBotStatus(`Combat ${playerCombatEstimate()} • travelling for ${type} • ${wp.name||hub.node}`);
         }
+        return;
+      }
+
+      let ai=Number(objective.approachIndex||0);
+      if(ai<approach.length){
+        const target=approach[ai];
+        if(nodeDistance(pp,target)<=1){
+          objective.approachIndex=ai+1;
+          navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+          markProgress('combat-approach-node');
+          return;
+        }
+        if(Number(navWatch.retries||0)>=MAX_NAV_RETRIES){
+          objective.approachIndex=Math.max(0,ai-1);
+          objective.approachRecoveries=Number(objective.approachRecoveries||0)+1;
+          navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
+          setBotStatus(`Combat ${playerCombatEstimate()} • retrying ${type} entrance`);
+          return;
+        }
+        runNavigationStep(target,8,1,frame);
+        setBotStatus(`Combat ${playerCombatEstimate()} • entering ${type} area (${ai+1}/${approach.length})`);
         return;
       }
 
@@ -5023,7 +5062,7 @@ ${firstBanker}`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.13.0 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.13.1 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
@@ -5064,7 +5103,7 @@ ${firstBanker}`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.13.0 service worker registered',reg.scope);
+      console.log('AutoScape v2.13.1 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

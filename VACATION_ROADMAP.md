@@ -1078,3 +1078,22 @@ deleting history, or changing GitHub Pages.
 - Existing local preferences, active-job saves, accounts, characters, stats,
   inventory, bank, equipment, settings, and command compatibility are unchanged.
 - Package, visible build, and app-shell cache metadata advanced to `2.13.0`.
+
+### Deterministic chicken-pen entry
+
+- Cross-checked the preservation world's authoritative spawn/location data:
+  Lumbridge chickens roam inside `x=112–123, y=602–613`, and the open gate is
+  at `112,616`.
+- Combat no longer considers the final farm route reached from nine tiles away.
+  Chicken jobs follow a strict outside (`112,619`) → open gate (`112,616`) →
+  inside (`113,613`) approach before accepting a target.
+- If a character is already inside the verified pen bounds, the entrance path
+  is skipped safely. Otherwise, even an early-loaded chicken cannot make the
+  controller abandon the unfinished gate route.
+- Every regional chicken-search point now stays inside the real roam bounds;
+  the former pattern included several fenced or out-of-pen destinations.
+- Executable regression coverage simulates the complete approach and proves a
+  visible chicken cannot bypass the gate, while an inside target starts combat.
+- No persistence keys, save schemas, accounts, characters, inventory, bank,
+  equipment, stats, settings, jobs, or command formats changed.
+- Package, visible build, and app-shell cache metadata advanced to `2.13.1`.
