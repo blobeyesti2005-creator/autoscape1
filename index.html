@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.13.3 — Private Local World</title>
+<title>AutoScape Classic v2.13.4 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -75,7 +75,7 @@ body.keyboard-open #bot{top:calc(var(--keyboard-top,0px) + 6px);bottom:auto;heig
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.13.3</h2>
+<h2>AUTOSCAPE CLASSIC v2.13.4</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -3147,6 +3147,37 @@ ${firstBanker}`;
       return null;
     }
 
+    function updateMobileHudTab(client){
+      // drawUI calls setActiveMobileUITab every frame. The pointer remains at
+      // the last touch position between frames, so tab state must change only
+      // on the one frame carrying a real click. Coordinate-only toggling made
+      // Inventory alternate open/closed and visibly flicker after one tap.
+      if(!client||!Number(client.mouseButtonClick))return false;
+      const size=32,rightX=client.gameWidth-size-3,leftX=3,uiY=client.gameHeight/2-49;
+      let y=uiY;
+      for(let i=0;i<6;i++){
+        const x=i>2?leftX:rightX;
+        if(client.mouseX>=x&&client.mouseX<=x+size&&client.mouseY>=y&&client.mouseY<=y+size){
+          const tab=i+1;
+          client.showUITab=client.showUITab===tab?0:tab;
+          if(client.showUITab===2){
+            client.minimapRandom1=((Math.random()*13)|0)-6;
+            client.minimapRandom2=((Math.random()*23)|0)-11;
+          }
+          return true;
+        }
+        y=i===2?uiY:y+size+1;
+      }
+      if(client.showUITab!==0&&(
+        client.mouseX<client.uiOpenX||client.mouseX>client.uiOpenX+client.uiOpenWidth||
+        client.mouseY<client.uiOpenY||client.mouseY>client.uiOpenY+client.uiOpenHeight
+      )){
+        client.showUITab=0;
+        return true;
+      }
+      return false;
+    }
+
     function installSessionAndMobileUX(){
       if(mc.__autoscapeUXInstalled)return;
       mc.__autoscapeUXInstalled=true;
@@ -3172,24 +3203,10 @@ ${firstBanker}`;
           if(Number.isFinite(rotation))mc.cameraRotation=rotation&255;
         }catch(e){}
 
-        // Tapping the selected mobile HUD tab again now closes it.
+        // Keep mobile HUD tabs persistent between frames; one new tap changes
+        // state, and tapping the selected tab again closes it.
         mc.setActiveMobileUITab=function(){
-          const size=32,rightX=this.gameWidth-size-3,leftX=3,uiY=this.gameHeight/2-49;
-          let y=uiY;
-          for(let i=0;i<6;i++){
-            const x=i>2?leftX:rightX;
-            if(this.mouseX>=x&&this.mouseX<=x+size&&this.mouseY>=y&&this.mouseY<=y+size){
-              const tab=i+1;
-              this.showUITab=this.showUITab===tab?0:tab;
-              if(this.showUITab===2){
-                this.minimapRandom1=((Math.random()*13)|0)-6;
-                this.minimapRandom2=((Math.random()*23)|0)-11;
-              }
-              return;
-            }
-            y=i===2?uiY:y+size+1;
-          }
-          if(this.showUITab!==0&&(this.mouseX<this.uiOpenX||this.mouseX>this.uiOpenX+this.uiOpenWidth||this.mouseY<this.uiOpenY||this.mouseY>this.uiOpenY+this.uiOpenHeight))this.showUITab=0;
+          updateMobileHudTab(this);
         };
 
         const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -5097,7 +5114,7 @@ ${firstBanker}`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.13.3 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.13.4 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
@@ -5138,7 +5155,7 @@ ${firstBanker}`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.13.3 service worker registered',reg.scope);
+      console.log('AutoScape v2.13.4 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

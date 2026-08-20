@@ -1134,3 +1134,17 @@ deleting history, or changing GitHub Pages.
   account/save schema, inventory, bank contents, settings, and jobs are
   unchanged.
 - Package, visible build, and app-shell cache metadata advanced to `2.13.3`.
+
+### Stable tap-driven mobile inventory
+
+- Real-phone testing exposed a render-loop bug in AutoScape's mobile HUD
+  override: the client calls its tab selector every frame, while the override
+  toggled from retained touch coordinates without requiring a new click.
+- Inventory and the other five mobile HUD tabs now change state only on the
+  frame carrying a real tap. A selected tab remains open across later render
+  frames, a second tap closes it once, and a tap outside an open panel closes it.
+- Focused browser coverage executes sixty retained-pointer render frames around
+  open and close taps and proves Inventory cannot alternate or reopen itself.
+- No account/save fields, persistence keys, inventory contents or formats,
+  bank contents, settings, jobs, or bot decisions changed.
+- Package, visible build, and app-shell cache metadata advanced to `2.13.4`.

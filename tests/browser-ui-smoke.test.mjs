@@ -106,6 +106,39 @@ test('Android keyboard viewport smoke keeps the game scale stable and exposes th
   assert.equal(ui.stable(), 700);
 });
 
+test('mobile inventory tab changes once per tap and stays stable across render frames', () => {
+  const updateMobileHudTab = new Function(
+    `${functionSource(appHtml, 'updateMobileHudTab')}\nreturn updateMobileHudTab;`
+  )();
+  const client = {
+    gameWidth: 512, gameHeight: 346,
+    mouseX: 490, mouseY: 130, mouseButtonClick: 1,
+    showUITab: 0, uiOpenX: 260, uiOpenY: 30, uiOpenWidth: 249, uiOpenHeight: 204
+  };
+
+  assert.equal(updateMobileHudTab(client), true);
+  assert.equal(client.showUITab, 1, 'one inventory tap must open inventory');
+  client.mouseButtonClick = 0;
+  for (let frame = 0; frame < 30; frame += 1) updateMobileHudTab(client);
+  assert.equal(client.showUITab, 1, 'the retained touch position must not toggle inventory on later frames');
+
+  client.mouseButtonClick = 1;
+  assert.equal(updateMobileHudTab(client), true);
+  assert.equal(client.showUITab, 0, 'a separate tap on the selected tab must close it once');
+  client.mouseButtonClick = 0;
+  for (let frame = 0; frame < 30; frame += 1) updateMobileHudTab(client);
+  assert.equal(client.showUITab, 0, 'the close tap must not reopen inventory on later frames');
+
+  client.mouseButtonClick = 1;
+  updateMobileHudTab(client);
+  client.mouseX = 100; client.mouseY = 100; client.mouseButtonClick = 0;
+  updateMobileHudTab(client);
+  assert.equal(client.showUITab, 1, 'pointer movement without a tap must not close the panel');
+  client.mouseButtonClick = 1;
+  assert.equal(updateMobileHudTab(client), true);
+  assert.equal(client.showUITab, 0, 'a real tap outside the open panel must close it');
+});
+
 test('first online runtime load seeds a verified cache used by an offline restart', async () => {
   const statuses=[],warnings=[],entries=new Map();
   const makeResponse=text=>({
