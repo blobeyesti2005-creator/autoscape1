@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.13.2 — Private Local World</title>
+<title>AutoScape Classic v2.13.3 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -75,7 +75,7 @@ body.keyboard-open #bot{top:calc(var(--keyboard-top,0px) + 6px);bottom:auto;heig
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.13.2</h2>
+<h2>AUTOSCAPE CLASSIC v2.13.3</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -2241,7 +2241,11 @@ ${firstBanker}`;
 
     let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
     const MAX_NAV_RETRIES=12;
-    const BANKER_TALK_DISTANCE=20;
+    // rsc-server's NPC handler only starts its final chase inside a four-tile
+    // axis-aligned window (withinRange(..., 8)). Stage beside the banker first
+    // instead of firing a talk packet as soon as the NPC enters the much wider
+    // loaded region; long action walks can otherwise finish without a dialogue.
+    const BANKER_TALK_DISTANCE=4;
     const BANK_APPROACH_OFFSETS=[[0,0],[5,0],[0,5],[-5,0],[0,-5]];
 
     function navRetryTarget(target,point=null,decisionNow=Date.now()){
@@ -2336,6 +2340,10 @@ ${firstBanker}`;
       return true;
     }
 
+    function bankerReadyForTalk(banker){
+      return !!banker&&Number.isFinite(Number(banker.d))&&Number(banker.d)<=BANKER_TALK_DISTANCE;
+    }
+
     function chooseFirstDialogueOption(){
       if(!mc.showOptionMenu || !mc.packetStream) return false;
       mc.packetStream.newPacket(116);
@@ -2375,10 +2383,14 @@ ${firstBanker}`;
         timeout:9000,
         maxAttempts:3,
         confirmedLabel:'banker dialogue menu opened',
-        ready:()=>!!banker&&banker.d<=BANKER_TALK_DISTANCE&&[basePhase,dialoguePhase].includes(objective?.phase)&&frame.now-lastAction>=ACTION_INTERVALS.walk,
+        ready:()=>bankerReadyForTalk(banker)&&[basePhase,dialoguePhase].includes(objective?.phase)&&frame.now-lastAction>=ACTION_INTERVALS.walk,
         capture:()=>({serverIndex:Number(banker.npc.serverIndex),bankKey:objective?.bankKey}),
         confirm:()=>mc.showOptionMenu&&bankDialogueOptionExpected(combat,frame.now),
         execute:()=>{
+          // A final navigation step may still be awaiting observation-level
+          // confirmation even though the live banker is now close enough.
+          // Retire it before the native NPC action walk takes ownership.
+          cancelActionContract('navigation-walk','banker in interaction range',frame.now);
           const sent=sendTalkToBanker(banker);
           if(sent){
             objective.phase=dialoguePhase;
@@ -2392,7 +2404,7 @@ ${firstBanker}`;
         objective.bankTalkTimeouts=Number(objective.bankTalkTimeouts||0)+1;
         blockTimedTarget(blockedBankers,result.state.before?.serverIndex,frame.now,15000,20);
         resetBankInteraction(combat,'banker gave no dialogue',frame.now);
-      }else if(result.status==='blocked'&&objective?.phase===dialoguePhase&&(!banker||banker.d>BANKER_TALK_DISTANCE)){
+      }else if(result.status==='blocked'&&objective?.phase===dialoguePhase&&!bankerReadyForTalk(banker)){
         blockTimedTarget(blockedBankers,result.state.before?.serverIndex,frame.now,15000,20);
         resetBankInteraction(combat,'banker became unavailable',frame.now);
         return {...result,status:'failed'};
@@ -2490,7 +2502,7 @@ ${firstBanker}`;
       // NPC interaction already performs its own action walk. Starting it as
       // soon as the correctly scoped banker is nearby avoids orbiting a fixed
       // bank coordinate while the banker stands on the other side of a wall.
-      if(banker && banker.d<=BANKER_TALK_DISTANCE){
+      if(bankerReadyForTalk(banker)){
         const result=runBankTalkContract(frame,banker,false);
         if(result.status==='sent'){
           setBotStatus(`${gatherSkillLabel()} • talking to ${bank.label} banker`);
@@ -3803,7 +3815,7 @@ ${firstBanker}`;
         if(['sent','waiting','cooldown','blocked','failed'].includes(result.status))return;
       }
 
-      if(banker&&banker.d<=BANKER_TALK_DISTANCE){
+      if(bankerReadyForTalk(banker)){
         const result=runBankTalkContract(frame,banker,true);
         if(result.status==='sent')setBotStatus(`Combat • talking to ${bank.label} banker`);
         return;
@@ -5085,7 +5097,7 @@ ${firstBanker}`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.13.2 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.13.3 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
@@ -5126,7 +5138,7 @@ ${firstBanker}`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.13.2 service worker registered',reg.scope);
+      console.log('AutoScape v2.13.3 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

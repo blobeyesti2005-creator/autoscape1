@@ -1113,3 +1113,24 @@ deleting history, or changing GitHub Pages.
 - No persistence keys, save schemas, accounts, characters, inventory, bank,
   equipment, stats, settings, jobs, or command formats changed.
 - Package, visible build, and app-shell cache metadata advanced to `2.13.2`.
+
+### Server-aligned banker staging
+
+- Traced banking through the pinned preservation client, server NPC packet
+  handler, and banker plugin. The packet and first dialogue option were already
+  correct; the unsafe assumption was beginning the interaction anywhere within
+  a 20-tile loaded-NPC radius.
+- Banking now walks into a conservative four-tile staging distance before
+  sending the native NPC-talk action. This matches the server handler's
+  `withinRange(..., 8)` chase window and avoids relying on a long action walk to
+  reach a banker across nearby collision.
+- Any observation-level navigation contract still pending at banker arrival is
+  cancelled before the native NPC action walk takes control. Gathering,
+  explicit banking, and combat restocking share the same rule.
+- Executable regression coverage proves a five-tile-away loaded banker remains
+  in approach mode and verifies the exact action-walk → NPC packet 153 → server
+  index sequence used by the preservation client.
+- Existing bank dialogue freshness, interface confirmation, bounded retries,
+  account/save schema, inventory, bank contents, settings, and jobs are
+  unchanged.
+- Package, visible build, and app-shell cache metadata advanced to `2.13.3`.

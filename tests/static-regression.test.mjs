@@ -2010,10 +2010,10 @@ test('bank arrival rotates blocked approaches and engages scoped bankers nearby'
   assert.equal(objective.bankArrivalRecoveries, 1);
   assert.equal(watch().retries, 0);
 
-  assert.match(html, /const BANKER_TALK_DISTANCE=20/);
+  assert.match(html, /const BANKER_TALK_DISTANCE=4/);
   for (const name of ['advanceBankRoute', 'advanceCombatBanking']) {
     const source = functionSource(html, name);
-    assert.match(source, /banker\.d<=BANKER_TALK_DISTANCE/, `${name} must use native banker action walking nearby`);
+    assert.match(source, /bankerReadyForTalk\(banker\)/, `${name} must stage within the server's banker interaction window`);
     assert.match(source, /advanceBankArrivalIfStalled\(\)/, `${name} must rotate blocked final approaches`);
     assert.match(source, /bankArrivalTarget\(bank\)/, `${name} must use the selected bank approach`);
   }
@@ -2042,12 +2042,13 @@ test('bank actions require dialogue and interface confirmation with bounded reco
   const harness=new Function(
     'traceDecision','objective','mc','sendTalkToBanker','chooseFirstDialogueOption',
     `const actionContracts=new Map(),blockedBankers=new Map();let lastAction=0;
-     const ACTION_INTERVALS={walk:1200},BANKER_TALK_DISTANCE=20;
+     const ACTION_INTERVALS={walk:1200},BANKER_TALK_DISTANCE=4;
      const BANK_APPROACH_OFFSETS=[[0,0],[5,0],[0,5],[-5,0],[0,-5]];
      let navWatch={x:null,y:null,lastMove:0,stalls:0,retries:0};
      function blockTimedTarget(map,key,now,duration){if(key!==undefined)map.set(String(key),Number(now)+Number(duration));}
      ${functionSource(html,'cancelActionContract')}
      ${functionSource(html,'runActionContract')}
+     ${functionSource(html,'bankerReadyForTalk')}
      ${functionSource(html,'bankDialogueOptionExpected')}
      ${functionSource(html,'bankContractKey')}
      ${functionSource(html,'resetBankInteraction')}
@@ -2091,6 +2092,33 @@ test('bank actions require dialogue and interface confirmation with bounded reco
     assert.match(source,/runBankOpenContract\(frame,/);
     assert.doesNotMatch(source,/bankInteractionWaiting\(/);
   }
+});
+
+test('banker interaction stages in server range and uses the native NPC packet sequence', () => {
+  const packets=[],walks=[];
+  const packetStream={
+    current:null,
+    newPacket(id){this.current={id,values:[]};packets.push(this.current);},
+    putShort(value){this.current.values.push(['short',value]);},
+    sendPacket(){this.current.sent=true;}
+  };
+  const mc={
+    localRegionX:11,localRegionY:22,packetStream,
+    _walkToActionSource_from5(...args){walks.push(args);}
+  };
+  const ready = new Function(
+    'BANKER_TALK_DISTANCE', `${functionSource(html,'bankerReadyForTalk')}\nreturn bankerReadyForTalk;`
+  )(4);
+  const send = new Function(
+    'mc','suppressBotClickMarker', `${functionSource(html,'sendTalkToBanker')}\nreturn sendTalkToBanker;`
+  )(mc,()=>{});
+
+  assert.equal(ready({d:4}),true);
+  assert.equal(ready({d:5}),false,'a loaded banker outside the server chase window must not be talked to yet');
+  assert.equal(ready(null),false);
+  assert.equal(send({lx:7,ly:8,npc:{serverIndex:321}}),true);
+  assert.deepEqual(walks,[[11,22,7,8,true]]);
+  assert.deepEqual(packets,[{id:153,values:[['short',321]],sent:true}]);
 });
 
 test('performance guards avoid unchanged UI and storage writes', () => {

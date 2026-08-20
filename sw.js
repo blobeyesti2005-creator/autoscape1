@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_CACHE_VERSION = 'autoscape-app-v2.13.2';
+const APP_CACHE_VERSION = 'autoscape-app-v2.13.3';
 const RUNTIME_CACHE = 'autoscape-runtime-v1';
 const APP_SHELL = ['./', './index.html', './learning-lab.html', './learning-sandbox.mjs', './manifest.webmanifest', './icon.svg'];
 
