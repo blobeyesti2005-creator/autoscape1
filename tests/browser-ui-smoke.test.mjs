@@ -39,6 +39,7 @@ function fakeClassList() {
 
 test('Android keyboard viewport smoke keeps the game scale stable and exposes the inset', () => {
   const properties = new Map(), bodyClasses = fakeClassList();
+  let now = 1_000;
   const document = {
     activeElement: { tagName: 'INPUT', isContentEditable: false },
     documentElement: {
@@ -52,14 +53,19 @@ test('Android keyboard viewport smoke keeps the game scale stable and exposes th
     visualViewport: { height: 390, offsetTop: 0 }
   };
   const gameHost = { style: {} };
-  const factory = new Function('window', 'document', 'gameHost', `
+  const factory = new Function('window', 'document', 'gameHost', 'Date', `
     let stableViewportHeight=window.innerHeight || document.documentElement.clientHeight || 346;
+    let keyboardOpen=false,inputBlurredAt=0;
     ${functionSource(appHtml, 'textInputFocused')}
+    ${functionSource(appHtml, 'keyboardTransitionActive')}
     ${functionSource(appHtml, 'syncMobileKeyboard')}
     ${functionSource(appHtml, 'fitGame')}
-    return {syncMobileKeyboard,fitGame,stable:()=>stableViewportHeight};
+    return {
+      syncMobileKeyboard,fitGame,stable:()=>stableViewportHeight,
+      blur:at=>{inputBlurredAt=at;},keyboardOpen:()=>keyboardOpen
+    };
   `);
-  const ui = factory(window, document, gameHost);
+  const ui = factory(window, document, gameHost, { now: () => now });
 
   ui.fitGame();
   assert.equal(gameHost.style.transform, 'translate(-50%,-50%) scale(1)');
@@ -71,11 +77,29 @@ test('Android keyboard viewport smoke keeps the game scale stable and exposes th
   assert.equal(gameHost.style.transform, 'translate(-50%,-50%) scale(1)', 'focused viewport changes must not rescale the canvas');
 
   window.visualViewport.height = 300;
+  window.visualViewport.offsetTop = 12;
   ui.syncMobileKeyboard();
-  assert.equal(properties.get('--keyboard-inset'), '130px');
+  assert.equal(properties.get('--keyboard-inset'), '118px');
+  assert.equal(properties.get('--keyboard-top'), '12px');
+  assert.equal(properties.get('--keyboard-height'), '300px');
   assert.equal(bodyClasses.contains('keyboard-open'), true);
+  assert.equal(ui.keyboardOpen(), true);
+
+  // Blur fires before Android finishes closing its keyboard. The temporary
+  // viewport must remain pinned and must not become the new canvas baseline.
   document.activeElement = { tagName: 'DIV', isContentEditable: false };
+  ui.blur(now);
+  now += 100;
+  ui.syncMobileKeyboard();
+  ui.fitGame();
+  assert.equal(bodyClasses.contains('keyboard-open'), true);
+  assert.equal(ui.stable(), 700);
+  assert.equal(gameHost.style.transform, 'translate(-50%,-50%) scale(1)');
+
+  now += 400;
   window.innerHeight = 700;
+  window.visualViewport.height = 700;
+  window.visualViewport.offsetTop = 0;
   ui.syncMobileKeyboard();
   assert.equal(properties.get('--keyboard-inset'), '0px');
   assert.equal(bodyClasses.contains('keyboard-open'), false);

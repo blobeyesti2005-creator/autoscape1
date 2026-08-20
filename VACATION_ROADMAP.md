@@ -1097,3 +1097,19 @@ deleting history, or changing GitHub Pages.
 - No persistence keys, save schemas, accounts, characters, inventory, bank,
   equipment, stats, settings, jobs, or command formats changed.
 - Package, visible build, and app-shell cache metadata advanced to `2.13.1`.
+
+### Stable Android keyboard transition
+
+- The bot panel now uses the browser's live visual-viewport top and height while
+  the Android keyboard is open, keeping its controls inside the actually visible
+  screen instead of combining a shrinking `dvh` box with a second bottom inset.
+- The game canvas is temporarily hidden while typing so browser keyboard resize
+  animation cannot flash a competing scaled canvas behind the bot controls.
+- A short, bounded blur transition holds the last stable game height until the
+  keyboard has finished closing. Intermediate Android resize events can no
+  longer become the next canvas baseline and cause close-animation flicker.
+- Browser smoke coverage executes keyboard opening, an early blur during the
+  closing animation, stable canvas sizing, and final viewport restoration.
+- No persistence keys, save schemas, accounts, characters, inventory, bank,
+  equipment, stats, settings, jobs, or command formats changed.
+- Package, visible build, and app-shell cache metadata advanced to `2.13.2`.

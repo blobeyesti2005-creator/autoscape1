@@ -109,16 +109,20 @@ test('mobile keyboard keeps bot controls visible without rescaling flicker', () 
   assert.match(html, /--keyboard-inset,0px/);
   assert.match(html, /max-height:calc\(100dvh - 70px\)/);
   assert.match(html, /body\.keyboard-open #fsBtn/);
+  assert.match(html, /body\.keyboard-open #game-host\{visibility:hidden\}/);
+  assert.match(html, /body\.keyboard-open #bot\{top:calc\(var\(--keyboard-top/);
 
   const keyboardSource = functionSource(html, 'syncMobileKeyboard');
   assert.match(keyboardSource, /window\.visualViewport/);
   assert.match(keyboardSource, /--keyboard-inset/);
+  assert.match(keyboardSource, /--keyboard-height/);
   assert.match(keyboardSource, /classList\.toggle\('keyboard-open'/);
+  assert.match(keyboardSource, /keyboardTransitionActive\(\)/);
 
   const fitSource = functionSource(html, 'fitGame');
-  assert.match(fitSource, /textInputFocused\(\)\?stableViewportHeight:liveHeight/);
+  assert.match(fitSource, /textInputFocused\(\)\|\|keyboardTransitionActive\(\)/);
   assert.match(html, /visualViewport\?\.addEventListener\('resize',scheduleFitGame\)/);
-  assert.match(html, /document\.addEventListener\('focusin',scheduleFitGame\)/);
+  assert.match(html, /inputBlurredAt=Date\.now\(\)/);
 });
 
 test('chicken routing approaches the open Lumbridge farm gate', () => {
