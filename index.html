@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.12.34 — Private Local World</title>
+<title>AutoScape Classic v2.13.0 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -46,6 +46,17 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 #botMetrics{font-size:11px;color:#aaa;margin-top:3px;min-height:14px}
 #queuePlan{font-size:10px;color:#d8c18d;margin:3px 0;min-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #botTrace{font-size:9px;color:#8fb7a2;margin:2px 0;min-height:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#scriptMenu{display:grid;grid-template-columns:auto minmax(150px,1fr) auto;gap:5px;align-items:center;margin:6px 0}
+#scriptMenu label,#bankingRow label{color:#f2cf72;font-weight:bold;white-space:nowrap}
+#scriptSelect,#bankDepositSelect{min-width:0;background:#090909;color:#fff;border:1px solid #8b7650;padding:8px;font-size:12px}
+#scriptStart{background:#786238!important;border-color:#d1aa59!important;font-weight:bold}
+#scriptDescription{color:#d8c18d;background:rgba(0,0,0,.22);border-left:3px solid #8b7650;padding:5px 7px;margin-bottom:5px;line-height:1.35}
+#scriptSettings{border:1px solid #5f523a;padding:2px 5px;margin:0 0 5px}
+#scriptSettings legend{color:#b8aa8e;padding:0 4px}
+#bankingRow{display:none;gap:5px;align-items:center;margin:4px 0}
+#bankDepositSelect{flex:1}
+#advancedCommands,#botTools{border-top:1px solid #5f523a;margin-top:5px;padding-top:4px}
+#advancedCommands summary,#botTools summary{cursor:pointer;color:#cdbb98;padding:4px 0;font-weight:bold}
 #guidePanel{position:fixed;z-index:9300;inset:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));overflow:auto;background:rgba(24,21,15,.985);border:2px solid #9f8657;padding:12px;color:#eee;font-size:12px;line-height:1.45}
 #guidePanel h2{margin:0;color:#ffd875;font-size:19px}
 #guidePanel h3{color:#e5c777;margin:14px 0 5px;font-size:14px}
@@ -62,7 +73,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.12.34</h2>
+<h2>AUTOSCAPE CLASSIC v2.13.0</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -76,6 +87,20 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <div id="botMetrics">Session idle</div>
 <div id="queuePlan">Queue idle</div>
 <div id="botTrace" aria-live="polite">Decision: idle</div>
+<div id="scriptMenu">
+<label for="scriptSelect">Script</label>
+<select id="scriptSelect">
+<option value="woodcutting">Woodcutting</option>
+<option value="mining">Mining</option>
+<option value="combat">Combat training</option>
+<option value="firemaking">Firemaking</option>
+<option value="prayer">Prayer — bury held bones</option>
+<option value="banking">Bank inventory</option>
+</select>
+<button type="button" id="scriptStart">Start</button>
+</div>
+<div id="scriptDescription">Cuts the selected trees and banks automatically when the inventory is full.</div>
+<fieldset id="scriptSettings"><legend>Script options</legend>
 <div id="resourceRow">
 <label for="resourceSelect">Resource</label>
 <select id="resourceSelect">
@@ -147,13 +172,29 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <option value="none">Leave drops</option>
 </select>
 </div>
+<div id="bankingRow">
+<label for="bankDepositSelect">Deposit</label>
+<select id="bankDepositSelect">
+<option value="carried">All carried items</option>
+<option value="gathered">Gathered logs and ore</option>
+<option value="loot">Combat loot only</option>
+</select>
+</div>
+</fieldset>
+<details id="advancedCommands">
+<summary>Advanced command box</summary>
 <form id="botForm">
 <input id="botInput" value="chop wood, firemake the logs" autocomplete="off" autocapitalize="off" spellcheck="false">
 <button type="submit">Run</button><button type="button" id="botStop">Stop</button>
 </form>
 <div id="botNote">Try “chop 10 logs, then firemake them”. Numbered steps count confirmed results; Stop cancels the queue.</div>
+</details>
+<button type="button" id="botStopMenu">Stop bot</button>
+<details id="botTools">
+<summary>Backups, diagnostics, and learning tools</summary>
 <div id="observationRow"><button type="button" id="observationToggle">Record observations</button><button type="button" id="observationDownload" disabled>Download</button><span id="observationStatus">Recorder off · no account data is captured</span></div>
 <div id="backupRow"><button type="button" id="backupDownload">Download character backup</button><span id="backupStatus">Manual local export · contains character credentials · keep private</span></div>
+</details>
 </div>
 <div id="guidePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
 <button id="guideClose" type="button">Close</button>
@@ -230,6 +271,9 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const queuePlan=document.getElementById('queuePlan');
   const botTrace=document.getElementById('botTrace');
   const botInput=document.getElementById('botInput');
+  const scriptSelect=document.getElementById('scriptSelect');
+  const scriptStart=document.getElementById('scriptStart');
+  const scriptDescription=document.getElementById('scriptDescription');
   const resourceSelect=document.getElementById('resourceSelect');
   const miningRow=document.getElementById('miningRow');
   const miningSelect=document.getElementById('miningSelect');
@@ -241,6 +285,8 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
   const combatBankSelect=document.getElementById('combatBankSelect');
   const lootRow=document.getElementById('lootRow');
   const lootSelect=document.getElementById('lootSelect');
+  const bankingRow=document.getElementById('bankingRow');
+  const bankDepositSelect=document.getElementById('bankDepositSelect');
   const observationToggle=document.getElementById('observationToggle');
   const observationDownload=document.getElementById('observationDownload');
   const observationStatus=document.getElementById('observationStatus');
@@ -2739,6 +2785,49 @@ ${firstBanker}`;
       return true;
     }
 
+    const SCRIPT_TYPES=['woodcutting','mining','combat','firemaking','prayer','banking'];
+    const SCRIPT_DESCRIPTIONS={
+      woodcutting:'Cuts the selected trees and banks automatically when the inventory is full.',
+      mining:'Mines the selected ore and uses the nearest supported bank when the inventory is full.',
+      combat:'Fights the selected monster using the chosen XP style, banking, and loot rules.',
+      firemaking:'Chops regular trees and burns the logs continuously. Requires an axe and tinderbox.',
+      prayer:'Buries regular bones already in your inventory, then stops when none remain.',
+      banking:'Walks to the nearest supported bank and deposits the selected group of carried items.'
+    };
+
+    function renderScriptOptions(type=scriptSelect.value){
+      const selected=SCRIPT_TYPES.includes(type)?type:'woodcutting';
+      resourceSelect.closest('#resourceRow').style.display=selected==='woodcutting'?'flex':'none';
+      miningRow.style.display=selected==='mining'?'flex':'none';
+      combatRow.style.display=selected==='combat'?'flex':'none';
+      combatStyleRow.style.display=selected==='combat'?'flex':'none';
+      combatBankRow.style.display=selected==='combat'?'flex':'none';
+      lootRow.style.display=selected==='combat'?'flex':'none';
+      bankingRow.style.display=selected==='banking'?'flex':'none';
+      scriptDescription.textContent=SCRIPT_DESCRIPTIONS[selected];
+      return selected;
+    }
+
+    function setScriptSelection(type){
+      if(SCRIPT_TYPES.includes(type))scriptSelect.value=type;
+      return renderScriptOptions(scriptSelect.value);
+    }
+
+    function scriptMenuCommand(type=scriptSelect.value){
+      if(type==='woodcutting')return resourceSelect.value==='auto'?'train woodcutting':`chop ${resourceSelect.value} trees`;
+      if(type==='mining')return miningSelect.value==='auto'?'train mining':`mine ${miningSelect.value} ore`;
+      if(type==='combat'){
+        const style={controlled:'controlled combat',strength:'train strength',attack:'train attack',defence:'train defence'}[combatStyleSelect.value]||'controlled combat';
+        const target=combatSelect.value==='auto'?'':` on ${combatSelect.value}`;
+        const banking=combatBankSelect.value==='never'?' without banking':' use the bank';
+        return `${style}${target}${banking}`;
+      }
+      if(type==='firemaking')return 'train firemaking';
+      if(type==='prayer')return 'train prayer';
+      if(type==='banking')return bankDepositSelect.value==='carried'?'bank inventory':`bank ${bankDepositSelect.value}`;
+      return '';
+    }
+
     function saveObjective(){
       try{
         if(objective){
@@ -2758,12 +2847,7 @@ ${firstBanker}`;
     }
 
     function resetObjectiveControls(){
-      combatRow.style.display='none';
-      combatStyleRow.style.display='none';
-      combatBankRow.style.display='none';
-      lootRow.style.display='none';
-      miningRow.style.display='none';
-      resourceSelect.closest('#resourceRow').style.display='flex';
+      renderScriptOptions();
     }
 
     function stop(msg){
@@ -4018,6 +4102,7 @@ ${firstBanker}`;
         stop('Stopped.');
         return;
       }
+      setScriptSelection(o.type);
       if(o.type==='banking'){
         const mode=['gathered','loot'].includes(o.mode)?o.mode:'carried';
         objective={type:'banking',resource:mode,phase:'bank',taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
@@ -4595,8 +4680,15 @@ ${firstBanker}`;
         recordTickProfile(profiledNode,monotonicNow()-started,Date.now(),profileOutcome);
       }
     }
+    scriptSelect.addEventListener('change',()=>renderScriptOptions());
+    scriptStart.addEventListener('click',()=>{
+      const command=scriptMenuCommand();
+      botInput.value=command;
+      start(command);
+    });
     document.getElementById('botForm').addEventListener('submit',e=>{e.preventDefault();start(botInput.value);});
     document.getElementById('botStop').addEventListener('click',()=>stop('Objective stopped.'));
+    document.getElementById('botStopMenu').addEventListener('click',()=>stop('Objective stopped.'));
     observationToggle.addEventListener('click',()=>liveObservationRecorder.enabled?stopLiveObservationRecording():startLiveObservationRecording());
     observationDownload.addEventListener('click',downloadLiveObservations);
     combatSelect.addEventListener('change',()=>{
@@ -4668,6 +4760,7 @@ ${firstBanker}`;
     });
     metricFoodCount=inventoryFoodCount;
     metricNormalLogCount=normalLogCount;
+    renderScriptOptions();
     installSessionAndMobileUX();
     updateObservationControls();
     botTimer=setInterval(tick,1000);
@@ -4756,6 +4849,7 @@ ${firstBanker}`;
         }
         const savedJob=normalizeSavedJob(storedJob.value);
         if(savedJob && savedJob.active && !objective){
+          setScriptSelection(savedJob.type);
           commandQueue=[...savedJob.queue];
           activeCommandText=String(savedJob.commandText||savedJob.type||'');
           const resumeChain={
@@ -4929,7 +5023,7 @@ ${firstBanker}`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.12.34 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.13.0 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
@@ -4970,7 +5064,7 @@ ${firstBanker}`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.12.34 service worker registered',reg.scope);
+      console.log('AutoScape v2.13.0 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

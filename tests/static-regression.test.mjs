@@ -52,6 +52,8 @@ test('required UI controls exist once and labels point to controls', () => {
     'game-host', 'loader', 'bot', 'botStatus', 'botMetrics', 'queuePlan', 'botTrace',
     'botInput', 'resourceSelect', 'miningSelect', 'combatSelect',
     'combatStyleSelect', 'combatBankSelect', 'lootSelect', 'guidePanel',
+    'scriptSelect', 'scriptStart', 'scriptDescription', 'scriptSettings',
+    'bankingRow', 'bankDepositSelect', 'advancedCommands', 'botStopMenu', 'botTools',
     'observationToggle', 'observationDownload', 'observationStatus',
     'backupDownload', 'backupStatus'
   ];
@@ -60,6 +62,47 @@ test('required UI controls exist once and labels point to controls', () => {
   for (const match of html.matchAll(/<label\s+for="([^"]+)"/g)) {
     assert.ok(ids.includes(match[1]), `label points to missing #${match[1]}`);
   }
+});
+
+test('script menu exposes one clear activity and only its relevant options', () => {
+  const source = section(html, '    const SCRIPT_TYPES=', '    function saveObjective(){');
+  const row = () => ({ style: { display: '' } });
+  const resourceRow = row();
+  const scriptSelect = { value: 'woodcutting' };
+  const scriptDescription = { textContent: '' };
+  const resourceSelect = { value: 'auto', closest: selector => { assert.equal(selector, '#resourceRow'); return resourceRow; } };
+  const miningRow = row(), combatRow = row(), combatStyleRow = row(), combatBankRow = row(), lootRow = row(), bankingRow = row();
+  const miningSelect = { value: 'iron' }, combatSelect = { value: 'chicken' };
+  const combatStyleSelect = { value: 'strength' }, combatBankSelect = { value: 'never' };
+  const bankDepositSelect = { value: 'loot' };
+  const menu = new Function(
+    'scriptSelect', 'scriptDescription', 'resourceSelect', 'miningRow', 'combatRow', 'combatStyleRow',
+    'combatBankRow', 'lootRow', 'bankingRow', 'miningSelect', 'combatSelect', 'combatStyleSelect',
+    'combatBankSelect', 'bankDepositSelect',
+    `${source}\nreturn { renderScriptOptions, setScriptSelection, scriptMenuCommand };`
+  )(
+    scriptSelect, scriptDescription, resourceSelect, miningRow, combatRow, combatStyleRow,
+    combatBankRow, lootRow, bankingRow, miningSelect, combatSelect, combatStyleSelect,
+    combatBankSelect, bankDepositSelect
+  );
+
+  menu.renderScriptOptions();
+  assert.equal(resourceRow.style.display, 'flex');
+  assert.equal(combatRow.style.display, 'none');
+  assert.match(scriptDescription.textContent, /selected trees/);
+
+  menu.setScriptSelection('combat');
+  assert.equal(scriptSelect.value, 'combat');
+  assert.equal(resourceRow.style.display, 'none');
+  assert.equal(combatRow.style.display, 'flex');
+  assert.equal(combatStyleRow.style.display, 'flex');
+  assert.equal(lootRow.style.display, 'flex');
+  assert.equal(menu.scriptMenuCommand(), 'train strength on chicken without banking');
+
+  menu.setScriptSelection('banking');
+  assert.equal(bankingRow.style.display, 'flex');
+  assert.equal(combatRow.style.display, 'none');
+  assert.equal(menu.scriptMenuCommand(), 'bank loot');
 });
 
 test('mobile keyboard keeps bot controls visible without rescaling flicker', () => {

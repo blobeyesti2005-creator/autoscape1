@@ -1061,3 +1061,20 @@ deleting history, or changing GitHub Pages.
 - No persistence key, account/save schema, character state, inventory, bank,
   equipment, stats, settings, jobs, or backup format changed.
 - Package, visible build, and app-shell cache metadata advanced to `2.12.34`.
+
+### Clear script-first bot menu
+
+- Replaced the always-visible command-and-dropdown pile with a primary Script
+  menu for Woodcutting, Mining, Combat, Firemaking, Prayer, and Banking.
+- Each script now shows only its relevant options plus a short plain-language
+  description. A single Start button translates the selected menu choices into
+  the existing tested intent/controller path.
+- Combat target, XP style, banking, and loot remain together under Combat;
+  resource choices appear only for Woodcutting or Mining; Banking has one clear
+  deposit selector. Stop remains immediately visible.
+- Natural-language command chaining remains available under a collapsed
+  Advanced command box instead of dominating the normal workflow. Backups,
+  observation diagnostics, and learning tools are grouped separately.
+- Existing local preferences, active-job saves, accounts, characters, stats,
+  inventory, bank, equipment, settings, and command compatibility are unchanged.
+- Package, visible build, and app-shell cache metadata advanced to `2.13.0`.
