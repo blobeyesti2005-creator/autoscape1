@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.10 — Private Local World</title>
+<title>AutoScape Classic v2.12.32 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -62,7 +62,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.10</h2>
+<h2>AUTOSCAPE CLASSIC v2.12.32</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -897,8 +897,16 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         this.persistenceReady = true;
         log.info(\`loaded \${this.players.size} players from local storage\`);
     }`;
-    if(!code.includes(browserLoad))throw new Error('Server persistence patch failed: browser load transaction changed.');
-    code=code.replace(browserLoad,guardedBrowserLoad);
+    // The current upstream source contains one formatting-only blank line
+    // between reading and parsing the player map. Accept that explicitly while
+    // retaining the fail-closed byte-for-byte guard for every executable line.
+    const browserLoadCurrent=browserLoad.replace(
+      "        const players = await idbKeyval.get('players');\n        this.players =",
+      "        const players = await idbKeyval.get('players');\n\n        this.players ="
+    );
+    const matchedBrowserLoad=[browserLoad,browserLoadCurrent].find(source=>code.includes(source));
+    if(!matchedBrowserLoad)throw new Error('Server persistence patch failed: browser load transaction changed.');
+    code=code.replace(matchedBrowserLoad,guardedBrowserLoad);
 
     const browserSave=`    async save() {
         await idbKeyval.set('playerID', this.playerID);
@@ -921,8 +929,15 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
         this.saveQueue = pending.catch(() => undefined);
         await pending;
     }`;
-    if(!code.includes(browserSave))throw new Error('Server persistence patch failed: browser save transaction changed.');
-    code=code.replace(browserSave,queuedBrowserSave);
+    // The same upstream formatting pass added one blank line between the two
+    // IndexedDB writes. Support only the verified old and current layouts.
+    const browserSaveCurrent=browserSave.replace(
+      "        await idbKeyval.set('playerID', this.playerID);\n        await idbKeyval.set(",
+      "        await idbKeyval.set('playerID', this.playerID);\n\n        await idbKeyval.set("
+    );
+    const matchedBrowserSave=[browserSave,browserSaveCurrent].find(source=>code.includes(source));
+    if(!matchedBrowserSave)throw new Error('Server persistence patch failed: browser save transaction changed.');
+    code=code.replace(matchedBrowserSave,queuedBrowserSave);
 
     const registration=`                this.players.set(player.username, player);
 
@@ -4899,7 +4914,7 @@ ${firstBanker}`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.10 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.12.32 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
@@ -4940,7 +4955,7 @@ ${firstBanker}`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.10 service worker registered',reg.scope);
+      console.log('AutoScape v2.12.32 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

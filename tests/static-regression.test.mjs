@@ -179,6 +179,16 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
             return;
         }`;
   const patched = patchServerPersistence(fixture);
+  const currentUpstreamSpacing = fixture
+    .replace(
+      "        const players = await idbKeyval.get('players');\n        this.players =",
+      "        const players = await idbKeyval.get('players');\n\n        this.players ="
+    )
+    .replace(
+      "        await idbKeyval.set('playerID', this.playerID);\n        await idbKeyval.set(",
+      "        await idbKeyval.set('playerID', this.playerID);\n\n        await idbKeyval.set("
+    );
+  const currentPatched = patchServerPersistence(currentUpstreamSpacing);
 
   assert.match(patched, /this\.saveQueue = Promise\.resolve\(\)/);
   assert.match(patched, /this\.persistenceReady = false/);
@@ -191,6 +201,9 @@ const PLAYER_SAVE_INTERVAL = 1000 * 60 * 5; // (5 mins)
   assert.match(patched, /const PLAYER_SAVE_INTERVAL = 1000 \* 15/);
   assert.match(patched, /this\.ticks = 0;\s*setTimeout\(this\.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL\);/);
   assert.match(patched, /if \(!this\.players\.length\) \{\s*setTimeout\(this\.boundSaveAllPlayers, PLAYER_SAVE_INTERVAL\);\s*return;/);
+  assert.match(currentPatched, /Local character storage is damaged; no records were changed/);
+  assert.match(currentPatched, /const pending = this\.saveQueue\.then\(commit, commit\)/);
+  assert.doesNotMatch(currentPatched, /const players = await idbKeyval\.get\('players'\)/);
   assert.throws(
     () => patchServerPersistence(fixture.replace('this.players.set(player.username, player);', 'this.players.add(player);')),
     /registration block changed/

@@ -1013,3 +1013,23 @@ deleting history, or changing GitHub Pages.
   of scope.
 - Package and app-shell cache metadata advanced to `2.12.31` for the eventual
   reviewed release.
+
+### Upstream browser-server boot compatibility
+
+- The hosted preservation server added formatting-only blank lines between the
+  browser player's IndexedDB load and save statements. AutoScape's deliberately
+  fail-closed persistence transformer previously treated that as an unknown
+  transaction change and stopped boot before login.
+- The transformer now accepts exactly two reviewed layouts: the earlier npm
+  bundle layout and the current upstream layout. Every executable load/save
+  statement remains byte-for-byte guarded, so a behavioral upstream change
+  still stops boot instead of risking local characters.
+- Executable regression coverage applies the complete persistence transformer
+  to both layouts and confirms guarded loading and serialized checkpoints are
+  installed. Behavioral mutations remain rejected by the existing fail-closed
+  tests.
+- The loader title, visible boot card, and console messages now report the real
+  build version instead of the stale v2.10 label shown during the failure.
+- Existing IndexedDB keys, account/save schema, characters, credentials, stats,
+  inventory, equipment, bank, settings, jobs, and backup format are unchanged.
+- Package, visible build, and app-shell cache metadata advanced to `2.12.32`.
