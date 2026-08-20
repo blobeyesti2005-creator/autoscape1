@@ -951,6 +951,18 @@ function awardExperience(useFatigue) {
     }
     return 'awarded';
 }
+function getAccuracy() { return 5; }
+function getMaxHit() { return 3; }
+function rollDamage(accuracy, maxHit, protection) {
+    return { accuracy, maxHit, protection };
+}
+function rollPlayerNPCDamage(player, npc) {
+    const accuracy = getAccuracy(player);
+    const maxHit = getMaxHit(player);
+    const protection = npc.skills.defense.current * (1 / 600 + 0.1);
+
+    return rollDamage(accuracy, maxHit, protection);
+}
 function movePlayer() {
         if (this.walkQueue.length && !this.locked) {
             const { deltaX, deltaY } = this.walkQueue.shift();
@@ -964,7 +976,7 @@ function movePlayer() {
             }
         }
 }
-return { loadSkills, savePlayer, loadFatigue, awardExperience, movePlayer };`;
+return { loadSkills, savePlayer, loadFatigue, awardExperience, rollPlayerNPCDamage, movePlayer };`;
   const patched = patchServerGameplay(fixture);
   const server = new Function(patched)();
   const originalSkills = {
@@ -998,10 +1010,31 @@ return { loadSkills, savePlayer, loadFatigue, awardExperience, movePlayer };`;
 
   assert.equal(server.loadFatigue.call({}, { fatigue: 700 }), 0);
   assert.equal(server.awardExperience(true), 'awarded');
+  const pveRoll = server.rollPlayerNPCDamage({}, { skills: { defense: { current: 10 } } });
+  assert.equal(pveRoll.accuracy, 10, 'player-versus-NPC attack roll should use the corrected 2x accuracy');
+  assert.equal(pveRoll.maxHit, 3, 'accuracy tuning must not change max hit');
+  assert.ok(Math.abs(pveRoll.protection - 1.0166666666666666) < 1e-12, 'NPC defence scaling must remain unchanged');
   assert.throws(
     () => patchServerGameplay(fixture.replace('this.skills = playerData.skills;', 'this.skills = { ...playerData.skills };')),
     /skill initialization changed/
   );
+  assert.throws(
+    () => patchServerGameplay(fixture.replace('return rollDamage(accuracy, maxHit, protection);', 'return rollDamage(accuracy + 1, maxHit, protection);')),
+    /player-NPC accuracy block changed/
+  );
+});
+
+test('combat XP feedback uses the four melee skills and preserves a task baseline', () => {
+  const source = `${functionSource(html, 'combatExperienceTotal')}\n${functionSource(html, 'combatExperienceGained')}`;
+  const harness = new Function('mc', 'objective', `${source}\nreturn { combatExperienceTotal, combatExperienceGained };`)(
+    { playerExperience: [100, 200, 300, 400, 99_999] },
+    { type: 'combat', combatXpStart: 750 }
+  );
+  assert.equal(harness.combatExperienceTotal(), 1_000, 'non-combat skills must not enter the displayed gain');
+  assert.equal(harness.combatExperienceGained({ combatXp: 1_000 }), 250);
+  assert.equal(harness.combatExperienceGained({ combatXp: 700 }), 0, 'a stale/lower frame must never display negative XP');
+  assert.match(functionSource(html, 'combatTick'), /XP awarded on kill/);
+  assert.match(functionSource(html, 'combatTick'), /combatExperienceGained\(frame\)/);
 });
 
 test('natural-language command parser keeps key command chains usable', () => {

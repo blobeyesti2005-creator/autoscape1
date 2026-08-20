@@ -139,6 +139,39 @@ test('mobile inventory tab changes once per tap and stays stable across render f
   assert.equal(client.showUITab, 0, 'a real tap outside the open panel must close it');
 });
 
+test('desktop HUD tabs ignore hover and change only on clicks', () => {
+  const updateDesktopHudTab = new Function(
+    `${functionSource(appHtml, 'updateDesktopHudTab')}\nreturn updateDesktopHudTab;`
+  )();
+  const client = {
+    gameWidth: 512, inventoryMaxItemCount: 30,
+    mouseX: 490, mouseY: 15, mouseButtonClick: 0,
+    showUITab: 0, minimapRandom1: 0, minimapRandom2: 0
+  };
+
+  for (let frame = 0; frame < 30; frame += 1) updateDesktopHudTab(client);
+  assert.equal(client.showUITab, 0, 'hovering Inventory must not open it');
+  client.mouseButtonClick = 1;
+  assert.equal(updateDesktopHudTab(client), true);
+  assert.equal(client.showUITab, 1, 'clicking Inventory opens it');
+
+  client.mouseX = 455; client.mouseButtonClick = 0;
+  for (let frame = 0; frame < 30; frame += 1) updateDesktopHudTab(client);
+  assert.equal(client.showUITab, 1, 'hovering another icon must not replace the open panel');
+  client.mouseButtonClick = 1;
+  updateDesktopHudTab(client);
+  assert.equal(client.showUITab, 2, 'clicking another icon switches panels');
+  client.mouseButtonClick = 1;
+  updateDesktopHudTab(client);
+  assert.equal(client.showUITab, 0, 'clicking the selected icon closes it');
+
+  client.mouseX = 490; client.mouseButtonClick = 1;
+  updateDesktopHudTab(client);
+  client.mouseX = 100; client.mouseY = 100; client.mouseButtonClick = 1;
+  updateDesktopHudTab(client);
+  assert.equal(client.showUITab, 0, 'clicking outside an open panel closes it');
+});
+
 test('first online runtime load seeds a verified cache used by an offline restart', async () => {
   const statuses=[],warnings=[],entries=new Map();
   const makeResponse=text=>({

@@ -1148,3 +1148,37 @@ deleting history, or changing GitHub Pages.
 - No account/save fields, persistence keys, inventory contents or formats,
   bank contents, settings, jobs, or bot decisions changed.
 - Package, visible build, and app-shell cache metadata advanced to `2.13.4`.
+
+### Visible combat XP and reliable PvE accuracy
+
+- Traced the complete preservation-server melee path instead of guessing from
+  the bot UI. Combat XP is awarded when an NPC dies, not on each individual
+  hitsplat; the server already distributes it to Hitpoints and the selected
+  Controlled, Strength, Attack, or Defence style.
+- The upstream player-versus-NPC roll gave equally matched combatants only
+  about a one-in-four chance to connect. AutoScape now doubles only the player's
+  PvE attack roll, producing roughly even accuracy at equal attack/protection
+  while preserving NPC defence scaling, maximum hit, and the existing 83% cap.
+  PvP accuracy and NPC attacks against players are unchanged.
+- Active combat status now explains that XP arrives on a confirmed kill and
+  shows cumulative Attack + Defence + Strength + Hitpoints XP gained during the
+  current task. This makes a stalled or missing award directly observable.
+- Executable regression coverage proves the PvE roll changes from 5 to 10 while
+  max hit and NPC protection remain exact, rejects upstream formula drift, and
+  verifies combat XP totals exclude unrelated skills and never display a
+  negative delta.
+- No account/save fields, persistence keys, existing XP, levels, inventory,
+  bank contents, settings, jobs, or command formats changed.
+- Package, visible build, and app-shell cache metadata advanced to `2.13.5`.
+
+### Click-driven desktop HUD tabs
+
+- Inventory, Map, Stats, Equipment, Prayer, and Magic no longer open or switch
+  merely because the desktop pointer passes over their icons. A real click now
+  opens a tab, clicking a different icon switches once, clicking the selected
+  icon closes it, and a real click outside closes the open panel.
+- Desktop regression coverage holds the pointer over Inventory and another tab
+  for thirty render frames each, proving hover alone cannot change state, then
+  executes open, switch, toggle-close, and outside-close clicks.
+- Mobile remains on its separately tested tap-driven geometry. No gameplay,
+  inventory contents, account/save state, or persistence format changed.

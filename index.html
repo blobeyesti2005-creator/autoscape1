@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.13.4 — Private Local World</title>
+<title>AutoScape Classic v2.13.5 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -75,7 +75,7 @@ body.keyboard-open #bot{top:calc(var(--keyboard-top,0px) + 6px);bottom:auto;heig
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.13.4</h2>
+<h2>AUTOSCAPE CLASSIC v2.13.5</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -1228,6 +1228,29 @@ ${firstBanker}`;
     const fatigueExperience='        if (useFatigue) {';
     if(!code.includes(fatigueExperience))throw new Error('Server gameplay patch failed: fatigue XP block changed.');
     code=code.replace(fatigueExperience,'        if (false && useFatigue) {');
+
+    // The preservation server gives equally matched melee combatants only a
+    // roughly one-in-four hit chance. That makes beginner PvE feel stalled and
+    // can hide the otherwise-correct kill-time XP award for a long time. Keep
+    // its maximum-hit, defence scaling, and 83% cap, but correct only
+    // player-versus-NPC accuracy to a roughly-even baseline.
+    const normalPlayerNPCDamage=`function rollPlayerNPCDamage(player, npc) {
+    const accuracy = getAccuracy(player);
+    const maxHit = getMaxHit(player);
+    const protection = npc.skills.defense.current * (1 / 600 + 0.1);
+
+    return rollDamage(accuracy, maxHit, protection);
+}`;
+    const reliablePlayerNPCDamage=`function rollPlayerNPCDamage(player, npc) {
+    const accuracy = getAccuracy(player);
+    const maxHit = getMaxHit(player);
+    const protection = npc.skills.defense.current * (1 / 600 + 0.1);
+
+    // AutoScape PvE: equal attack and protection now land about half the time.
+    return rollDamage(accuracy * 2, maxHit, protection);
+}`;
+    if(!code.includes(normalPlayerNPCDamage))throw new Error('Server gameplay patch failed: player-NPC accuracy block changed.');
+    code=code.replace(normalPlayerNPCDamage,reliablePlayerNPCDamage);
 
     const normalMovement=`        if (this.walkQueue.length && !this.locked) {
             const { deltaX, deltaY } = this.walkQueue.shift();
@@ -2989,6 +3012,7 @@ ${firstBanker}`;
         maxHits:max,
         dead:characterDead(online,hits,max),
         fighting:online?inCombat():false,
+        combatXp:online?combatExperienceTotal():0,
         firemakingXp:online?Number(mc.playerExperience?.[11]||0):0
       };
     }
@@ -3178,6 +3202,36 @@ ${firstBanker}`;
       return false;
     }
 
+    function updateDesktopHudTab(client){
+      // Classic desktop tabs originally opened and switched from pointer
+      // position alone. Require a real click so moving across the top-right
+      // icons cannot unexpectedly replace Inventory, Stats, Prayer, or Magic.
+      if(!client||!Number(client.mouseButtonClick))return false;
+      for(let i=0;i<6;i++){
+        const x=client.gameWidth-35-(i*33);
+        if(client.mouseX>=x&&client.mouseX< x+32&&client.mouseY>=3&&client.mouseY<35){
+          const tab=i+1;
+          client.showUITab=client.showUITab===tab?0:tab;
+          if(client.showUITab===2){
+            client.minimapRandom1=((Math.random()*13)|0)-6;
+            client.minimapRandom2=((Math.random()*23)|0)-11;
+          }
+          return true;
+        }
+      }
+      if(client.showUITab!==0){
+        const left=client.gameWidth-(client.showUITab===1?248:199);
+        const bottom=client.showUITab===1
+          ?36+(((Number(client.inventoryMaxItemCount||30)/5)|0)*34)
+          :client.showUITab===3?316:client.showUITab===6?311:240;
+        if(client.mouseX<left||client.mouseY>bottom){
+          client.showUITab=0;
+          return true;
+        }
+      }
+      return false;
+    }
+
     function installSessionAndMobileUX(){
       if(mc.__autoscapeUXInstalled)return;
       mc.__autoscapeUXInstalled=true;
@@ -3190,6 +3244,11 @@ ${firstBanker}`;
       },5000);
 
       const coarse=!!(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+      if(!coarse){
+        mc.setActiveUITab=function(){
+          updateDesktopHudTab(this);
+        };
+      }
       if(coarse&&mc._canvas){
         const canvas=mc._canvas;
         mc.options.middleClickCamera=true;
@@ -3539,6 +3598,18 @@ ${firstBanker}`;
     function playerCombatEstimate(){
       const s=mc.playerStatBase||[];
       return (((Number(s[0]||1)+Number(s[1]||1)+Number(s[2]||1)+Number(s[3]||10)+27)/4)|0);
+    }
+
+    function combatExperienceTotal(){
+      const xp=mc.playerExperience||[];
+      return [0,1,2,3].reduce((total,index)=>total+Math.max(0,Number(xp[index]||0)),0);
+    }
+
+    function combatExperienceGained(frame){
+      if(!objective||objective.type!=='combat')return 0;
+      const total=Math.max(0,Number(frame?.combatXp??combatExperienceTotal())||0);
+      if(!Number.isFinite(Number(objective.combatXpStart)))objective.combatXpStart=total;
+      return Math.max(0,total-Number(objective.combatXpStart||0));
     }
 
     function currentHits(){
@@ -3968,7 +4039,8 @@ ${firstBanker}`;
       if(fighting){
         confirmAttackStarted(frame);
         markProgress('fighting');
-        setBotStatus(`Combat ${playerCombatEstimate()} • ${objective.combatStyle||'controlled'} • fighting • hits ${hp}/${max}${combatBankingEnabled()?'':' • no banking'}`);
+        const gained=combatExperienceGained(frame);
+        setBotStatus(`Combat ${playerCombatEstimate()} • ${objective.combatStyle||'controlled'} • fighting • hits ${hp}/${max} • +${gained} XP this task${gained===0?' • XP awarded on kill':''}${combatBankingEnabled()?'':' • no banking'}`);
         return;
       }
 
@@ -3990,7 +4062,8 @@ ${firstBanker}`;
         objective.lootUntil=Date.now()+(lootSelect.value==='none'?1000:4500);
         lastAction=0;
         const count=Number(objective.countGoal||0)>0?` • ${Math.min(objective.countProgress,objective.countGoal)}/${objective.countGoal} kills`:'';
-        setPhase('loot',lootSelect.value==='none'?`Combat • target defeated${count} • continuing`:`Combat • target defeated${count} • checking ${lootSelect.options[lootSelect.selectedIndex]?.text||'drops'}`);
+        const xp=` • +${combatExperienceGained(frame)} combat XP this task`;
+        setPhase('loot',lootSelect.value==='none'?`Combat • target defeated${count}${xp} • continuing`:`Combat • target defeated${count}${xp} • checking ${lootSelect.options[lootSelect.selectedIndex]?.text||'drops'}`);
         return;
       }
 
@@ -4236,7 +4309,7 @@ ${firstBanker}`;
         combatSelect.value=target;
         combatStyleSelect.value=combatStyle;
         combatBankSelect.value=bankMode;
-        objective={type:'combat',target,combatStyle,bankMode,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
+        objective={type:'combat',target,combatStyle,bankMode,phase:'fight',collectedLootIds:new Set(),combatXpStart:combatExperienceTotal(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0};
         applyCombatStyle(combatStyle);
         resetTaskStats();
         combatRow.style.display='flex';
@@ -4981,7 +5054,7 @@ ${firstBanker}`;
             lootRow.style.display='flex';
             resourceSelect.closest('#resourceRow').style.display='none';
             miningRow.style.display='none';
-            objective={type:'combat',target,combatStyle,bankMode,phase:'fight',collectedLootIds:new Set(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
+            objective={type:'combat',target,combatStyle,bankMode,phase:'fight',collectedLootIds:new Set(),combatXpStart:combatExperienceTotal(),taskStarted:Date.now(),lastProgress:Date.now(),phaseStarted:Date.now(),phaseRetries:0,stallRecoveries:0,failures:0,...resumeChain};
             applyCombatStyle(combatStyle);
             resetTaskStats();
             const label=target==='auto'?'safe automatic targets':target;
@@ -5114,7 +5187,7 @@ ${firstBanker}`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.13.4 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.13.5 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
@@ -5155,7 +5228,7 @@ ${firstBanker}`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.13.4 service worker registered',reg.scope);
+      console.log('AutoScape v2.13.5 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

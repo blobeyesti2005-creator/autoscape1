@@ -1,6 +1,6 @@
 {
   "name": "autoscape-classic",
-  "version": "2.13.4",
+  "version": "2.13.5",
   "private": true,
   "description": "Regression checks for the browser-only AutoScape build",
   "scripts": {
