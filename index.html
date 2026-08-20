@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <base href="https://cdn.jsdelivr.net/gh/2003scape/rsc-client@3608f109a836b9b055ad9f7563f23ae55c815b09/dist/">
-<title>AutoScape Classic v2.12.33 — Private Local World</title>
+<title>AutoScape Classic v2.12.34 — Private Local World</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Arial,sans-serif}
 #app{position:fixed;inset:0;background:#000;overflow:hidden}
@@ -62,7 +62,7 @@ body.keyboard-open #fsBtn,body.keyboard-open #botToggle,body.keyboard-open #guid
 <body>
 <div id="app"><div id="game-host"></div></div>
 <div id="loader"><div id="loaderCard">
-<h2>AUTOSCAPE CLASSIC v2.12.33</h2>
+<h2>AUTOSCAPE CLASSIC v2.12.34</h2>
 <div id="loadState">Preparing private local RuneScape Classic world…</div>
 <button id="retry" style="display:none">Retry</button>
 </div></div>
@@ -1088,13 +1088,20 @@ module.exports = { onGameObjectCommandOne, onGameObjectCommandTwo };`;
                 }
             }
         });`;
-    // The current upstream source contains one formatting-only blank line
-    // before the start-message break. Accept only that reviewed layout and the
-    // earlier bundle layout; all executable worker statements remain guarded.
-    const browserWorkerCurrent=browserWorker.replace(
-      "                postMessage({ type: 'ready' });\n                    break;",
-      "                postMessage({ type: 'ready' });\n\n                    break;"
-    );
+    // The current upstream source unindented this wrapper by four spaces and
+    // added one blank line before the start-message break. Keep the complete
+    // reviewed block explicit so every executable worker statement is guarded.
+    const browserWorkerCurrent=`    addEventListener('message', async (e) => {
+        switch (e.data.type) {
+            case 'start': {
+                const server = new Server(e.data.config);
+                await server.init();
+                postMessage({ type: 'ready' });
+
+                break;
+            }
+        }
+    });`;
     const matchedBrowserWorker=[browserWorker,browserWorkerCurrent].find(source=>code.includes(source));
     if(!matchedBrowserWorker)throw new Error('Server lifecycle checkpoint patch failed: browser worker changed.');
     return code.replace(matchedBrowserWorker,checkpointWorker);
@@ -4922,7 +4929,7 @@ ${firstBanker}`;
 
       installBot(mc);
       loader.style.display='none';
-      console.log('AutoScape Classic v2.12.33 booted from',client.url,'with server',server.url);
+      console.log('AutoScape Classic v2.12.34 booted from',client.url,'with server',server.url);
     }catch(e){
       console.error(e);
       say(`Boot failed.\n\n${e.message}\n\nThe first successful launch needs internet to download and verify the preservation client/server. Later launches on the same browser and site can use the offline runtime cache.\n\nANDROID:\n1. Open the hosted game link in Chrome or Samsung Internet.\n2. Complete one online launch before going offline.\n3. Keep this site's browser data; clearing it removes both offline files and local characters.`, 'bad');
@@ -4963,7 +4970,7 @@ ${firstBanker}`;
   // Register a runtime-cache service worker when served from HTTPS/localhost.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
     navigator.serviceWorker.register(localURL('sw.js')).then(reg=>{
-      console.log('AutoScape v2.12.33 service worker registered',reg.scope);
+      console.log('AutoScape v2.12.34 service worker registered',reg.scope);
     }).catch(err=>{
       console.warn('AutoScape service worker registration failed',err);
     });

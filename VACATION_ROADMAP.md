@@ -1048,3 +1048,16 @@ deleting history, or changing GitHub Pages.
 - Existing storage keys, account/save schema, characters, inventory, equipment,
   bank, stats, settings, jobs, and backup format remain unchanged.
 - Package, visible build, and app-shell cache metadata advanced to `2.12.33`.
+
+### Complete upstream browser-worker layout compatibility
+
+- Live v2.12.33 testing proved the current hosted worker changed both the blank
+  line and the surrounding wrapper indentation. The previous compatibility
+  update covered only the blank line and therefore continued to fail closed.
+- The current worker is now represented as a complete reviewed source block,
+  alongside the complete earlier block. Regression coverage reproduces both
+  differences, and local verification applies the transformer directly to the
+  downloaded hosted server bundle before publication.
+- No persistence key, account/save schema, character state, inventory, bank,
+  equipment, stats, settings, jobs, or backup format changed.
+- Package, visible build, and app-shell cache metadata advanced to `2.12.34`.

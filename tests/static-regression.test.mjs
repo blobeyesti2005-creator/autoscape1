@@ -266,8 +266,27 @@ const Server = require('./server');
 return { World };`;
   const patched = patchServerLifecycleCheckpoint(fixture);
   const currentUpstreamSpacing = fixture.replace(
-    "                    postMessage({ type: 'ready' });\n                    break;",
-    "                    postMessage({ type: 'ready' });\n\n                    break;"
+    `        addEventListener('message', async (e) => {
+            switch (e.data.type) {
+                case 'start': {
+                    const server = new Server(e.data.config);
+                    await server.init();
+                    postMessage({ type: 'ready' });
+                    break;
+                }
+            }
+        });`,
+    `    addEventListener('message', async (e) => {
+        switch (e.data.type) {
+            case 'start': {
+                const server = new Server(e.data.config);
+                await server.init();
+                postMessage({ type: 'ready' });
+
+                break;
+            }
+        }
+    });`
   );
   const currentPatched = patchServerLifecycleCheckpoint(currentUpstreamSpacing);
   assert.match(patched, /saveAllPlayers\(scheduleNext = true\)/);
